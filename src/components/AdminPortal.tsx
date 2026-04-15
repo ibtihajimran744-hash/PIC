@@ -177,18 +177,31 @@ const RoleAssignModal = ({ onClose, onSave, assignableRoles, principalName, GRAD
 const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: any) => {
   const LEVEL_LABELS: Record<string, string> = { inter: 'Intermediate', university: 'University', all: 'All Levels' };
   const SUGGESTED_NAMES = ['Tuition Fee','Admission Fee','Exam Fee','Lab Fee','Library Fee','Sports Fee','Board Examination Fee','University Examination Fee','Computer Lab Fee','Development Fee'];
-  
+
   const [fgGroups, setFgGroups]           = useState<any[]>([]);
   const [fgStudents, setFgStudents]       = useState<any[]>([]);
   const [fgLoading, setFgLoading]         = useState(true);
+
+  // Add
   const [showAddFg, setShowAddFg]         = useState(false);
-  const [showAssignFg, setShowAssignFg]   = useState(false);
   const [fgName, setFgName]               = useState('');
   const [fgLevel, setFgLevel]             = useState('inter');
   const [fgFixed, setFgFixed]             = useState(false);
   const [fgFixedAmt, setFgFixedAmt]       = useState('');
   const [fgWeight, setFgWeight]           = useState('1');
   const [fgSaving, setFgSaving]           = useState(false);
+
+  // Edit
+  const [editFg, setEditFg]               = useState<any>(null);
+  const [editName, setEditName]           = useState('');
+  const [editAmount, setEditAmount]       = useState('');
+  const [editFixed, setEditFixed]         = useState(false);
+  const [editFixedAmt, setEditFixedAmt]   = useState('');
+  const [editWeight, setEditWeight]       = useState('1');
+  const [editSaving, setEditSaving]       = useState(false);
+
+  // Assign
+  const [showAssignFg, setShowAssignFg]   = useState(false);
   const [fgAssignMode, setFgAssignMode]   = useState<'bulk'|'individual'>('bulk');
   const [fgAssignLevel, setFgAssignLevel] = useState('inter');
   const [fgSection, setFgSection]         = useState('');
@@ -204,13 +217,13 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     let rem = total;
     grps.forEach(g => { if (g.is_fixed && g.fixed_amount) { r[g.id] = g.fixed_amount; rem -= g.fixed_amount; } });
     const vars = grps.filter(g => !g.is_fixed);
-    const tw = vars.reduce((s,g) => s + g.weight, 0);
-    if (tw > 0 && rem > 0) vars.forEach(g => { r[g.id] = Math.round((g.weight/tw)*rem); });
+    const tw = vars.reduce((s,g) => s + (g.weight || 1), 0);
+    if (tw > 0 && rem > 0) vars.forEach(g => { r[g.id] = Math.round(((g.weight||1)/tw)*rem); });
     return r;
   };
 
   const reload = async () => {
-    const { data } = await supabase.from('fee_groups_config').select('*').order('is_fixed', { ascending: false }).order('name');
+    const { data } = await supabase.from('fee_groups_config').select('*').order('name').order('amount');
     setFgGroups(data || []);
   };
 
@@ -218,7 +231,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     (async () => {
       setFgLoading(true);
       const [g, s] = await Promise.all([
-        supabase.from('fee_groups_config').select('*').order('is_fixed', { ascending: false }).order('name'),
+        supabase.from('fee_groups_config').select('*').order('name').order('amount'),
         supabase.from('students').select('id,roll_no,full_name,class_section').order('full_name'),
       ]);
       setFgGroups(g.data || []); setFgStudents(s.data || []);
@@ -237,11 +250,44 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     if (!fgName.trim()) { showErr('Enter a name'); return; }
     if (fgFixed && (!fgFixedAmt || Number(fgFixedAmt) <= 0)) { showErr('Enter fixed amount'); return; }
     setFgSaving(true);
-    const { error } = await supabase.from('fee_groups_config').insert([{ name: fgName.trim(), level: fgLevel, is_fixed: fgFixed, fixed_amount: fgFixed ? Number(fgFixedAmt) : null, weight: fgFixed ? 0 : Number(fgWeight) || 1 }]);
+    const { error } = await supabase.from('fee_groups_config').insert([{
+      name: fgName.trim(), level: fgLevel, is_fixed: fgFixed,
+      fixed_amount: fgFixed ? Number(fgFixedAmt) : null,
+      weight: fgFixed ? 0 : Number(fgWeight) || 1,
+      amount: fgFixed ? Number(fgFixedAmt) : 0,
+    }]);
     setFgSaving(false);
     if (error) { showErr(error.message); return; }
     showToast(`"${fgName}" added`);
     setShowAddFg(false); setFgName(''); setFgFixed(false); setFgFixedAmt(''); setFgWeight('1');
+    reload();
+  };
+
+  const openEdit = (g: any) => {
+    setEditFg(g);
+    setEditName(g.name);
+    setEditAmount(String(g.amount || 0));
+    setEditFixed(g.is_fixed);
+    setEditFixedAmt(String(g.fixed_amount || ''));
+    setEditWeight(String(g.weight || 1));
+  };
+
+  const saveEdit = async () => {
+    if (!editFg) return;
+    if (!editName.trim()) { showErr('Enter a name'); return; }
+    if (editFixed && (!editFixedAmt || Number(editFixedAmt) <= 0)) { showErr('Enter fixed amount'); return; }
+    setEditSaving(true);
+    const { error } = await supabase.from('fee_groups_config').update({
+      name: editName.trim(),
+      amount: editFixed ? Number(editFixedAmt) : Number(editAmount) || 0,
+      is_fixed: editFixed,
+      fixed_amount: editFixed ? Number(editFixedAmt) : null,
+      weight: editFixed ? 0 : Number(editWeight) || 1,
+    }).eq('id', editFg.id);
+    setEditSaving(false);
+    if (error) { showErr(error.message); return; }
+    showToast('Updated');
+    setEditFg(null);
     reload();
   };
 
@@ -279,9 +325,13 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
           due_date: fgDue,
           status: 'Unpaid',
           paid: 0,
-          fee_group_id: grp.id
         });
       }
+    }
+    // Update total_package on each student
+    const rolls = [...new Set(targets.map((t: any) => t.roll_no))];
+    for (const roll of rolls) {
+      await supabase.from('students').update({ total_package: pkg }).eq('roll_no', roll);
     }
     for (let i = 0; i < rows.length; i += 200) {
       const { error } = await supabase.from('fee_groups').insert(rows.slice(i, i+200));
@@ -293,15 +343,15 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   };
 
   const relGroups = fgGroups.filter(g => g.level === fgAssignLevel || g.level === 'all');
-  const sections  = [...new Set(fgStudents.map(s => s.class_section))].sort();
-  const filtStu   = fgStudents.filter(s => s.full_name.toLowerCase().includes(fgStuSearch.toLowerCase()) || String(s.roll_no).includes(fgStuSearch));
+  const sections  = [...new Set(fgStudents.map((s: any) => s.class_section))].sort();
+  const filtStu   = fgStudents.filter((s: any) => s.full_name.toLowerCase().includes(fgStuSearch.toLowerCase()) || String(s.roll_no).includes(fgStuSearch));
 
   return (
     <motion.div key="fee-groups" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-slate-900">Fee Groups</h2>
-          <p className="text-sm text-slate-500 mt-1">Define categories — app splits each student's package automatically.</p>
+          <p className="text-sm text-slate-500 mt-1">{fgGroups.length} templates · Click any group to edit it.</p>
         </div>
         <div className="flex gap-3">
           <button onClick={() => setShowAddFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}><Plus size={15} /> Add Group</button>
@@ -311,7 +361,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
 
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 text-sm text-blue-700">
         <CreditCard size={16} className="text-blue-500 shrink-0 mt-0.5" />
-        <p><strong>Auto-split:</strong> Fixed groups (e.g. Board Exam Fee = Rs 1,500) keep their exact amount. Variable groups share the remainder by weight ratio.</p>
+        <p><strong>Click any group to edit.</strong> Fixed groups keep their exact amount always. Variable groups share the remainder by weight after fixed groups are deducted.</p>
       </div>
 
       {fgLoading ? (
@@ -325,20 +375,34 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
             if (!lvl.length) return null;
             return (
               <div key={level}>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">{LEVEL_LABELS[level]}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">{LEVEL_LABELS[level]} ({lvl.length})</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {lvl.map(g => (
-                    <div key={g.id} className={cn('bg-white rounded-2xl border p-4 flex items-center justify-between shadow-sm group', g.is_fixed ? 'border-amber-100 bg-amber-50/20' : 'border-slate-100')}>
-                      <div className="flex items-center gap-3">
+                    <div key={g.id}
+                      onClick={() => openEdit(g)}
+                      className={cn('bg-white rounded-2xl border p-4 flex items-center justify-between shadow-sm cursor-pointer hover:shadow-md transition-all group',
+                        g.is_fixed ? 'border-amber-100 bg-amber-50/20 hover:border-amber-300' : 'border-slate-100 hover:border-emerald-200')}>
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', g.is_fixed ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600')}>
                           {g.is_fixed ? <Lock size={16} /> : <Unlock size={16} />}
                         </div>
-                        <div>
-                          <p className="text-sm font-black text-slate-900">{g.name}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase">{g.is_fixed ? `Fixed · ${PKR(g.fixed_amount ?? 0)}` : `Variable · Weight ${g.weight}`}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-900 truncate">{g.name}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
+                            {PKR(g.amount || 0)} · {g.is_fixed ? 'Fixed' : `Wt ${g.weight}`}
+                          </p>
                         </div>
                       </div>
-                      <button onClick={() => deleteGroup(g.id, g.name)} className="w-8 h-8 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 flex items-center justify-center transition-all">
+                          <Save size={12} />
+                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }}
+                          className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -348,7 +412,59 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
         </div>
       )}
 
-      {/* ADD GROUP MODAL */}
+      {/* ── EDIT GROUP MODAL ── */}
+      <AnimatePresence>
+        {editFg && (
+          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditFg(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }} className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                <div><h3 className="font-black text-slate-900">Edit Fee Group</h3><p className="text-xs text-slate-400 mt-0.5">Changes apply to future assignments only</p></div>
+                <button onClick={() => setEditFg(null)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                {/* Name */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Group Name</label>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
+                </div>
+                {/* Fixed toggle */}
+                <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <div><p className="text-sm font-bold text-slate-800">Fixed Amount</p><p className="text-[10px] text-slate-400">Amount never changes regardless of package</p></div>
+                  <button onClick={() => setEditFixed(v => !v)} className={cn('w-12 h-6 rounded-full transition-all relative', editFixed ? 'bg-amber-400' : 'bg-slate-200')}>
+                    <span className={cn('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all', editFixed ? 'left-7' : 'left-1')} />
+                  </button>
+                </div>
+                {editFixed ? (
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fixed Amount (Rs)</label>
+                    <input type="number" value={editFixedAmt} onChange={e => setEditFixedAmt(e.target.value)} placeholder="e.g. 1500" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-400" />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Default Amount (Rs)</label>
+                      <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} placeholder="0" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Weight Ratio <span className="text-slate-300 normal-case">(higher = larger share of package)</span></label>
+                      <input type="number" min="0.1" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="1" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="p-5 border-t border-slate-100 flex gap-3">
+                <button onClick={() => setEditFg(null)} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
+                <button onClick={saveEdit} disabled={editSaving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                  {editSaving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Changes</>}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── ADD GROUP MODAL ── */}
       <AnimatePresence>
         {showAddFg && (
           <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -389,7 +505,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
         )}
       </AnimatePresence>
 
-      {/* ASSIGN FEES MODAL */}
+      {/* ── ASSIGN FEES MODAL ── */}
       <AnimatePresence>
         {showAssignFg && (
           <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -411,7 +527,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                   <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Section</label>
                     <select value={fgSection} onChange={e => setFgSection(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 bg-white">
                       <option value="">Select section…</option>
-                      {sections.map(s => <option key={s} value={s}>{s} ({fgStudents.filter(st => st.class_section === s).length} students)</option>)}
+                      {sections.map((s: any) => <option key={s} value={s}>{s} ({fgStudents.filter((st: any) => st.class_section === s).length} students)</option>)}
                     </select>
                   </div>
                 ) : (
@@ -426,7 +542,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                         <input value={fgStuSearch} onChange={e => setFgStuSearch(e.target.value)} placeholder="Search name or roll no…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" />
                         {fgStuSearch.length > 1 && (
                           <div className="bg-white border border-slate-100 rounded-xl shadow-lg max-h-40 overflow-y-auto mt-1">
-                            {filtStu.slice(0,10).map(s => <button key={s.id} onClick={() => { setFgSelStu(s); setFgStuSearch(''); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none"><span className="font-bold text-slate-900">{s.full_name}</span><span className="text-[10px] text-slate-400 ml-2">{s.roll_no} · {s.class_section}</span></button>)}
+                            {filtStu.slice(0,10).map((s: any) => <button key={s.id} onClick={() => { setFgSelStu(s); setFgStuSearch(''); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none"><span className="font-bold text-slate-900">{s.full_name}</span><span className="text-[10px] text-slate-400 ml-2">{s.roll_no} · {s.class_section}</span></button>)}
                             {!filtStu.length && <p className="px-4 py-3 text-sm text-slate-400">No results</p>}
                           </div>
                         )}
@@ -445,7 +561,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                         <span className="text-sm font-black" style={{ color: ACCENT }}>{PKR(fgPreview[g.id] ?? 0)}</span>
                       </div>
                     ))}
-                    <div className="border-t border-slate-200 pt-2 flex justify-between"><span className="text-xs font-black text-slate-500 uppercase">Total</span><span className="text-sm font-black text-emerald-600">{PKR(Object.values(fgPreview).reduce((a,b) => a+b, 0))}</span></div>
+                    <div className="border-t border-slate-200 pt-2 flex justify-between"><span className="text-xs font-black text-slate-500 uppercase">Total</span><span className="text-sm font-black text-emerald-600">{PKR(Object.values(fgPreview).reduce((a: number,b: number) => a+b, 0))}</span></div>
                   </div>
                 )}
               </div>
