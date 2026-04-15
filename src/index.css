@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-admin-bg: #0d0d0d;
+  --color-admin-sidebar: #121212;
+  --color-admin-accent: #00f3ff;
+  --color-neon-cyan: #00f3ff;
+  --color-neon-purple: #bc13fe;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-[#0d0d0d] text-slate-200;
+  }
+}
+
+.neon-border-cyan {
+  box-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff;
+  border: 1px solid #00f3ff;
+}
+
+.neon-border-purple {
+  box-shadow: 0 0 5px #bc13fe, 0 0 10px #bc13fe;
+  border: 1px solid #bc13fe;
+}
+
+.neon-text-cyan {
+  text-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff;
+}
+
+.neon-text-purple {
+  text-shadow: 0 0 5px #bc13fe, 0 0 10px #bc13fe;
+}
+
+.glass-card {
+  @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl;
+}
+
+.admin-card {
+  @apply bg-[#121212] border border-white/5 rounded-2xl p-6;
+}

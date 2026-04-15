@@ -1,0 +1,7 @@
+{
+  "name": "Pak Informatics Student Portal",
+  "description": "A high-performance student management system for Pak Informatics Group of Colleges featuring admin, student, and staff portals with real-time Supabase integration.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
