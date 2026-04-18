@@ -51,6 +51,7 @@ const EMPTY_FORM: any = {
   inter_board:'BISE Gujranwala', inter_division:'',
   graduation_year:'', graduation_roll_no:'', graduation_marks:'', graduation_board:'', graduation_division:'',
   fee_package:40000, student_type:'Regular', is_fresher:true, num_instalments:1,
+  notes: '',
 };
 
 // ── Shared UI primitives ──────────────────────────────────────────────────
@@ -181,8 +182,6 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   const [fgGroups, setFgGroups]           = useState<any[]>([]);
   const [fgStudents, setFgStudents]       = useState<any[]>([]);
   const [fgLoading, setFgLoading]         = useState(true);
-
-  // Add
   const [showAddFg, setShowAddFg]         = useState(false);
   const [fgName, setFgName]               = useState('');
   const [fgLevel, setFgLevel]             = useState('inter');
@@ -190,8 +189,6 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   const [fgFixedAmt, setFgFixedAmt]       = useState('');
   const [fgWeight, setFgWeight]           = useState('1');
   const [fgSaving, setFgSaving]           = useState(false);
-
-  // Edit
   const [editFg, setEditFg]               = useState<any>(null);
   const [editName, setEditName]           = useState('');
   const [editAmount, setEditAmount]       = useState('');
@@ -199,8 +196,6 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   const [editFixedAmt, setEditFixedAmt]   = useState('');
   const [editWeight, setEditWeight]       = useState('1');
   const [editSaving, setEditSaving]       = useState(false);
-
-  // Assign
   const [showAssignFg, setShowAssignFg]   = useState(false);
   const [fgAssignMode, setFgAssignMode]   = useState<'bulk'|'individual'>('bulk');
   const [fgAssignLevel, setFgAssignLevel] = useState('inter');
@@ -264,12 +259,8 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   };
 
   const openEdit = (g: any) => {
-    setEditFg(g);
-    setEditName(g.name);
-    setEditAmount(String(g.amount || 0));
-    setEditFixed(g.is_fixed);
-    setEditFixedAmt(String(g.fixed_amount || ''));
-    setEditWeight(String(g.weight || 1));
+    setEditFg(g); setEditName(g.name); setEditAmount(String(g.amount || 0));
+    setEditFixed(g.is_fixed); setEditFixedAmt(String(g.fixed_amount || '')); setEditWeight(String(g.weight || 1));
   };
 
   const saveEdit = async () => {
@@ -286,9 +277,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     }).eq('id', editFg.id);
     setEditSaving(false);
     if (error) { showErr(error.message); return; }
-    showToast('Updated');
-    setEditFg(null);
-    reload();
+    showToast('Updated'); setEditFg(null); reload();
   };
 
   const deleteGroup = async (id: string, name: string) => {
@@ -317,22 +306,11 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     const rows: any[] = [];
     for (const stu of targets) {
       for (const grp of rel) {
-        rows.push({
-          student_roll: stu.roll_no,
-          fees_group: grp.name,
-          fees_code: grp.id.slice(0, 8).toUpperCase(),
-          amount: split[grp.id] ?? 0,
-          due_date: fgDue,
-          status: 'Unpaid',
-          paid: 0,
-        });
+        rows.push({ student_roll: stu.roll_no, fees_group: grp.name, fees_code: grp.id.slice(0, 8).toUpperCase(), amount: split[grp.id] ?? 0, due_date: fgDue, status: 'Unpaid', paid: 0 });
       }
     }
-    // Update total_package on each student
     const rolls = [...new Set(targets.map((t: any) => t.roll_no))];
-    for (const roll of rolls) {
-      await supabase.from('students').update({ total_package: pkg }).eq('roll_no', roll);
-    }
+    for (const roll of rolls) { await supabase.from('students').update({ total_package: pkg }).eq('roll_no', roll); }
     for (let i = 0; i < rows.length; i += 200) {
       const { error } = await supabase.from('fee_groups').insert(rows.slice(i, i+200));
       if (error) { showErr(error.message); setFgAssigning(false); return; }
@@ -349,21 +327,16 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   return (
     <motion.div key="fee-groups" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">Fee Groups</h2>
-          <p className="text-sm text-slate-500 mt-1">{fgGroups.length} templates · Click any group to edit it.</p>
-        </div>
+        <div><h2 className="text-xl font-black text-slate-900">Fee Groups</h2><p className="text-sm text-slate-500 mt-1">{fgGroups.length} templates · Click any group to edit it.</p></div>
         <div className="flex gap-3">
           <button onClick={() => setShowAddFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}><Plus size={15} /> Add Group</button>
           <button onClick={() => setShowAssignFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: GRADIENT }}><Users size={15} /> Assign Fees</button>
         </div>
       </div>
-
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 text-sm text-blue-700">
         <CreditCard size={16} className="text-blue-500 shrink-0 mt-0.5" />
         <p><strong>Click any group to edit.</strong> Fixed groups keep their exact amount always. Variable groups share the remainder by weight after fixed groups are deducted.</p>
       </div>
-
       {fgLoading ? (
         <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-emerald-500" size={28} /></div>
       ) : fgGroups.length === 0 ? (
@@ -378,30 +351,20 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">{LEVEL_LABELS[level]} ({lvl.length})</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {lvl.map(g => (
-                    <div key={g.id}
-                      onClick={() => openEdit(g)}
-                      className={cn('bg-white rounded-2xl border p-4 flex items-center justify-between shadow-sm cursor-pointer hover:shadow-md transition-all group',
-                        g.is_fixed ? 'border-amber-100 bg-amber-50/20 hover:border-amber-300' : 'border-slate-100 hover:border-emerald-200')}>
+                    <div key={g.id} onClick={() => openEdit(g)}
+                      className={cn('bg-white rounded-2xl border p-4 flex items-center justify-between shadow-sm cursor-pointer hover:shadow-md transition-all group', g.is_fixed ? 'border-amber-100 bg-amber-50/20 hover:border-amber-300' : 'border-slate-100 hover:border-emerald-200')}>
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', g.is_fixed ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600')}>
                           {g.is_fixed ? <Lock size={16} /> : <Unlock size={16} />}
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-black text-slate-900 truncate">{g.name}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
-                            {PKR(g.amount || 0)} · {g.is_fixed ? 'Fixed' : `Wt ${g.weight}`}
-                          </p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{PKR(g.amount || 0)} · {g.is_fixed ? 'Fixed' : `Wt ${g.weight}`}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
-                        <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 flex items-center justify-center transition-all">
-                          <Save size={12} />
-                        </div>
-                        <button
-                          onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }}
-                          className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
-                          <Trash2 size={12} />
-                        </button>
+                        <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 flex items-center justify-center transition-all"><Save size={12} /></div>
+                        <button onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }} className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
                       </div>
                     </div>
                   ))}
@@ -412,7 +375,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
         </div>
       )}
 
-      {/* ── EDIT GROUP MODAL ── */}
+      {/* EDIT GROUP MODAL */}
       <AnimatePresence>
         {editFg && (
           <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -423,12 +386,8 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                 <button onClick={() => setEditFg(null)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
               </div>
               <div className="p-5 space-y-4">
-                {/* Name */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Group Name</label>
-                  <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
-                </div>
-                {/* Fixed toggle */}
+                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Group Name</label>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
                 <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 border border-slate-100">
                   <div><p className="text-sm font-bold text-slate-800">Fixed Amount</p><p className="text-[10px] text-slate-400">Amount never changes regardless of package</p></div>
                   <button onClick={() => setEditFixed(v => !v)} className={cn('w-12 h-6 rounded-full transition-all relative', editFixed ? 'bg-amber-400' : 'bg-slate-200')}>
@@ -436,20 +395,14 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                   </button>
                 </div>
                 {editFixed ? (
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fixed Amount (Rs)</label>
-                    <input type="number" value={editFixedAmt} onChange={e => setEditFixedAmt(e.target.value)} placeholder="e.g. 1500" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-400" />
-                  </div>
+                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fixed Amount (Rs)</label>
+                    <input type="number" value={editFixedAmt} onChange={e => setEditFixedAmt(e.target.value)} placeholder="e.g. 1500" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-400" /></div>
                 ) : (
                   <>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Default Amount (Rs)</label>
-                      <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} placeholder="0" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Weight Ratio <span className="text-slate-300 normal-case">(higher = larger share of package)</span></label>
-                      <input type="number" min="0.1" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="1" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" />
-                    </div>
+                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Default Amount (Rs)</label>
+                      <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} placeholder="0" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
+                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Weight Ratio <span className="text-slate-300 normal-case">(higher = larger share of package)</span></label>
+                      <input type="number" min="0.1" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="1" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
                   </>
                 )}
               </div>
@@ -464,7 +417,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
         )}
       </AnimatePresence>
 
-      {/* ── ADD GROUP MODAL ── */}
+      {/* ADD GROUP MODAL */}
       <AnimatePresence>
         {showAddFg && (
           <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -505,7 +458,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
         )}
       </AnimatePresence>
 
-      {/* ── ASSIGN FEES MODAL ── */}
+      {/* ASSIGN FEES MODAL */}
       <AnimatePresence>
         {showAssignFg && (
           <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
@@ -547,8 +500,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                           </div>
                         )}
                       </>
-                    )}
-                  </div>
+                    )}</div>
                 )}
                 <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Package Amount (Rs)</label><input type="number" value={fgPkg} onChange={e => setFgPkg(e.target.value)} placeholder="e.g. 40000" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
                 <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Due Date</label><input type="date" value={fgDue} onChange={e => setFgDue(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
@@ -601,18 +553,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [allPermissions,  setAllPermissions]  = useState<Record<string, any>>({});
   const [assignableRoles, setAssignableRoles] = useState<string[]>([]);
   const [leaveRequests,   setLeaveRequests]   = useState<any[]>([]);
-
-  const [searchQ,          setSearchQ]         = useState('');
-  const [filterProgram,    setFilterProgram]    = useState('');
-  const [filterSection,    setFilterSection]    = useState('');
-  const [showNotifs,       setShowNotifs]       = useState(false);
-  const [showAssignModal,  setShowAssignModal]  = useState(false);
-  const [editPermRole,     setEditPermRole]     = useState<any>(null);
-  const [admFilter,        setAdmFilter]        = useState('');
-  const [selectedStudent,  setSelectedStudent]  = useState<any>(null);
-  const [studentProgress,  setStudentProgress]  = useState<any[]>([]);
-  const [studentLoading,   setStudentLoading]   = useState(false);
-  const [leaveSaving,      setLeaveSaving]      = useState<string | null>(null);
+  const [searchQ,         setSearchQ]         = useState('');
+  const [filterProgram,   setFilterProgram]   = useState('');
+  const [filterSection,   setFilterSection]   = useState('');
+  const [showNotifs,      setShowNotifs]      = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [editPermRole,    setEditPermRole]    = useState<any>(null);
+  const [admFilter,       setAdmFilter]       = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [studentProgress, setStudentProgress] = useState<any[]>([]);
+  const [studentLoading,  setStudentLoading]  = useState(false);
+  const [leaveSaving,     setLeaveSaving]     = useState<string | null>(null);
 
   // ── Accountant state ───────────────────────────────────────────────────
   const [feeGroups,    setFeeGroups]    = useState<any[]>([]);
@@ -625,7 +576,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [saving,       setSaving]       = useState(false);
   const [preview,      setPreview]      = useState<any>(null);
   const [selectedAccStu,  setSelectedAccStu]  = useState<any>(null);
-  const [collectModal,    setCollectModal]    = useState<any>(null);  // fee_group being paid
+  const [stuFeeGroups,    setStuFeeGroups]    = useState<any[]>([]);
+  const [stuFeeLoading,   setStuFeeLoading]   = useState(false);
+  const [collectModal,    setCollectModal]    = useState<any>(null);
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
@@ -657,12 +610,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     const present = (s5.data || []).filter((a: any) => a.status === 'Present').length;
     const absent  = (s5.data || []).filter((a: any) => a.status === 'Absent').length;
     const total   = (s5.data || []).length;
-    setStats({
-      totalStu: studs.filter(s => s.status === 'Active').length,
-      maleStudents: studs.filter(s => s.gender === 'Male').length,
-      femaleStudents: studs.filter(s => s.gender === 'Female').length,
-      present, absent, attPct: total > 0 ? Math.round((present / total) * 100) : 0,
-    });
+    setStats({ totalStu: studs.filter(s => s.status === 'Active').length, maleStudents: studs.filter(s => s.gender === 'Male').length, femaleStudents: studs.filter(s => s.gender === 'Female').length, present, absent, attPct: total > 0 ? Math.round((present / total) * 100) : 0 });
     setStudents(studs); setClassSummary(s2.data || []); setNotifications(s3.data || []);
     setAdmForms(s4.data || []); setLeaveRequests(s6.data || []);
     setLoading(false);
@@ -672,7 +620,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const loadAccountant = useCallback(async () => {
     setLoading(true);
     const [s1, s2, s3, s4, s5, s6, s7, s8] = await Promise.all([
-      supabase.from('students').select('roll_no,full_name,class_section,program,part,status,total_package,paid_amount,current_badge').order('roll_no', { ascending: false }),
+      supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
       supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(600),
       supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(150),
       supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
@@ -688,21 +636,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     setLoading(false);
   }, []);
 
-  const loadStaff = async () => {
-    const { data } = await supabase.from('admin_users').select('id,full_name,username,role').order('role');
-    setStaffList(data || []);
-  };
-  const loadScheme = async () => {
-    const { data } = await supabase.from('scheme_of_study').select('*').order('week_no');
-    setSchemeList(data || []);
-  };
+  const loadStaff = async () => { const { data } = await supabase.from('admin_users').select('id,full_name,username,role').order('role'); setStaffList(data || []); };
+  const loadScheme = async () => { const { data } = await supabase.from('scheme_of_study').select('*').order('week_no'); setSchemeList(data || []); };
   const loadPermissions = async () => {
     const { data } = await supabase.from('role_permissions').select('*');
     const map: Record<string, any> = {};
     (data || []).forEach((r: any) => { map[r.role] = r; });
     setAllPermissions(map);
-    const pp = map['Principal'];
-    if (pp) setAssignableRoles(pp.assignable_roles || []);
+    const pp = map['Principal']; if (pp) setAssignableRoles(pp.assignable_roles || []);
   };
 
   useEffect(() => {
@@ -720,10 +661,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const handleLeave = async (id: string, action: 'Approved' | 'Rejected') => {
     setLeaveSaving(id);
     try {
-      await supabase.from('leave_requests').update({
-        status: action, reviewed_by: adminData.full_name,
-        reviewed_at: new Date().toISOString(), vp_decision: action,
-      }).eq('id', id);
+      await supabase.from('leave_requests').update({ status: action, reviewed_by: adminData.full_name, reviewed_at: new Date().toISOString(), vp_decision: action }).eq('id', id);
       showToast(`✅ Leave ${action.toLowerCase()}`); refresh();
     } catch (e: any) { showErr(e.message); }
     finally { setLeaveSaving(null); }
@@ -739,6 +677,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     await supabase.from('admin_users').delete().eq('id', userId);
     await supabase.from('staff_role_assignments').update({ is_active: false }).eq('admin_user_id', userId);
     showToast(`✅ ${username} deactivated`); loadStaff();
+  };
+
+  // ── Accountant: open student profile (loads results + fee summary) ─────
+  const openAccStudentProfile = async (student: any) => {
+    const isSelected = selectedAccStu?.roll_no === student.roll_no;
+    if (isSelected) { setSelectedAccStu(null); setStuFeeGroups([]); return; }
+    setSelectedAccStu(student);
+    setStuFeeLoading(true);
+    const [progress, fees] = await Promise.all([
+      supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject'),
+      supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('due_date'),
+    ]);
+    setStudentProgress(progress.data || []);
+    setStuFeeGroups(fees.data || []);
+    setStuFeeLoading(false);
   };
 
   // ── Accountant actions ─────────────────────────────────────────────────
@@ -758,6 +711,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         suggested_section: sec, suggested_class: cls,
         status: 'Pending', synced_to_db: false,
         created_by: adminData.full_name, form_no: '',
+        notes: admForm.notes || '',
       }]);
       if (error) throw error;
       showToast('✅ Admission form saved'); setAdmForm({ ...EMPTY_FORM }); setTab('admissions'); refresh();
@@ -824,29 +778,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     if (amt > collectModal.balance) { showErr(`Amount exceeds balance of ${PKR(collectModal.balance)}`); return; }
     setSaving(true);
     try {
-      const newPaid    = (collectModal.paid || 0) + amt;
+      const newPaid   = (collectModal.paid || 0) + amt;
       const newBalance = (collectModal.balance || 0) - amt;
-      const newStatus  = newBalance === 0 ? 'Paid' : 'Partial';
-      // Update fee_group — balance is a GENERATED column, never write it
-      await supabase.from('fee_groups').update({
-        paid: newPaid, status: newStatus,
-      }).eq('id', collectModal.id);
-      // Insert transaction
+      const newStatus = newBalance === 0 ? 'Paid' : 'Partial';
+      await supabase.from('fee_groups').update({ paid: newPaid, status: newStatus }).eq('id', collectModal.id);
       await supabase.from('fee_transactions').insert([{
         student_roll_link: String(collectModal.student_roll),
-        amount_paid:       amt,
-        payment_method:    feePayForm.method,
-        receipt_serial:    feePayForm.receipt || null,
-        collected_by:      adminData.full_name,
-        payment_date:      new Date().toISOString(),
-        transaction_type:  'Payment',
-        fee_group_id:      collectModal.id,
-        confirmed_by:      adminData.full_name,
+        amount_paid: amt, payment_method: feePayForm.method,
+        receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
+        payment_date: new Date().toISOString(), transaction_type: 'Payment',
+        fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
       }]);
       showToast(`✅ Rs ${amt.toLocaleString('en-PK')} collected`);
-      setCollectModal(null);
-      setFeePayForm({ amount: '', method: 'Cash', receipt: '' });
-      refresh();
+      setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '' }); refresh();
     } catch (e: any) { showErr(e.message || 'Failed'); }
     finally { setSaving(false); }
   };
@@ -871,20 +815,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     if (filterSection && s.class_section !== filterSection) return false;
     if (!searchQ) return true;
     const q = searchQ.toLowerCase();
-    return (
-      s.full_name?.toLowerCase().includes(q) ||
-      String(s.roll_no).includes(q) ||
-      s.class_section?.toLowerCase().includes(q) ||
-      s.father_name?.toLowerCase().includes(q)
-    );
+    return s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q) || s.class_section?.toLowerCase().includes(q) || s.father_name?.toLowerCase().includes(q);
   });
 
-  // Sections available for the currently selected program (for accountant filter)
   const filteredSectionOptions = students
     .filter(s => !filterProgram || s.program === filterProgram)
-    .map(s => s.class_section)
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .sort();
+    .map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
   const filteredAdmForms = admForms.filter(f => !admFilter || f.status === admFilter);
 
   // ── NAV definitions ────────────────────────────────────────────────────
@@ -926,10 +862,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     students: 'Student Records', academics: 'Academic Overview',
     leaves: 'Leave Requests', admissions: 'Admissions',
     'new-admission': 'New Admission Form', 'fee-ledger': 'Fee Ledger',
-    'fee-groups': 'Fee Groups',
-    transactions: 'Transactions', discounts: 'Discount Requests',
-    reports: 'Financial Reports', staff: 'Staff & Role Management',
-    permissions: 'Permission Control', scheme: 'Scheme of Study',
+    'fee-groups': 'Fee Groups', transactions: 'Transactions',
+    discounts: 'Discount Requests', reports: 'Financial Reports',
+    staff: 'Staff & Role Management', permissions: 'Permission Control', scheme: 'Scheme of Study',
   };
 
   const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
@@ -948,8 +883,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {NAV.map(({ id, label, icon: Icon }) => {
-            const active  = tab === id;
-            const badgeN  = getBadge(id);
+            const active = tab === id; const badgeN = getBadge(id);
             return (
               <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
                 className={cn('w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
@@ -989,7 +923,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
 
       {/* MAIN */}
       <main className="flex-1 md:ml-60 min-h-screen pb-24 md:pb-0">
-        {/* Desktop topbar */}
         <div className="hidden md:flex sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200/80 px-8 py-4 items-center justify-between" style={{ boxShadow: '0 1px 12px rgba(0,0,0,0.05)' }}>
           <div>
             <h1 className="text-xl font-black text-slate-900">{TAB_TITLE[tab] || portalLabel}</h1>
@@ -1010,7 +943,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         <div className="p-4 md:p-8">
           <AnimatePresence mode="wait">
 
-            {/* ════════════════════ PRINCIPAL TABS ════════════════════ */}
+            {/* ════ PRINCIPAL TABS ════ */}
 
             {!isAccountant && tab === 'dashboard' && (
               <motion.div key="dash" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
@@ -1019,8 +952,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   <p className="text-teal-300 text-[10px] font-black uppercase tracking-widest mb-1">{new Date().toLocaleDateString('en-PK', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
                   <h2 className="text-xl font-black text-white mb-4">Good day, {adminData.full_name.split(' ').slice(0, 2).join(' ')}</h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
-                    {[{ l: 'Total Students', v: stats.totalStu || 0, c: 'text-white' }, { l: 'Boys', v: stats.maleStudents || 0, c: 'text-teal-200' }, { l: 'Girls', v: stats.femaleStudents || 0, c: 'text-teal-200' }, { l: 'Attendance', v: `${stats.attPct || 0}%`, c: stats.attPct >= 75 ? 'text-emerald-300' : 'text-amber-300' }].map(({ l, v, c }) => (
-                      <div key={l}><p className="text-teal-400/70 text-[9px] font-black uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
+                    {[{ l: 'Total Students', v: stats.totalStu || 0 }, { l: 'Boys', v: stats.maleStudents || 0 }, { l: 'Girls', v: stats.femaleStudents || 0 }, { l: 'Attendance', v: `${stats.attPct || 0}%` }].map(({ l, v }) => (
+                      <div key={l}><p className="text-teal-400/70 text-[9px] font-black uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black">{v}</p></div>
                     ))}
                   </div>
                 </div>
@@ -1045,12 +978,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <p className="text-[11px] text-slate-400 truncate">{l.reason || l.leave_type || 'Leave request'} · {l.from_date || l.request_date || '—'}</p>
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                               {leaveSaving === l.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} OK
                             </motion.button>
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
                               <X size={10} /> No
                             </motion.button>
                           </div>
@@ -1066,9 +997,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   </div>
                   <div className="p-5 space-y-3.5">
                     {classSummary.slice(0, 7).map((r: any) => {
-                      const pct   = r.total_students > 0 ? Math.round(((r.present_today || 0) / r.total_students) * 100) : 0;
-                      const color = pct >= 75 ? '#059669' : pct >= 50 ? '#D97706' : '#C0392B';
-                      return <ProgressBar key={r.class_section} pct={pct} color={color} label={r.class_section} sub={`${pct}% · ${r.present_today || 0}/${r.total_students}`} />;
+                      const p = r.total_students > 0 ? Math.round(((r.present_today || 0) / r.total_students) * 100) : 0;
+                      const color = p >= 75 ? '#059669' : p >= 50 ? '#D97706' : '#C0392B';
+                      return <ProgressBar key={r.class_section} pct={p} color={color} label={r.class_section} sub={`${p}% · ${r.present_today || 0}/${r.total_students}`} />;
                     })}
                     {classSummary.length === 0 && <p className="text-center text-slate-400 text-sm py-4">No class data yet</p>}
                   </div>
@@ -1093,8 +1024,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 </div>
                 <AnimatePresence>
                   {selectedStudent && (
-                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-                      className="bg-white rounded-3xl border border-teal-200 overflow-hidden shadow-sm">
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} className="bg-white rounded-3xl border border-teal-200 overflow-hidden shadow-sm">
                       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#F0FDFA,#CCFBF1)' }}>
                         <div className="flex items-center gap-3">
                           <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-white text-lg" style={{ background: `hsl(${(selectedStudent.roll_no * 37) % 360},60%,50%)` }}>{selectedStudent.full_name?.charAt(0)}</div>
@@ -1108,19 +1038,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       <div className="p-5 space-y-5">
                         <div>
                           <p className="font-black text-slate-900 text-sm mb-3">📚 Course Progress</p>
-                          {studentLoading ? (
-                            <div className="flex items-center gap-2 text-slate-400"><Loader2 size={16} className="animate-spin" /><span className="text-sm">Loading...</span></div>
-                          ) : studentProgress.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">No progress data recorded yet</p>
-                          ) : (
-                            <div className="space-y-3.5">
-                              {studentProgress.map((cp: any) => {
-                                const p2    = cp.progress_pct || 0;
-                                const color = p2 >= 80 ? '#059669' : p2 >= 50 ? '#0891B2' : p2 >= 25 ? '#D97706' : '#C0392B';
-                                return <ProgressBar key={cp.id} pct={p2} color={color} label={cp.subject} sub={`${cp.topics_done}/${cp.topics_total} topics · ${p2}%`} />;
-                              })}
-                            </div>
-                          )}
+                          {studentLoading ? <div className="flex items-center gap-2 text-slate-400"><Loader2 size={16} className="animate-spin" /><span className="text-sm">Loading...</span></div>
+                            : studentProgress.length === 0 ? <p className="text-sm text-slate-400 italic">No progress data recorded yet</p>
+                            : <div className="space-y-3.5">{studentProgress.map((cp: any) => { const p2 = cp.progress_pct || 0; const color = p2 >= 80 ? '#059669' : p2 >= 50 ? '#0891B2' : p2 >= 25 ? '#D97706' : '#C0392B'; return <ProgressBar key={cp.id} pct={p2} color={color} label={cp.subject} sub={`${cp.topics_done}/${cp.topics_total} topics · ${p2}%`} />; })}</div>}
                         </div>
                         <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
                           <span className="text-2xl">{selectedStudent.current_badge?.split(' ')[0] || '🥉'}</span>
@@ -1130,7 +1050,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     </motion.div>
                   )}
                 </AnimatePresence>
-                <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Name, roll, class section..." className="w-full border border-slate-200 rounded-2xl py-3 pl-11 pr-4 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 bg-white transition-all" /></div>
+                <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Name, roll, class section..." className="w-full border border-slate-200 rounded-2xl py-3 pl-11 pr-4 text-sm outline-none focus:border-teal-500 bg-white transition-all" /></div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 border-b border-slate-100"><p className="text-xs font-bold text-slate-500">{filteredStudents.length} students · click a row to view details</p></div>
                   <div className="overflow-x-auto" style={{ maxHeight: 480 }}>
@@ -1169,13 +1089,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   ))}
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Attendance by Class (Animated)</h3></div>
+                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Attendance by Class</h3></div>
                   <div className="p-5 space-y-4">
-                    {classSummary.map((r: any) => {
-                      const p2    = r.total_students > 0 ? Math.round(((r.present_today || 0) / r.total_students) * 100) : 0;
-                      const color = p2 >= 75 ? '#059669' : p2 >= 50 ? '#D97706' : '#C0392B';
-                      return <ProgressBar key={r.class_section} pct={p2} color={color} label={`${r.class_section}  ·  ${r.program} Part ${r.part}`} sub={`${p2}%  ·  ${r.present_today || 0}/${r.total_students}`} />;
-                    })}
+                    {classSummary.map((r: any) => { const p2 = r.total_students > 0 ? Math.round(((r.present_today || 0) / r.total_students) * 100) : 0; const color = p2 >= 75 ? '#059669' : p2 >= 50 ? '#D97706' : '#C0392B'; return <ProgressBar key={r.class_section} pct={p2} color={color} label={`${r.class_section} · ${r.program} Part ${r.part}`} sub={`${p2}% · ${r.present_today || 0}/${r.total_students}`} />; })}
                     {classSummary.length === 0 && <p className="text-center text-slate-400 text-sm py-4">No class data available</p>}
                   </div>
                 </div>
@@ -1222,9 +1138,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                         style={isPending ? { borderLeftColor: '#D97706' } : {}}>
                         <div className="px-4 py-4">
                           <div className="flex items-start gap-3">
-                            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>
-                              {(l.student_name || l.student_roll_no || 'S')?.charAt(0)}
-                            </div>
+                            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{(l.student_name || l.student_roll_no || 'S')?.charAt(0)}</div>
                             <div className="flex-1 min-w-0">
                               <p className="font-black text-slate-900">{l.student_name || `Roll #${l.student_roll_no}`}</p>
                               <p className="text-xs text-slate-500 mt-0.5">{l.reason || l.leave_type || 'Leave request'}</p>
@@ -1236,12 +1150,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             </div>
                             {isPending && (
                               <div className="flex gap-1.5 flex-shrink-0">
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id}
-                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                   {leaveSaving === l.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
                                 </motion.button>
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id}
-                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
+                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
                                   <X size={10} /> Reject
                                 </motion.button>
                               </div>
@@ -1263,9 +1175,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   {[{ v: '', l: 'All' }, { v: 'Pending', l: 'Pending' }, { v: 'Approved', l: 'Approved' }, { v: 'Rejected', l: 'Rejected' }].map(({ v, l }) => (
-                    <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>
-                      {l} ({admForms.filter(f => !v || f.status === v).length})
-                    </button>
+                    <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
                   ))}
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
@@ -1310,8 +1220,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       const canManage = assignableRoles.includes(s.role);
                       const rc: Record<string, string> = { Director: 'bg-orange-100 text-orange-700', VP: 'bg-purple-100 text-purple-700', Principal: 'bg-teal-100 text-teal-700', Accountant: 'bg-emerald-100 text-emerald-700', Teacher: 'bg-blue-100 text-blue-700', Coordinator: 'bg-indigo-100 text-indigo-700', Examiner: 'bg-violet-100 text-violet-700', Academics: 'bg-cyan-100 text-cyan-700' };
                       return (
-                        <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                          className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
+                        <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0" style={{ background: `hsl(${(s.username?.charCodeAt(0) || 50) * 37 % 360},55%,45%)` }}>{s.full_name?.charAt(0)}</div>
                           <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900 truncate">{s.full_name}</p><p className="text-[10px] text-slate-400">{s.username}</p></div>
                           <div className="flex items-center gap-2 flex-shrink-0">
@@ -1385,7 +1294,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 {schemeList.length > 0 && (() => {
                   const bySub: Record<string, number> = {};
                   schemeList.forEach((s: any) => { bySub[s.subject] = (bySub[s.subject] || 0) + 1; });
-                  const subs   = Object.entries(bySub).sort((a, b) => b[1] - a[1]);
+                  const subs = Object.entries(bySub).sort((a, b) => b[1] - a[1]);
                   const maxCnt = Math.max(...subs.map(s => s[1]));
                   return (
                     <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -1428,6 +1337,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               <FeeGroupsTab adminData={adminData} GRADIENT={GRADIENT} ACCENT={ACCENT} showToast={showToast} showErr={showErr} PKR={PKR} />
             )}
 
+            {/* ════ ACCOUNTANT DASHBOARD ════ */}
             {isAccountant && tab === 'dashboard' && (
               <motion.div key="acc-dash" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
                 <div className="rounded-3xl p-6 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0d1b6e 0%,#1a2fa8 60%,#2952e3 100%)', boxShadow: '0 12px 40px rgba(26,47,168,0.3)' }}>
@@ -1435,21 +1345,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   <p className="text-blue-300 text-[10px] font-black uppercase tracking-widest mb-1">{new Date().toLocaleDateString('en-PK', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
                   <h2 className="text-xl font-black text-white mb-4">Good day, {adminData.full_name.split(' ').slice(0, 2).join(' ')}</h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
-                    {[
-                      { l: 'Total Balance Due',  v: PKR(totalBalance), c: 'text-white' },
-                      { l: 'Total Fines',        v: PKR(totalFines),   c: 'text-blue-200' },
-                      { l: "Today's Revenue",    v: PKR(todayRevenue), c: todayRevenue > 0 ? 'text-emerald-300' : 'text-blue-200' },
-                      { l: 'Pending Admissions', v: pendingAdm,        c: pendingAdm > 0 ? 'text-amber-300' : 'text-blue-200' },
-                    ].map(({ l, v, c }) => (
-                      <div key={l}><p className="text-blue-400/70 text-[9px] font-black uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
+                    {[{ l: 'Total Balance Due', v: PKR(totalBalance) }, { l: 'Total Fines', v: PKR(totalFines) }, { l: "Today's Revenue", v: PKR(todayRevenue) }, { l: 'Pending Admissions', v: pendingAdm }].map(({ l, v }) => (
+                      <div key={l}><p className="text-blue-400/70 text-[9px] font-black uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black">{v}</p></div>
                     ))}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard icon={DollarSign}   label="Balance Due"       value={PKR(totalBalance)} sub="Across all students"      color="bg-rose-50 text-rose-600"     alert={totalBalance > 0} />
-                  <StatCard icon={Receipt}      label="Today's Revenue"   value={PKR(todayRevenue)} sub={`${todayTx.length} txns`}  color="bg-emerald-50 text-emerald-600" />
-                  <StatCard icon={FileText}     label="Pending Forms"     value={pendingAdm}        sub="Awaiting DB confirm"       color="bg-amber-50 text-amber-600"   alert={pendingAdm > 0} />
-                  <StatCard icon={Tag}          label="Pending Discounts" value={pendingDisc}       sub="Awaiting review"           color="bg-purple-50 text-purple-600" alert={pendingDisc > 0} />
+                  <StatCard icon={DollarSign}  label="Balance Due"       value={PKR(totalBalance)} sub="Across all students"     color="bg-rose-50 text-rose-600"     alert={totalBalance > 0} />
+                  <StatCard icon={Receipt}     label="Today's Revenue"   value={PKR(todayRevenue)} sub={`${todayTx.length} txns`} color="bg-emerald-50 text-emerald-600" />
+                  <StatCard icon={FileText}    label="Pending Forms"     value={pendingAdm}        sub="Awaiting DB confirm"      color="bg-amber-50 text-amber-600"   alert={pendingAdm > 0} />
+                  <StatCard icon={Tag}         label="Pending Discounts" value={pendingDisc}       sub="Awaiting review"          color="bg-purple-50 text-purple-600" alert={pendingDisc > 0} />
                 </div>
                 {pendingAdm > 0 && (
                   <div className="bg-white rounded-3xl border border-amber-100 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
@@ -1461,13 +1366,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       {admForms.filter(f => f.status === 'Pending').slice(0, 3).map((f: any) => (
                         <div key={f.id} className="flex items-center gap-3 px-5 py-3.5">
                           <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 font-black text-xs flex items-center justify-center flex-shrink-0">{f.student_name?.charAt(0)}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-black text-slate-900 truncate">{f.student_name}</p>
-                            <p className="text-[11px] text-slate-400 truncate">{f.program} Part {f.part} · {f.form_no}</p>
-                          </div>
+                          <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900 truncate">{f.student_name}</p><p className="text-[11px] text-slate-400 truncate">{f.program} Part {f.part} · {f.form_no}</p></div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                               {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} OK
                             </motion.button>
                             <motion.button whileTap={{ scale: 0.9 }} onClick={() => setPreview(f)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
@@ -1498,14 +1399,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     {transactions.slice(0, 5).map((t: any, i: number) => (
                       <motion.div key={t.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.04, 0.2) }} className="flex items-center gap-3 px-5 py-3.5">
                         <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center flex-shrink-0"><Receipt size={14} /></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black text-slate-900">Roll #{t.student_roll_link}</p>
-                          <p className="text-[11px] text-slate-400">{t.payment_method || '—'} · {t.collected_by || '—'}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-black text-emerald-600">{PKR(Number(t.amount_paid))}</p>
-                          <p className="text-[9px] text-slate-400">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK') : '—'}</p>
-                        </div>
+                        <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900">Roll #{t.student_roll_link}</p><p className="text-[11px] text-slate-400">{t.payment_method || '—'} · {t.collected_by || '—'}</p></div>
+                        <div className="text-right"><p className="font-black text-emerald-600">{PKR(Number(t.amount_paid))}</p><p className="text-[9px] text-slate-400">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK') : '—'}</p></div>
                       </motion.div>
                     ))}
                     {!transactions.length && <p className="p-6 text-center text-slate-400 text-sm">No transactions yet</p>}
@@ -1518,13 +1413,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </motion.div>
             )}
 
+            {/* ════ ACCOUNTANT FEE LEDGER — Fee collection happens here ════ */}
             {isAccountant && tab === 'fee-ledger' && (() => {
-              // Sections available for current ledger program filter
-              const ledgerSectionOptions = students
-                .filter(s => !ledgerProgram || s.program === ledgerProgram)
-                .map(s => s.class_section)
-                .filter((v, i, a) => a.indexOf(v) === i)
-                .sort();
+              const ledgerSectionOptions = students.filter(s => !ledgerProgram || s.program === ledgerProgram).map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
               const ledgerFiltered = feeGroups.filter(g => {
                 if (ledgerStatus && g.status !== ledgerStatus) return false;
                 const st = students.find(s => s.roll_no === g.student_roll);
@@ -1535,143 +1426,114 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 return String(g.student_roll).includes(q) || st?.full_name?.toLowerCase().includes(q);
               });
               return (
-              <motion.div key="ledger" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                {/* Summary cards */}
-                <div className="grid grid-cols-3 gap-3">
-                  {[{ l: 'Paid', v: paidGroups, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: partialGroups, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid', v: unpaidGroups, c: '#C0392B', bg: 'bg-rose-50' }].map(({ l, v, c, bg }) => (
-                    <div key={l} className={cn('rounded-2xl p-4 border border-slate-100 text-center', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
-                  ))}
-                </div>
-
-                {/* Filter panel */}
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filters</p>
-                    {(ledgerProgram || ledgerSection || ledgerStatus || searchQ) && (
-                      <button onClick={() => { setLedgerProgram(''); setLedgerSection(''); setLedgerStatus(''); setSearchQ(''); }}
-                        className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all"
-                        style={{ color: ACCENT, background: `${ACCENT}12` }}>
-                        <X size={11} /> Clear
-                      </button>
-                    )}
+                <motion.div key="ledger" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+                    <DollarSign size={16} className="text-blue-600 flex-shrink-0" />
+                    <p className="text-sm font-bold text-blue-900">Fee Ledger — Click any unpaid row to collect payment from a student.</p>
                   </div>
-                  <div className="p-4 space-y-3">
-                    {/* Status filter */}
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Payment Status</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {[
-                          { v: '',        l: 'All',     color: ACCENT,     bg: GRADIENT },
-                          { v: 'Unpaid',  l: 'Unpaid',  color: '#C0392B',  bg: 'linear-gradient(135deg,#C0392B,#e74c3c)' },
-                          { v: 'Partial', l: 'Partial', color: '#D97706',  bg: 'linear-gradient(135deg,#D97706,#f59e0b)' },
-                          { v: 'Paid',    l: 'Paid',    color: '#059669',  bg: 'linear-gradient(135deg,#059669,#10b981)' },
-                        ].map(({ v, l, color, bg }) => {
-                          const active = ledgerStatus === v;
-                          const cnt = v === '' ? feeGroups.length : feeGroups.filter(g => g.status === v).length;
-                          return (
-                            <motion.button key={v} whileTap={{ scale: 0.96 }}
-                              onClick={() => setLedgerStatus(v)}
-                              className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all"
-                              style={active ? { background: bg, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                              {l} <span className="ml-1 text-[9px] opacity-70">{cnt}</span>
-                            </motion.button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {/* Program filter */}
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'].map(prog => {
-                          const active = ledgerProgram === prog;
-                          return (
-                            <motion.button key={prog} whileTap={{ scale: 0.96 }}
-                              onClick={() => { setLedgerProgram(active ? '' : prog); setLedgerSection(''); }}
-                              className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all"
-                              style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                              {prog}
-                            </motion.button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {/* Section chips — appear after program selected */}
-                    <AnimatePresence>
-                      {ledgerSectionOptions.length > 0 && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Section</p>
-                          <div className="flex gap-2 flex-wrap">
-                            {ledgerSectionOptions.map(sec => {
-                              const active = ledgerSection === sec;
-                              const cnt = feeGroups.filter(g => {
-                                const st2 = students.find(s => s.roll_no === g.student_roll);
-                                return st2?.class_section === sec;
-                              }).length;
-                              return (
-                                <motion.button key={sec} whileTap={{ scale: 0.96 }}
-                                  onClick={() => setLedgerSection(active ? '' : sec)}
-                                  className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all"
-                                  style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>
-                                  {sec} <span className="ml-1 text-[9px] opacity-70">{cnt}</span>
-                                </motion.button>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[{ l: 'Paid', v: paidGroups, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: partialGroups, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid', v: unpaidGroups, c: '#C0392B', bg: 'bg-rose-50' }].map(({ l, v, c, bg }) => (
+                      <div key={l} className={cn('rounded-2xl p-4 border border-slate-100 text-center', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
+                    ))}
+                  </div>
+                  {/* Filters */}
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filters</p>
+                      {(ledgerProgram || ledgerSection || ledgerStatus || searchQ) && (
+                        <button onClick={() => { setLedgerProgram(''); setLedgerSection(''); setLedgerStatus(''); setSearchQ(''); }} className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all" style={{ color: ACCENT, background: `${ACCENT}12` }}><X size={11} /> Clear</button>
                       )}
-                    </AnimatePresence>
-                    {/* Search */}
-                    <div className="relative pt-1">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                      <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
-                        placeholder="Search by roll no or student name…"
-                        className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Payment Status</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {[{ v: '', l: 'All', bg: GRADIENT }, { v: 'Unpaid', l: 'Unpaid', bg: 'linear-gradient(135deg,#C0392B,#e74c3c)' }, { v: 'Partial', l: 'Partial', bg: 'linear-gradient(135deg,#D97706,#f59e0b)' }, { v: 'Paid', l: 'Paid', bg: 'linear-gradient(135deg,#059669,#10b981)' }].map(({ v, l, bg }) => {
+                            const active = ledgerStatus === v;
+                            const cnt = v === '' ? feeGroups.length : feeGroups.filter(g => g.status === v).length;
+                            return <motion.button key={v} whileTap={{ scale: 0.96 }} onClick={() => setLedgerStatus(v)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: bg, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{l} <span className="ml-1 text-[9px] opacity-70">{cnt}</span></motion.button>;
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {PROGRAMS.map(prog => {
+                            const active = ledgerProgram === prog;
+                            return <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setLedgerProgram(active ? '' : prog); setLedgerSection(''); }} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{prog}</motion.button>;
+                          })}
+                        </div>
+                      </div>
+                      <AnimatePresence>
+                        {ledgerSectionOptions.length > 0 && (
+                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Section</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {ledgerSectionOptions.map(sec => {
+                                const active = ledgerSection === sec;
+                                const cnt = feeGroups.filter(g => { const st2 = students.find(s => s.roll_no === g.student_roll); return st2?.class_section === sec; }).length;
+                                return <motion.button key={sec} whileTap={{ scale: 0.96 }} onClick={() => setLedgerSection(active ? '' : sec)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{sec} <span className="ml-1 text-[9px] opacity-70">{cnt}</span></motion.button>;
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <div className="relative pt-1">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                        <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search by roll no or student name…" className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                {/* Table */}
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-bold text-slate-500">{ledgerFiltered.length} records{ledgerProgram ? ` · ${ledgerProgram}` : ''}{ledgerSection ? ` · ${ledgerSection}` : ''}{ledgerStatus ? ` · ${ledgerStatus}` : ''}</p>
-                    <p className="text-[10px] font-black text-rose-600">
-                      Outstanding: {PKR(ledgerFiltered.reduce((s, g) => s + (g.balance || 0), 0))}
-                    </p>
+                  {/* Ledger table — clicking Collect opens the collect modal */}
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <p className="text-xs font-bold text-slate-500">{ledgerFiltered.length} records{ledgerProgram ? ` · ${ledgerProgram}` : ''}{ledgerSection ? ` · ${ledgerSection}` : ''}{ledgerStatus ? ` · ${ledgerStatus}` : ''}</p>
+                      <p className="text-[10px] font-black text-rose-600">Outstanding: {PKR(ledgerFiltered.reduce((s, g) => s + (g.balance || 0), 0))}</p>
+                    </div>
+                    <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
+                      <table className="w-full text-xs min-w-[780px]">
+                        <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
+                          <tr>{['Roll #', 'Name', 'Class', 'Fee Group', 'Amount', 'Discount', 'Fine', 'Paid', 'Balance', 'Status', 'Due Date', 'Action'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {ledgerFiltered.slice(0, 200).map((g, i) => {
+                            const st = students.find(s => s.roll_no === g.student_roll);
+                            return (
+                              <motion.tr key={g.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.005, 0.3) }} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                <td className="px-4 py-2.5 font-mono font-bold" style={{ color: ACCENT }}>{g.student_roll}</td>
+                                <td className="px-4 py-2.5 font-medium text-slate-900 max-w-[120px] truncate">{st?.full_name || '—'}</td>
+                                <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{st?.class_section || '—'}</td>
+                                <td className="px-4 py-2.5 text-slate-700 max-w-[140px] truncate">{g.fees_group}</td>
+                                <td className="px-4 py-2.5 font-bold text-slate-700">{PKR(g.amount)}</td>
+                                <td className="px-4 py-2.5 text-emerald-600">{g.discount ? PKR(g.discount) : '—'}</td>
+                                <td className="px-4 py-2.5 text-rose-500">{g.fine ? PKR(g.fine) : '—'}</td>
+                                <td className="px-4 py-2.5 font-bold text-emerald-600">{PKR(g.paid)}</td>
+                                <td className="px-4 py-2.5 font-black text-rose-700">{PKR(g.balance)}</td>
+                                <td className="px-4 py-2.5"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>{g.status}</span></td>
+                                <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{g.due_date || '—'}</td>
+                                <td className="px-4 py-2.5">
+                                  {g.status !== 'Paid' && g.balance > 0 && (
+                                    <motion.button whileTap={{ scale: 0.95 }}
+                                      onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '' }); }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white"
+                                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                      <DollarSign size={11} /> Collect
+                                    </motion.button>
+                                  )}
+                                </td>
+                              </motion.tr>
+                            );
+                          })}
+                          {ledgerFiltered.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-400">No records match filters</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
-                    <table className="w-full text-xs min-w-[750px]">
-                      <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['Roll #', 'Name', 'Class', 'Fee Group', 'Amount', 'Discount', 'Fine', 'Paid', 'Balance', 'Status', 'Due Date'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {ledgerFiltered.slice(0, 200).map((g, i) => {
-                          const st = students.find(s => s.roll_no === g.student_roll);
-                          return (
-                            <motion.tr key={g.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.005, 0.3) }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                              <td className="px-4 py-2.5 font-mono font-bold" style={{ color: ACCENT }}>{g.student_roll}</td>
-                              <td className="px-4 py-2.5 font-medium text-slate-900 max-w-[120px] truncate">{st?.full_name || '—'}</td>
-                              <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{st?.class_section || '—'}</td>
-                              <td className="px-4 py-2.5 text-slate-700 max-w-[140px] truncate">{g.fees_group}</td>
-                              <td className="px-4 py-2.5 font-bold text-slate-700">{PKR(g.amount)}</td>
-                              <td className="px-4 py-2.5 text-emerald-600">{g.discount ? PKR(g.discount) : '—'}</td>
-                              <td className="px-4 py-2.5 text-rose-500">{g.fine ? PKR(g.fine) : '—'}</td>
-                              <td className="px-4 py-2.5 font-bold text-emerald-600">{PKR(g.paid)}</td>
-                              <td className="px-4 py-2.5 font-black text-rose-700">{PKR(g.balance)}</td>
-                              <td className="px-4 py-2.5"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>{g.status}</span></td>
-                              <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{g.due_date || '—'}</td>
-                            </motion.tr>
-                          );
-                        })}
-                        {ledgerFiltered.length === 0 && <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">No records match filters</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </motion.div>
+                </motion.div>
               );
             })()}
 
+            {/* ════ ACCOUNTANT TRANSACTIONS ════ */}
             {isAccountant && tab === 'transactions' && (
               <motion.div key="txns" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
@@ -1706,14 +1568,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </motion.div>
             )}
 
+            {/* ════ ACCOUNTANT ADMISSIONS ════ */}
             {isAccountant && tab === 'admissions' && (
               <motion.div key="acc-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex gap-2 flex-wrap">
                     {[{ v: '', l: 'All' }, { v: 'Pending', l: 'Pending' }, { v: 'Approved', l: 'Approved' }, { v: 'Rejected', l: 'Rejected' }].map(({ v, l }) => (
-                      <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>
-                        {l} ({admForms.filter(f => !v || f.status === v).length})
-                      </button>
+                      <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
                     ))}
                   </div>
                   <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('new-admission')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}><UserPlus size={15} /> New Admission</motion.button>
@@ -1756,169 +1617,177 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </motion.div>
             )}
 
+            {/* ════ ACCOUNTANT NEW ADMISSION — with Notes field ════ */}
             {isAccountant && tab === 'new-admission' && (() => {
-              const FA = '#c2410c';   // orange-700 — form accent
-              const FG = 'linear-gradient(135deg,#ea580c,#c2410c)'; // form gradient
+              const FA = '#c2410c';
+              const FG = 'linear-gradient(135deg,#ea580c,#c2410c)';
               return (
-              <motion.div key="new-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <div className="max-w-4xl mx-auto bg-white rounded-3xl overflow-hidden border border-slate-100" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
-                  <div className="border-b-4 px-6 md:px-8 py-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ borderColor: FA }}>
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-full border-4 flex items-center justify-center bg-orange-50 flex-shrink-0" style={{ borderColor: FA }}><GraduationCap size={28} style={{ color: FA }} /></div>
-                      <div><p className="font-black text-slate-900 text-lg leading-tight">PAK INFORMATICS</p><p className="font-bold text-slate-600 text-sm">Group of Colleges</p><span className="text-white text-[9px] font-black px-2 py-0.5 rounded" style={{ background: FA }}>Gujranwala</span><p className="text-[10px] text-slate-400 mt-1">Saddar Bypass Road · 055-3200545</p></div>
-                    </div>
-                    <div className="text-center md:text-right">
-                      <p className="text-2xl font-black uppercase tracking-wide" style={{ color: FA }}>Admission Form</p>
-                      <p className="text-sm text-slate-500 mt-1">Session: <strong>2026–27</strong></p>
-                      <div className="mt-2 w-20 h-24 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 font-bold ml-auto">PHOTO</div>
-                    </div>
-                  </div>
-                  <div className="px-6 md:px-8 py-6 space-y-6">
-                    <div className="grid grid-cols-3 gap-4 pb-5 border-b border-slate-100">
-                      <F label="Form No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>Auto-assigned</div></F>
-                      <F label="Roll No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>#{nextRoll}</div></F>
-                      <F label="Session"><TS value={admForm.session} onChange={e => setF('session', e.target.value)}><option>2026-27</option><option>2025-26</option></TS></F>
-                    </div>
-                    <div className="pb-5 border-b border-slate-100 space-y-4">
-                      <F label="Applied For" req>
-                        <div className="flex flex-wrap gap-5 mt-2">
-                          {['Intermediate', 'ADP/BS', 'BS 0*', 'Others'].map(o => (
-                            <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('applied_for', o)}>
-                              <div className="w-4 h-4 rounded border-2 flex items-center justify-center" style={admForm.applied_for === o ? { background: FA, borderColor: FA } : { borderColor: '#94a3b8' }}>
-                                {admForm.applied_for === o && <div className="w-2 h-2 bg-white rounded-sm" />}
-                              </div>
-                              <span className="text-sm text-slate-700">{o}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </F>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <F label="Program" req><TS value={admForm.program} onChange={e => setF('program', e.target.value)}>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></F>
-                        <F label="Part / Year" req><TS value={admForm.part} onChange={e => setF('part', Number(e.target.value))}><option value={1}>Part 1 (1st Year)</option><option value={2}>Part 2 (2nd Year)</option></TS></F>
-                        <F label="Student Type"><TS value={admForm.student_type} onChange={e => setF('student_type', e.target.value)}><option>Regular</option><option>Summer Camp</option><option>Transfer</option></TS></F>
+                <motion.div key="new-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                  <div className="max-w-4xl mx-auto bg-white rounded-3xl overflow-hidden border border-slate-100" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
+                    <div className="border-b-4 px-6 md:px-8 py-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ borderColor: FA }}>
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-full border-4 flex items-center justify-center bg-orange-50 flex-shrink-0" style={{ borderColor: FA }}><GraduationCap size={28} style={{ color: FA }} /></div>
+                        <div><p className="font-black text-slate-900 text-lg leading-tight">PAK INFORMATICS</p><p className="font-bold text-slate-600 text-sm">Group of Colleges</p><span className="text-white text-[9px] font-black px-2 py-0.5 rounded" style={{ background: FA }}>Gujranwala</span><p className="text-[10px] text-slate-400 mt-1">Saddar Bypass Road · 055-3200545</p></div>
+                      </div>
+                      <div className="text-center md:text-right">
+                        <p className="text-2xl font-black uppercase tracking-wide" style={{ color: FA }}>Admission Form</p>
+                        <p className="text-sm text-slate-500 mt-1">Session: <strong>2026–27</strong></p>
+                        <div className="mt-2 w-20 h-24 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 font-bold ml-auto">PHOTO</div>
                       </div>
                     </div>
-                    <div className="pb-5 border-b border-slate-100 space-y-4">
-                      <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Personal Details</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <F label="Student's Name" req><TI placeholder="Full name as per B-Form" value={admForm.student_name} onChange={e => setF('student_name', e.target.value)} /></F>
-                        <F label="B Form / NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.b_form_nic} onChange={e => setF('b_form_nic', e.target.value)} /></F>
+                    <div className="px-6 md:px-8 py-6 space-y-6">
+                      <div className="grid grid-cols-3 gap-4 pb-5 border-b border-slate-100">
+                        <F label="Form No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>Auto-assigned</div></F>
+                        <F label="Roll No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>#{nextRoll}</div></F>
+                        <F label="Session"><TS value={admForm.session} onChange={e => setF('session', e.target.value)}><option>2026-27</option><option>2025-26</option></TS></F>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <F label="Father's Name" req><TI placeholder="Father's full name" value={admForm.father_name} onChange={e => setF('father_name', e.target.value)} /></F>
-                        <F label="Father's NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.father_nic} onChange={e => setF('father_nic', e.target.value)} /></F>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <F label="Father's Occupation"><TI placeholder="Business / Service / etc." value={admForm.father_occupation} onChange={e => setF('father_occupation', e.target.value)} /></F>
-                        <F label="Student's D.O.B"><TI type="date" value={admForm.student_dob} onChange={e => setF('student_dob', e.target.value)} /></F>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <F label="Cell No."><TI placeholder="0300-XXXXXXX" value={admForm.cell_no} onChange={e => setF('cell_no', e.target.value)} /></F>
-                        <F label="WhatsApp"><TI placeholder="0300-XXXXXXX" value={admForm.whatsapp_no} onChange={e => setF('whatsapp_no', e.target.value)} /></F>
-                        <F label="Email"><TI type="email" placeholder="student@email.com" value={admForm.email} onChange={e => setF('email', e.target.value)} /></F>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <F label="Religion"><TS value={admForm.religion} onChange={e => setF('religion', e.target.value)}><option>Islam</option><option>Christianity</option><option>Hinduism</option><option>Other</option></TS></F>
-                        <F label="Gender" req>
-                          <div className="flex gap-6 mt-2">
-                            {['Male', 'Female'].map(g => (
-                              <label key={g} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('gender', g)}>
-                                <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.gender === g ? { borderColor: FA } : { borderColor: '#94a3b8' }}>
-                                  {admForm.gender === g && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}
-                                </div>
-                                <span className="text-sm text-slate-700">{g}</span>
+                      <div className="pb-5 border-b border-slate-100 space-y-4">
+                        <F label="Applied For" req>
+                          <div className="flex flex-wrap gap-5 mt-2">
+                            {['Intermediate', 'ADP/BS', 'BS 0*', 'Others'].map(o => (
+                              <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('applied_for', o)}>
+                                <div className="w-4 h-4 rounded border-2 flex items-center justify-center" style={admForm.applied_for === o ? { background: FA, borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.applied_for === o && <div className="w-2 h-2 bg-white rounded-sm" />}</div>
+                                <span className="text-sm text-slate-700">{o}</span>
                               </label>
                             ))}
                           </div>
                         </F>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Program" req><TS value={admForm.program} onChange={e => setF('program', e.target.value)}>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></F>
+                          <F label="Part / Year" req><TS value={admForm.part} onChange={e => setF('part', Number(e.target.value))}><option value={1}>Part 1 (1st Year)</option><option value={2}>Part 2 (2nd Year)</option></TS></F>
+                          <F label="Student Type"><TS value={admForm.student_type} onChange={e => setF('student_type', e.target.value)}><option>Regular</option><option>Summer Camp</option><option>Transfer</option></TS></F>
+                        </div>
                       </div>
-                      <F label="Current Address">
-                        <textarea value={admForm.current_address} onChange={e => setF('current_address', e.target.value)} rows={2} placeholder="Street, Mohalla, City..."
-                          className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors resize-none" />
-                      </F>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Academic Record</div>
-                      <div className="overflow-x-auto rounded-xl border border-slate-200">
-                        <table className="w-full text-xs min-w-[680px]">
-                          <thead><tr style={{ background: FA }}>{['Particulars', 'Year', 'Roll No', 'Marks', 'Subjects', 'Board / University', 'Division', 'Remarks (%)'].map(h => <th key={h} className="px-3 py-2.5 text-left text-white font-black text-[10px] uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
-                          <tbody>
-                            <tr className="border-b border-slate-100 bg-slate-50/40">
-                              <td className="px-3 py-3 font-black text-slate-700">Matric</td>
-                              <td className="px-2 py-2"><TI placeholder="2024" value={admForm.matric_year} onChange={e => setF('matric_year', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.matric_roll_no} onChange={e => setF('matric_roll_no', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.matric_marks} onChange={e => setF('matric_marks', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Science" value={admForm.matric_subjects} onChange={e => setF('matric_subjects', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TS value={admForm.matric_board} onChange={e => setF('matric_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                              <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.matric_division} onChange={e => setF('matric_division', e.target.value)} /></td>
-                              <td className="px-2 py-2">
-                                <TI type="number" placeholder="%" value={admForm.matric_percentage} onChange={e => setF('matric_percentage', e.target.value)} />
-                                {pct > 0 && <div className="mt-1 px-2 py-0.5 rounded text-[9px] font-black inline-block bg-orange-50 border border-orange-200" style={{ color: FA }}>→ {sec}</div>}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-100">
-                              <td className="px-3 py-3 font-black text-slate-700">Intermediate</td>
-                              <td className="px-2 py-2"><TI placeholder="2026" value={admForm.inter_year} onChange={e => setF('inter_year', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.inter_roll_no} onChange={e => setF('inter_roll_no', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.inter_marks} onChange={e => setF('inter_marks', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.inter_subjects} onChange={e => setF('inter_subjects', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TS value={admForm.inter_board} onChange={e => setF('inter_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                              <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.inter_division} onChange={e => setF('inter_division', e.target.value)} /></td>
-                              <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
-                            </tr>
-                            <tr>
-                              <td className="px-3 py-3 font-black text-slate-700">Graduation</td>
-                              <td className="px-2 py-2"><TI placeholder="Year" value={admForm.graduation_year} onChange={e => setF('graduation_year', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.graduation_roll_no} onChange={e => setF('graduation_roll_no', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.graduation_marks} onChange={e => setF('graduation_marks', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.graduation_subjects} onChange={e => setF('graduation_subjects', e.target.value)} /></td>
-                              <td className="px-2 py-2"><TS value={admForm.graduation_board} onChange={e => setF('graduation_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                              <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.graduation_division} onChange={e => setF('graduation_division', e.target.value)} /></td>
-                              <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
-                            </tr>
-                          </tbody>
-                        </table>
+                      <div className="pb-5 border-b border-slate-100 space-y-4">
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Personal Details</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Student's Name" req><TI placeholder="Full name as per B-Form" value={admForm.student_name} onChange={e => setF('student_name', e.target.value)} /></F>
+                          <F label="B Form / NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.b_form_nic} onChange={e => setF('b_form_nic', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Father's Name" req><TI placeholder="Father's full name" value={admForm.father_name} onChange={e => setF('father_name', e.target.value)} /></F>
+                          <F label="Father's NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.father_nic} onChange={e => setF('father_nic', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Father's Occupation"><TI placeholder="Business / Service / etc." value={admForm.father_occupation} onChange={e => setF('father_occupation', e.target.value)} /></F>
+                          <F label="Student's D.O.B"><TI type="date" value={admForm.student_dob} onChange={e => setF('student_dob', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Cell No."><TI placeholder="0300-XXXXXXX" value={admForm.cell_no} onChange={e => setF('cell_no', e.target.value)} /></F>
+                          <F label="WhatsApp"><TI placeholder="0300-XXXXXXX" value={admForm.whatsapp_no} onChange={e => setF('whatsapp_no', e.target.value)} /></F>
+                          <F label="Email"><TI type="email" placeholder="student@email.com" value={admForm.email} onChange={e => setF('email', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Religion"><TS value={admForm.religion} onChange={e => setF('religion', e.target.value)}><option>Islam</option><option>Christianity</option><option>Hinduism</option><option>Other</option></TS></F>
+                          <F label="Gender" req>
+                            <div className="flex gap-6 mt-2">
+                              {['Male', 'Female'].map(g => (
+                                <label key={g} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('gender', g)}>
+                                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.gender === g ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.gender === g && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
+                                  <span className="text-sm text-slate-700">{g}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </F>
+                        </div>
+                        <F label="Current Address"><textarea value={admForm.current_address} onChange={e => setF('current_address', e.target.value)} rows={2} placeholder="Street, Mohalla, City..." className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors resize-none" /></F>
                       </div>
-                    </div>
-                    <div className="pb-5 border-b border-slate-100 space-y-4">
-                      <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <F label="Annual Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="40000" /></F>
-                        <F label="No. of Instalments"><TS value={admForm.num_instalments} onChange={e => setF('num_instalments', Number(e.target.value))}><option value={1}>Full Payment</option><option value={2}>2 Instalments</option><option value={3}>3 Instalments</option><option value={4}>4 Instalments</option><option value={5}>5 Instalments</option><option value={6}>6 Instalments</option><option value={7}>7 Instalments</option><option value={8}>8 Instalments</option><option value={9}>9 Instalments</option><option value={10}>10 Instalments</option><option value={11}>11 Instalments</option><option value={12}>12 Instalments</option></TS></F>
-                        <F label="Is Fresher?">
-                          <div className="flex gap-6 mt-2">
-                            {[true, false].map(v => (
-                              <label key={String(v)} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('is_fresher', v)}>
-                                <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.is_fresher === v ? { borderColor: FA } : { borderColor: '#94a3b8' }}>
-                                  {admForm.is_fresher === v && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}
-                                </div>
-                                <span className="text-sm text-slate-700">{v ? 'Yes' : 'No'}</span>
-                              </label>
-                            ))}
+                      <div className="space-y-3">
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Academic Record</div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="w-full text-xs min-w-[680px]">
+                            <thead><tr style={{ background: FA }}>{['Particulars', 'Year', 'Roll No', 'Marks', 'Subjects', 'Board / University', 'Division', 'Remarks (%)'].map(h => <th key={h} className="px-3 py-2.5 text-left text-white font-black text-[10px] uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
+                            <tbody>
+                              <tr className="border-b border-slate-100 bg-slate-50/40">
+                                <td className="px-3 py-3 font-black text-slate-700">Matric</td>
+                                <td className="px-2 py-2"><TI placeholder="2024" value={admForm.matric_year} onChange={e => setF('matric_year', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.matric_roll_no} onChange={e => setF('matric_roll_no', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.matric_marks} onChange={e => setF('matric_marks', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Science" value={admForm.matric_subjects} onChange={e => setF('matric_subjects', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TS value={admForm.matric_board} onChange={e => setF('matric_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
+                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.matric_division} onChange={e => setF('matric_division', e.target.value)} /></td>
+                                <td className="px-2 py-2">
+                                  <TI type="number" placeholder="%" value={admForm.matric_percentage} onChange={e => setF('matric_percentage', e.target.value)} />
+                                  {pct > 0 && <div className="mt-1 px-2 py-0.5 rounded text-[9px] font-black inline-block bg-orange-50 border border-orange-200" style={{ color: FA }}>→ {sec}</div>}
+                                </td>
+                              </tr>
+                              <tr className="border-b border-slate-100">
+                                <td className="px-3 py-3 font-black text-slate-700">Intermediate</td>
+                                <td className="px-2 py-2"><TI placeholder="2026" value={admForm.inter_year} onChange={e => setF('inter_year', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.inter_roll_no} onChange={e => setF('inter_roll_no', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.inter_marks} onChange={e => setF('inter_marks', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.inter_subjects} onChange={e => setF('inter_subjects', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TS value={admForm.inter_board} onChange={e => setF('inter_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
+                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.inter_division} onChange={e => setF('inter_division', e.target.value)} /></td>
+                                <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
+                              </tr>
+                              <tr>
+                                <td className="px-3 py-3 font-black text-slate-700">Graduation</td>
+                                <td className="px-2 py-2"><TI placeholder="Year" value={admForm.graduation_year} onChange={e => setF('graduation_year', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.graduation_roll_no} onChange={e => setF('graduation_roll_no', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.graduation_marks} onChange={e => setF('graduation_marks', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.graduation_subjects} onChange={e => setF('graduation_subjects', e.target.value)} /></td>
+                                <td className="px-2 py-2"><TS value={admForm.graduation_board} onChange={e => setF('graduation_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
+                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.graduation_division} onChange={e => setF('graduation_division', e.target.value)} /></td>
+                                <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div className="pb-5 border-b border-slate-100 space-y-4">
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Annual Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="40000" /></F>
+                          <F label="No. of Instalments"><TS value={admForm.num_instalments} onChange={e => setF('num_instalments', Number(e.target.value))}><option value={1}>Full Payment</option><option value={2}>2 Instalments</option><option value={3}>3 Instalments</option><option value={4}>4 Instalments</option><option value={5}>5 Instalments</option><option value={6}>6 Instalments</option><option value={7}>7 Instalments</option><option value={8}>8 Instalments</option><option value={9}>9 Instalments</option><option value={10}>10 Instalments</option><option value={11}>11 Instalments</option><option value={12}>12 Instalments</option></TS></F>
+                          <F label="Is Fresher?">
+                            <div className="flex gap-6 mt-2">
+                              {[true, false].map(v => (
+                                <label key={String(v)} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('is_fresher', v)}>
+                                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.is_fresher === v ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.is_fresher === v && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
+                                  <span className="text-sm text-slate-700">{v ? 'Yes' : 'No'}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </F>
+                        </div>
+                        {pct > 0 && sec && (
+                          <div className="p-4 rounded-2xl border" style={{ background: '#FFF7ED', borderColor: '#FED7AA' }}>
+                            <p className="text-xs font-black" style={{ color: FA }}>Auto-assigned Section: <span className="text-slate-900 text-sm">{sec}</span></p>
+                            <p className="text-xs font-black mt-0.5" style={{ color: FA }}>Class Code: <span className="text-slate-900 text-sm">{cls || 'TBD'}</span></p>
                           </div>
+                        )}
+                      </div>
+
+                      {/* ══ NOTES FIELD — at the end of admission form ══ */}
+                      <div className="pb-5 border-b border-slate-100 space-y-3">
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: '#64748b' }}>Notes</div>
+                        <F label="Additional Notes (optional)">
+                          <textarea
+                            value={admForm.notes || ''}
+                            onChange={e => setF('notes', e.target.value)}
+                            rows={3}
+                            placeholder="Any additional information, special remarks, or notes about this student or admission…"
+                            className="w-full border-2 border-slate-200 focus:border-blue-500 rounded-xl bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition-colors resize-none placeholder:text-slate-300"
+                          />
                         </F>
                       </div>
-                      {pct > 0 && sec && (
-                        <div className="p-4 rounded-2xl border" style={{ background: '#FFF7ED', borderColor: '#FED7AA' }}>
-                          <p className="text-xs font-black" style={{ color: FA }}>Auto-assigned Section: <span className="text-slate-900 text-sm">{sec}</span></p>
-                          <p className="text-xs font-black mt-0.5" style={{ color: FA }}>Class Code: <span className="text-slate-900 text-sm">{cls || 'TBD'}</span></p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setAdmForm({ ...EMPTY_FORM })} className="px-6 py-4 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Clear Form</button>
-                      <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveAdmission}
-                        className="flex-1 py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50"
-                        style={{ background: FG, boxShadow: '0 6px 20px rgba(194,65,12,0.35)' }}>
-                        {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Admission Form</>}
-                      </motion.button>
+
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={() => setAdmForm({ ...EMPTY_FORM })} className="px-6 py-4 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Clear Form</button>
+                        <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveAdmission}
+                          className="flex-1 py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                          style={{ background: FG, boxShadow: '0 6px 20px rgba(194,65,12,0.35)' }}>
+                          {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Admission Form</>}
+                        </motion.button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
+                </motion.div>
               );
             })()}
 
+            {/* ════ ACCOUNTANT DISCOUNTS ════ */}
             {isAccountant && tab === 'discounts' && (
               <motion.div key="disc" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
@@ -1940,26 +1809,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                           <div className="flex items-start gap-3">
                             <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', d.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : d.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}><Tag size={16} /></div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="font-black text-slate-900">{st?.full_name || `Roll #${d.student_roll}`}</p>
-                                <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black', d.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : d.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{d.status || 'Pending'}</span>
-                              </div>
+                              <div className="flex items-center gap-2"><p className="font-black text-slate-900">{st?.full_name || `Roll #${d.student_roll}`}</p><span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black', d.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : d.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{d.status || 'Pending'}</span></div>
                               <p className="text-xs text-slate-500 mt-0.5">{d.reason}</p>
-                              <div className="flex items-center gap-3 mt-1.5">
-                                <span className="text-[11px] text-slate-400">Amount: <strong className="font-black" style={{ color: ACCENT }}>{PKR(d.discount_amount)}</strong></span>
-                                {d.reference_name && <span className="text-[11px] text-slate-400">Ref: {d.reference_name}</span>}
-                              </div>
+                              <div className="flex items-center gap-3 mt-1.5"><span className="text-[11px] text-slate-400">Amount: <strong className="font-black" style={{ color: ACCENT }}>{PKR(d.discount_amount)}</strong></span>{d.reference_name && <span className="text-[11px] text-slate-400">Ref: {d.reference_name}</span>}</div>
                             </div>
                             {isPending && (
                               <div className="flex gap-1.5 flex-shrink-0">
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => approveDiscount(d)} disabled={discSaving === d.id}
-                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => approveDiscount(d)} disabled={discSaving === d.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                   {discSaving === d.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
                                 </motion.button>
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => rejectDiscount(d)} disabled={discSaving === d.id}
-                                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
-                                  <X size={10} /> Reject
-                                </motion.button>
+                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => rejectDiscount(d)} disabled={discSaving === d.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50"><X size={10} /> Reject</motion.button>
                               </div>
                             )}
                             {!isPending && d.reviewed_by && <p className="text-[10px] text-slate-400 flex-shrink-0">by {d.reviewed_by}</p>}
@@ -1972,57 +1831,42 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </motion.div>
             )}
 
+            {/* ════ ACCOUNTANT STUDENTS — Profile view only, no fee collection ════ */}
             {isAccountant && tab === 'students' && (
               <motion.div key="acc-stu" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+                  <GraduationCap size={16} className="text-blue-600 flex-shrink-0" />
+                  <p className="text-sm font-bold text-blue-900">Student Profiles — Click any row to view full profile including results, course progress and fee summary. To collect fees, use the <button onClick={() => setTab('fee-ledger')} className="underline font-black text-blue-700">Fee Ledger</button> tab.</p>
+                </div>
 
-                {/* ── Summary stats ── */}
+                {/* Summary */}
                 <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { l: 'Showing', v: filteredStudents.length, c: ACCENT },
-                    { l: 'Total Enrolled', v: students.length, c: '#059669' },
-                    { l: 'Fee Groups', v: feeGroups.length, c: '#D97706' },
-                  ].map(({ l, v, c }) => (
-                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p>
-                      <p className="text-2xl font-black" style={{ color: c }}>{v}</p>
-                    </div>
+                  {[{ l: 'Showing', v: filteredStudents.length, c: ACCENT }, { l: 'Total Enrolled', v: students.length, c: '#059669' }, { l: 'Fee Groups', v: feeGroups.length, c: '#D97706' }].map(({ l, v, c }) => (
+                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
                   ))}
                 </div>
 
-                {/* ── Filter panel ── */}
+                {/* Filter */}
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                   <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
                     <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filter by Class</p>
-                    {(filterProgram || filterSection || searchQ) && (
-                      <button
-                        onClick={() => { setFilterProgram(''); setFilterSection(''); setSearchQ(''); }}
-                        className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all"
-                        style={{ color: ACCENT, background: `${ACCENT}12` }}>
-                        <X size={11} /> Clear All
-                      </button>
-                    )}
+                    {(filterProgram || filterSection || searchQ) && <button onClick={() => { setFilterProgram(''); setFilterSection(''); setSearchQ(''); }} className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all" style={{ color: ACCENT, background: `${ACCENT}12` }}><X size={11} /> Clear All</button>}
                   </div>
                   <div className="p-4 space-y-3">
-                    {/* Program chips */}
                     <div>
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
                       <div className="flex flex-wrap gap-2">
-                        {['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'].map(prog => {
+                        {PROGRAMS.map(prog => {
                           const count = students.filter(s => s.program === prog).length;
                           const active = filterProgram === prog;
                           return (
-                            <motion.button key={prog} whileTap={{ scale: 0.96 }}
-                              onClick={() => { setFilterProgram(active ? '' : prog); setFilterSection(''); }}
-                              className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}
-                              style={active ? { background: GRADIENT, borderColor: 'transparent' } : {}}>
+                            <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setFilterProgram(active ? '' : prog); setFilterSection(''); }} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT, borderColor: 'transparent' } : {}}>
                               {prog} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span>
                             </motion.button>
                           );
                         })}
                       </div>
                     </div>
-
-                    {/* Section chips — only show when program selected */}
                     <AnimatePresence>
                       {filteredSectionOptions.length > 0 && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
@@ -2031,205 +1875,136 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             {filteredSectionOptions.map(sec => {
                               const count = students.filter(s => s.class_section === sec).length;
                               const active = filterSection === sec;
-                              return (
-                                <motion.button key={sec} whileTap={{ scale: 0.96 }}
-                                  onClick={() => setFilterSection(active ? '' : sec)}
-                                  className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}
-                                  style={active ? { background: GRADIENT } : {}}>
-                                  {sec} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span>
-                                </motion.button>
-                              );
+                              return <motion.button key={sec} whileTap={{ scale: 0.96 }} onClick={() => setFilterSection(active ? '' : sec)} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT } : {}}>{sec} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span></motion.button>;
                             })}
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
-
-                    {/* Search bar */}
                     <div className="relative pt-1">
                       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                      <input
-                        value={searchQ}
-                        onChange={e => setSearchQ(e.target.value)}
-                        placeholder="Search name, roll no, father name…"
-                        className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all"
-                      />
+                      <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search name, roll no, father name…" className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
                     </div>
                   </div>
                 </div>
 
-                {/* ── Active filter breadcrumb ── */}
-                {(filterProgram || filterSection) && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Viewing:</span>
-                    {filterProgram && (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black text-white" style={{ background: GRADIENT }}>
-                        {filterProgram}
-                        <button onClick={() => { setFilterProgram(''); setFilterSection(''); }} className="hover:opacity-70"><X size={10} /></button>
-                      </span>
-                    )}
-                    {filterSection && (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border border-slate-200 bg-white text-slate-700">
-                        {filterSection}
-                        <button onClick={() => setFilterSection('')} className="text-slate-400 hover:text-slate-700"><X size={10} /></button>
-                      </span>
-                    )}
-                    <span className="text-[11px] text-slate-400 font-medium">{filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}</span>
-                  </div>
-                )}
-
-                {/* ── Table ── */}
+                {/* Student table — click opens full profile panel */}
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-bold text-slate-500">
-                      {filteredStudents.length} of {students.length} students
-                      {filterSection ? ` · ${filterSection}` : filterProgram ? ` · ${filterProgram}` : ''}
-                    </p>
-                    {filteredStudents.length > 0 && (
-                      <p className="text-[10px] font-black text-slate-400">
-                        Total Outstanding: <span className="font-black" style={{ color: '#C0392B' }}>
-                          {PKR(filteredStudents.reduce((sum, s) => {
-                            const sg = feeGroups.filter(g => g.student_roll === s.roll_no);
-                            return sum + sg.reduce((t, g) => t + (g.balance || 0), 0);
-                          }, 0))}
-                        </span>
-                      </p>
-                    )}
+                    <p className="text-xs font-bold text-slate-500">{filteredStudents.length} of {students.length} students · click a row to view full profile</p>
                   </div>
-                  <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
-                    <table className="w-full text-xs min-w-[620px]">
+                  <div className="overflow-x-auto" style={{ maxHeight: 400 }}>
+                    <table className="w-full text-xs min-w-[580px]">
                       <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['Roll', 'Name', 'Father', 'Class', 'Total Fee', 'Paid', 'Balance', 'Fee Status'].map(h => (
-                          <th key={h} className="px-3 md:px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>
-                        ))}</tr>
+                        <tr>{['Roll', 'Name', 'Father', 'Class', 'Program', 'Gender', 'Status', ''].map(h => <th key={h} className="px-3 md:px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
                       </thead>
                       <tbody>
                         {filteredStudents.map((s, i) => {
-                          const sg   = feeGroups.filter(g => g.student_roll === s.roll_no);
-                          const bal  = sg.reduce((t, g) => t + (g.balance || 0), 0);
-                          const paid = sg.reduce((t, g) => t + (g.paid || 0), 0);
-                          const feeStatus = bal === 0 && paid > 0 ? 'Paid' : bal > 0 && paid > 0 ? 'Partial' : bal > 0 ? 'Unpaid' : '—';
                           const isSelected = selectedAccStu?.roll_no === s.roll_no;
                           return (
-                            <motion.tr key={s.roll_no} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: Math.min(i * 0.008, 0.25) }}
-                              onClick={() => setSelectedAccStu(isSelected ? null : s)}
+                            <motion.tr key={s.roll_no} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.008, 0.25) }}
+                              onClick={() => openAccStudentProfile(s)}
                               className={cn('border-b border-slate-50 hover:bg-blue-50/40 cursor-pointer transition-colors', isSelected ? 'bg-blue-50/60' : '')}>
                               <td className="px-3 md:px-4 py-3 font-mono text-slate-400 text-[10px]">{s.roll_no}</td>
                               <td className="px-3 md:px-4 py-3 font-black text-slate-900 max-w-[130px] truncate">{s.full_name}</td>
                               <td className="px-3 md:px-4 py-3 text-slate-500 max-w-[100px] truncate">{s.father_name || '—'}</td>
-                              <td className="px-3 md:px-4 py-3 whitespace-nowrap">
-                                <span className="px-2 py-0.5 rounded text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100">{s.class_section}</span>
-                              </td>
-                              <td className="px-3 md:px-4 py-3 font-bold text-slate-700">{PKR(s.total_package)}</td>
-                              <td className="px-3 md:px-4 py-3 font-bold text-emerald-600">{PKR(paid)}</td>
-                              <td className="px-3 md:px-4 py-3 font-black" style={{ color: bal > 0 ? '#C0392B' : '#059669' }}>{PKR(bal)}</td>
-                              <td className="px-3 md:px-4 py-3">
-                                <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black',
-                                  feeStatus === 'Paid'    ? 'bg-emerald-50 text-emerald-700' :
-                                  feeStatus === 'Partial' ? 'bg-amber-50 text-amber-700' :
-                                  feeStatus === 'Unpaid'  ? 'bg-rose-50 text-rose-700' :
-                                  'bg-slate-100 text-slate-500')}>
-                                  {feeStatus}
-                                </span>
-                              </td>
+                              <td className="px-3 md:px-4 py-3 whitespace-nowrap"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100">{s.class_section}</span></td>
+                              <td className="px-3 md:px-4 py-3 text-slate-500 max-w-[80px] truncate">{s.program}</td>
+                              <td className="px-3 md:px-4 py-3"><span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', s.gender === 'Male' ? 'bg-blue-50 text-blue-700' : 'bg-pink-50 text-pink-700')}>{s.gender}</span></td>
+                              <td className="px-3 md:px-4 py-3"><span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', s.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>{s.status}</span></td>
+                              <td className="px-3 md:px-4 py-3"><Eye size={14} className="text-blue-400" /></td>
                             </motion.tr>
                           );
                         })}
-                        {filteredStudents.length === 0 && (
-                          <tr><td colSpan={8} className="px-4 py-12 text-center">
-                            <Users size={28} className="mx-auto mb-2 text-slate-200" />
-                            <p className="text-slate-400 text-sm font-bold">No students match the current filters</p>
-                            <p className="text-slate-300 text-xs mt-1">Try adjusting the program or section filter</p>
-                          </td></tr>
-                        )}
+                        {filteredStudents.length === 0 && <tr><td colSpan={8} className="px-4 py-12 text-center"><Users size={28} className="mx-auto mb-2 text-slate-200" /><p className="text-slate-400 text-sm font-bold">No students match</p></td></tr>}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
-                {/* ── Student detail panel ── */}
+                {/* ── Full Student Profile Panel ── */}
                 <AnimatePresence>
-                  {selectedAccStu && (() => {
-                    const stuGroups = feeGroups.filter(g => g.student_roll === selectedAccStu.roll_no);
-                    const totalBal  = stuGroups.reduce((t, g) => t + (g.balance || 0), 0);
-                    const totalPaid = stuGroups.reduce((t, g) => t + (g.paid || 0), 0);
-                    return (
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-                        className="bg-white rounded-3xl border border-blue-200 overflow-hidden shadow-md">
-                        {/* Header */}
-                        <div className="px-5 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)' }}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white text-lg flex-shrink-0"
-                              style={{ background: `hsl(${(selectedAccStu.roll_no * 37) % 360},55%,48%)` }}>
-                              {selectedAccStu.full_name?.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="font-black text-slate-900">{selectedAccStu.full_name}</p>
-                              <p className="text-xs text-slate-500">Roll #{selectedAccStu.roll_no} · {selectedAccStu.class_section} · {selectedAccStu.program} P{selectedAccStu.part}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">Father: {selectedAccStu.father_name || '—'}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Outstanding</p>
-                              <p className="text-xl font-black" style={{ color: totalBal > 0 ? '#C0392B' : '#059669' }}>{PKR(totalBal)}</p>
-                            </div>
-                            <button onClick={() => setSelectedAccStu(null)} className="text-slate-400 hover:text-slate-700 ml-2"><X size={18} /></button>
+                  {selectedAccStu && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="bg-white rounded-3xl border border-blue-200 overflow-hidden shadow-md">
+                      {/* Header */}
+                      <div className="px-5 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)' }}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white text-lg flex-shrink-0" style={{ background: `hsl(${(selectedAccStu.roll_no * 37) % 360},55%,48%)` }}>{selectedAccStu.full_name?.charAt(0)}</div>
+                          <div>
+                            <p className="font-black text-slate-900">{selectedAccStu.full_name}</p>
+                            <p className="text-xs text-slate-500">Roll #{selectedAccStu.roll_no} · {selectedAccStu.class_section} · {selectedAccStu.program} Part {selectedAccStu.part}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">Father: {selectedAccStu.father_name || '—'} · {selectedAccStu.gender} · <span className={cn('font-bold', selectedAccStu.status === 'Active' ? 'text-emerald-600' : 'text-rose-600')}>{selectedAccStu.status}</span></p>
                           </div>
                         </div>
+                        <button onClick={() => { setSelectedAccStu(null); setStuFeeGroups([]); setStudentProgress([]); }} className="text-slate-400 hover:text-slate-700 ml-2"><X size={18} /></button>
+                      </div>
 
-                        {/* Fee groups list */}
-                        <div className="p-4 space-y-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Fee Groups</p>
-                            <div className="flex gap-3 text-[10px] font-bold text-slate-400">
-                              <span>Paid: <strong className="text-emerald-600">{PKR(totalPaid)}</strong></span>
-                              <span>Balance: <strong className="text-rose-600">{PKR(totalBal)}</strong></span>
-                            </div>
+                      {stuFeeLoading ? (
+                        <div className="flex items-center justify-center py-10"><Loader2 className="animate-spin text-blue-400" size={24} /></div>
+                      ) : (
+                        <div className="p-5 space-y-5">
+                          {/* Badge & XP */}
+                          <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                            <span className="text-2xl">{selectedAccStu.current_badge?.split(' ')[0] || '🥉'}</span>
+                            <div><p className="font-black text-slate-900 text-sm">{selectedAccStu.current_badge || 'Newcomer'}</p><p className="text-xs text-slate-400">{(selectedAccStu.total_xp || 0).toLocaleString()} XP earned</p></div>
                           </div>
-                          {stuGroups.length === 0 ? (
-                            <p className="text-sm text-slate-400 text-center py-4">No fee groups assigned yet</p>
-                          ) : stuGroups.map(g => (
-                            <div key={g.id} className={cn('flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all',
-                              g.status === 'Paid'    ? 'bg-emerald-50/50 border-emerald-100' :
-                              g.status === 'Partial' ? 'bg-amber-50/50 border-amber-100' :
-                              'bg-rose-50/30 border-rose-100')}>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="text-sm font-black text-slate-900">{g.fees_group}</p>
-                                  <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black',
-                                    g.status === 'Paid'    ? 'bg-emerald-100 text-emerald-700' :
-                                    g.status === 'Partial' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-rose-100 text-rose-700')}>{g.status}</span>
-                                </div>
-                                <div className="flex gap-3 mt-0.5 flex-wrap">
-                                  <span className="text-[11px] text-slate-400">Amount: <strong>{PKR(g.amount)}</strong></span>
-                                  {g.discount > 0 && <span className="text-[11px] text-emerald-600">Discount: -{PKR(g.discount)}</span>}
-                                  {g.fine > 0    && <span className="text-[11px] text-rose-500">Fine: +{PKR(g.fine)}</span>}
-                                  <span className="text-[11px] text-emerald-600">Paid: {PKR(g.paid)}</span>
-                                  <span className="text-[11px] font-black" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>Balance: {PKR(g.balance)}</span>
-                                  {g.due_date && <span className="text-[11px] text-slate-400">Due: {g.due_date}</span>}
-                                </div>
+
+                          {/* Course Progress */}
+                          <div>
+                            <p className="font-black text-slate-900 text-sm mb-3">📚 Course Progress</p>
+                            {studentProgress.length === 0
+                              ? <p className="text-sm text-slate-400 italic">No course progress data recorded yet</p>
+                              : <div className="space-y-3">{studentProgress.map((cp: any) => { const p2 = cp.progress_pct || 0; const color = p2 >= 80 ? '#059669' : p2 >= 50 ? '#0891B2' : p2 >= 25 ? '#D97706' : '#C0392B'; return <ProgressBar key={cp.id} pct={p2} color={color} label={cp.subject} sub={`${cp.topics_done}/${cp.topics_total} topics · ${p2}%`} />; })}</div>
+                            }
+                          </div>
+
+                          {/* Fee Summary (read-only view) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <p className="font-black text-slate-900 text-sm">💰 Fee Summary</p>
+                              <div className="flex gap-3 text-[10px] font-bold text-slate-400">
+                                <span>Paid: <strong className="text-emerald-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.paid || 0), 0))}</strong></span>
+                                <span>Due: <strong className="text-rose-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.balance || 0), 0))}</strong></span>
                               </div>
-                              {g.status !== 'Paid' && g.balance > 0 && (
-                                <motion.button whileTap={{ scale: 0.95 }}
-                                  onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '' }); }}
-                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black text-white flex-shrink-0"
-                                  style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                  <DollarSign size={12} /> Collect
-                                </motion.button>
-                              )}
                             </div>
-                          ))}
+                            {stuFeeGroups.length === 0
+                              ? <p className="text-sm text-slate-400 italic">No fee records assigned yet</p>
+                              : (
+                                <div className="space-y-2">
+                                  {stuFeeGroups.map(g => (
+                                    <div key={g.id} className={cn('flex items-center justify-between px-4 py-3 rounded-xl border', g.status === 'Paid' ? 'bg-emerald-50/50 border-emerald-100' : g.status === 'Partial' ? 'bg-amber-50/50 border-amber-100' : 'bg-rose-50/30 border-rose-100')}>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <p className="text-sm font-black text-slate-900">{g.fees_group}</p>
+                                          <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', g.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')}>{g.status}</span>
+                                        </div>
+                                        <div className="flex gap-3 mt-0.5 flex-wrap">
+                                          <span className="text-[11px] text-slate-400">Amount: <strong>{PKR(g.amount)}</strong></span>
+                                          {g.discount > 0 && <span className="text-[11px] text-emerald-600">Discount: -{PKR(g.discount)}</span>}
+                                          {g.fine > 0 && <span className="text-[11px] text-rose-500">Fine: +{PKR(g.fine)}</span>}
+                                          <span className="text-[11px] text-emerald-600">Paid: {PKR(g.paid)}</span>
+                                          {g.due_date && <span className="text-[11px] text-slate-400">Due: {g.due_date}</span>}
+                                        </div>
+                                      </div>
+                                      <span className="font-black text-sm ml-3 flex-shrink-0" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>{PKR(g.balance || 0)}</span>
+                                    </div>
+                                  ))}
+                                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                                    <p className="text-xs text-slate-500 font-bold">To collect payment, use the <button onClick={() => { setSelectedAccStu(null); setTab('fee-ledger'); }} className="text-blue-600 underline font-black">Fee Ledger</button> tab.</p>
+                                  </div>
+                                </div>
+                              )
+                            }
+                          </div>
                         </div>
-                      </motion.div>
-                    );
-                  })()}
+                      )}
+                    </motion.div>
+                  )}
                 </AnimatePresence>
               </motion.div>
             )}
 
+            {/* ════ ACCOUNTANT REPORTS ════ */}
             {isAccountant && tab === 'reports' && (
               <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2279,8 +2054,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50" style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
         <div className="flex items-center justify-around px-2 py-2">
           {MOBILE_PRIMARY.map(({ id, label, icon: Icon }) => {
-            const active = tab === id;
-            const badgeN = getBadge(id);
+            const active = tab === id; const badgeN = getBadge(id);
             return (
               <button key={id} onClick={() => setTab(id)} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-1 min-w-0" style={{ color: active ? ACCENT : '#94a3b8' }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={active ? { background: `${ACCENT}18` } : {}}>
@@ -2292,7 +2066,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </button>
             );
           })}
-          {/* More */}
           <div className="relative flex-1 min-w-0">
             <button onClick={() => setMoreOpen(p => !p)} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl w-full" style={{ color: MOBILE_MORE.some(n => n.id === tab) ? ACCENT : '#94a3b8' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={MOBILE_MORE.some(n => n.id === tab) ? { background: `${ACCENT}18` } : {}}><Settings size={19} /></div>
@@ -2309,7 +2082,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               )}
             </AnimatePresence>
           </div>
-          {/* Logout */}
           <button onClick={onLogout} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-1 min-w-0" style={{ color: '#ef4444' }}>
             <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center"><LogOut size={19} className="text-rose-500" /></div>
             <span className="text-[9px] font-black uppercase tracking-tight">Exit</span>
@@ -2327,77 +2099,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               <div className="h-1 bg-emerald-500" />
               <div className="p-6">
                 <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h3 className="font-black text-slate-900 text-lg">Collect Fee</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">{collectModal.fees_group}</p>
-                  </div>
+                  <div><h3 className="font-black text-slate-900 text-lg">Collect Fee</h3><p className="text-xs text-slate-400 mt-0.5">{collectModal.fees_group}</p></div>
                   <button onClick={() => setCollectModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
                 </div>
-
-                {/* Balance summary */}
                 <div className="grid grid-cols-3 gap-3 mb-5">
-                  {[
-                    { l: 'Total',   v: PKR(collectModal.amount),  c: 'text-slate-700' },
-                    { l: 'Paid',    v: PKR(collectModal.paid),     c: 'text-emerald-600' },
-                    { l: 'Balance', v: PKR(collectModal.balance),  c: 'text-rose-600' },
-                  ].map(({ l, v, c }) => (
-                    <div key={l} className="bg-slate-50 rounded-2xl p-3 text-center border border-slate-100">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p>
-                      <p className={cn('text-sm font-black', c)}>{v}</p>
-                    </div>
+                  {[{ l: 'Total', v: PKR(collectModal.amount), c: 'text-slate-700' }, { l: 'Paid', v: PKR(collectModal.paid), c: 'text-emerald-600' }, { l: 'Balance', v: PKR(collectModal.balance), c: 'text-rose-600' }].map(({ l, v, c }) => (
+                    <div key={l} className="bg-slate-50 rounded-2xl p-3 text-center border border-slate-100"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-sm font-black', c)}>{v}</p></div>
                   ))}
                 </div>
-
                 <div className="space-y-4">
-                  {/* Amount */}
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount to Collect (PKR)</label>
-                    <input
-                      type="number"
-                      value={feePayForm.amount}
-                      onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))}
-                      placeholder={`Max: Rs ${collectModal.balance?.toLocaleString('en-PK')}`}
-                      className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
-                    />
-                    {/* Quick amount chips */}
+                    <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder={`Max: Rs ${collectModal.balance?.toLocaleString('en-PK')}`} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all" />
                     <div className="flex gap-2 mt-2 flex-wrap">
                       {[collectModal.balance, Math.round(collectModal.balance / 2), Math.round(collectModal.balance / 4)].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map(amt => (
-                        <button key={amt} onClick={() => setFeePayForm(p => ({ ...p, amount: String(amt) }))}
-                          className="px-3 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">
-                          {PKR(amt)}
-                        </button>
+                        <button key={amt} onClick={() => setFeePayForm(p => ({ ...p, amount: String(amt) }))} className="px-3 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">{PKR(amt)}</button>
                       ))}
                     </div>
                   </div>
-                  {/* Payment method */}
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Payment Method</label>
                     <div className="flex gap-2 flex-wrap">
                       {['Cash', 'Bank Transfer', 'Cheque', 'Online'].map(m => (
-                        <button key={m} onClick={() => setFeePayForm(p => ({ ...p, method: m }))}
-                          className={cn('px-3 py-2 rounded-xl text-xs font-black border transition-all', feePayForm.method === m ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200')}
-                          style={feePayForm.method === m ? { background: 'linear-gradient(135deg,#059669,#10b981)' } : {}}>
-                          {m}
-                        </button>
+                        <button key={m} onClick={() => setFeePayForm(p => ({ ...p, method: m }))} className={cn('px-3 py-2 rounded-xl text-xs font-black border transition-all', feePayForm.method === m ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200')} style={feePayForm.method === m ? { background: 'linear-gradient(135deg,#059669,#10b981)' } : {}}>{m}</button>
                       ))}
                     </div>
                   </div>
-                  {/* Receipt */}
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Receipt No. (optional)</label>
-                    <input
-                      value={feePayForm.receipt}
-                      onChange={e => setFeePayForm(p => ({ ...p, receipt: e.target.value }))}
-                      placeholder="e.g. REC-2026-001"
-                      className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-all"
-                    />
+                    <input value={feePayForm.receipt} onChange={e => setFeePayForm(p => ({ ...p, receipt: e.target.value }))} placeholder="e.g. REC-2026-001" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-all" />
                   </div>
                   {errorMsg && <p className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-2 rounded-xl border border-rose-200">⚠️ {errorMsg}</p>}
                   <div className="flex gap-3 pt-1">
                     <button onClick={() => setCollectModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
-                    <motion.button whileTap={{ scale: 0.97 }} onClick={collectFee} disabled={saving}
-                      className="flex-1 py-3 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-40"
-                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                    <motion.button whileTap={{ scale: 0.97 }} onClick={collectFee} disabled={saving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                       {saving ? <Loader2 size={15} className="animate-spin" /> : <><DollarSign size={15} /> Collect Fee</>}
                     </motion.button>
                   </div>
@@ -2436,7 +2171,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         )}
       </AnimatePresence>
 
-      {/* FORM PREVIEW MODAL (Accountant only) */}
+      {/* FORM PREVIEW MODAL */}
       <AnimatePresence>
         {preview && isAccountant && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -2449,7 +2184,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
-                {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(preview.fee_package)], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
+                {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(preview.fee_package)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
                   <div key={l} className="flex items-start justify-between py-2 border-b border-slate-50">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest w-40 flex-shrink-0">{l}</span>
                     <span className="text-sm font-bold text-slate-800 text-right flex-1">{v}</span>
@@ -2458,8 +2193,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               </div>
               {preview.status === 'Pending' && (
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
-                  <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={() => confirmToDatabase(preview)}
-                    className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                  <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={() => confirmToDatabase(preview)} className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                     {saving ? <Loader2 size={15} className="animate-spin" /> : <><Database size={15} /> Confirm to DB</>}
                   </motion.button>
                   <button onClick={() => rejectForm(preview)} className="flex-1 py-3 rounded-2xl text-rose-700 font-bold text-sm bg-rose-50 border border-rose-200">Reject</button>
