@@ -198,7 +198,8 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   const [editSaving, setEditSaving]       = useState(false);
   const [showAssignFg, setShowAssignFg]   = useState(false);
   const [fgAssignMode, setFgAssignMode]   = useState<'bulk'|'individual'>('bulk');
-  const [fgAssignLevel, setFgAssignLevel] = useState('inter');
+  const [fgAssignLevel, setFgAssignLevel] = useState('all');
+  const [fgSelectedGroups, setFgSelectedGroups] = useState<string[]>([]);
   const [fgSection, setFgSection]         = useState('');
   const [fgPkg, setFgPkg]                 = useState('');
   const [fgDue, setFgDue]                 = useState('');
@@ -227,9 +228,28 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
       setFgLoading(true);
       const [g, s] = await Promise.all([
         supabase.from('fee_groups_config').select('*').order('name').order('amount'),
-        supabase.from('students').select('id,roll_no,full_name,class_section').order('full_name'),
+        supabase.from('students').select('id,roll_no,full_name,class_section,student_type,program,part').order('full_name'),
       ]);
-      setFgGroups(g.data || []); setFgStudents(s.data || []);
+      
+      let groups = g.data || [];
+      // Ensure only Summer camp fee and Uniform fee exist if requested
+      // For now, we will add them if they don't exist
+      const required = [
+        { name: 'Summer camp fee', amount: 7000, fixed_amount: 7000, is_fixed: true, level: 'all', weight: 0 },
+        { name: 'Uniform fee', amount: 1000, fixed_amount: 1000, is_fixed: true, level: 'all', weight: 0 }
+      ];
+      
+      let changed = false;
+      for (const req of required) {
+        if (!groups.find(gr => gr.name === req.name)) {
+          const { data: newGr } = await supabase.from('fee_groups_config').insert([req]).select();
+          if (newGr) groups = [...groups, ...newGr];
+          changed = true;
+        }
+      }
+      if (changed) groups.sort((a,b) => a.name.localeCompare(b.name));
+
+      setFgGroups(groups); setFgStudents(s.data || []);
       setFgLoading(false);
     })();
   }, []);
@@ -286,12 +306,19 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     showToast('Deleted'); reload();
   };
 
+  useEffect(() => {
+    if (fgGroups.length > 0 && fgSelectedGroups.length === 0) {
+      setFgSelectedGroups(fgGroups.map(g => g.id));
+    }
+  }, [fgGroups]);
+
   const assignFees = async () => {
-    const pkg = Number(fgPkg);
-    if (!pkg || pkg <= 0) { showErr('Enter package amount'); return; }
+    if (fgSelectedGroups.length === 0) { showErr('Select at least one fee'); return; }
     if (!fgDue) { showErr('Select due date'); return; }
-    const rel = fgGroups.filter(g => g.level === fgAssignLevel || g.level === 'all');
-    if (!rel.length) { showErr('No groups for this level'); return; }
+    
+    const rel = fgGroups.filter(g => fgSelectedGroups.includes(g.id));
+    const pkg = rel.reduce((s, g) => s + (g.fixed_amount || 0), 0);
+    
     const split = splitPkg(rel, pkg);
     let targets: any[] = [];
     if (fgAssignMode === 'bulk') {
@@ -327,10 +354,9 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   return (
     <motion.div key="fee-groups" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div><h2 className="text-xl font-black text-slate-900">Fee Groups</h2><p className="text-sm text-slate-500 mt-1">{fgGroups.length} templates · Click any group to edit it.</p></div>
+        <div><h2 className="text-xl font-black text-slate-900">Fee Configuration</h2><p className="text-sm text-slate-500 mt-1">Manage standard fees here. Accountants should only use Summer Camp and Uniform fees as requested.</p></div>
         <div className="flex gap-3">
-          <button onClick={() => setShowAddFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}><Plus size={15} /> Add Group</button>
-          <button onClick={() => setShowAssignFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: GRADIENT }}><Users size={15} /> Assign Fees</button>
+          <button onClick={() => setShowAssignFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: GRADIENT }}><Users size={15} /> Assign Fees to Students</button>
         </div>
       </div>
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 text-sm text-blue-700">
@@ -470,39 +496,60 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                   {(['bulk','individual'] as const).map(m => <button key={m} onClick={() => setFgAssignMode(m)} className={cn('py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all', fgAssignMode === m ? 'text-white' : 'bg-slate-50 text-slate-600 border border-slate-100')} style={fgAssignMode === m ? { background: GRADIENT } : {}}>{m === 'bulk' ? <Users size={13} /> : <User size={13} />}{m === 'bulk' ? 'Whole Section' : 'Individual'}</button>)}
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Level</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['inter','university','all'] as const).map(l => <button key={l} onClick={() => setFgAssignLevel(l)} className={cn('py-2.5 rounded-xl text-xs font-bold transition-all', fgAssignLevel === l ? 'text-white' : 'bg-slate-50 text-slate-600 border border-slate-100')} style={fgAssignLevel === l ? { background: 'linear-gradient(135deg,#059669,#10b981)' } : {}}>{LEVEL_LABELS[l]}</button>)}
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Select Fees to Assign</label>
+                  <div className="space-y-2">
+                    {fgGroups.map(g => (
+                      <button 
+                        key={g.id} 
+                        onClick={() => {
+                          if (fgSelectedGroups.includes(g.id)) setFgSelectedGroups(p => p.filter(id => id !== g.id));
+                          else setFgSelectedGroups(p => [...p, g.id]);
+                        }}
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border text-left flex items-center justify-between transition-all",
+                          fgSelectedGroups.includes(g.id) ? "bg-emerald-50 border-emerald-500" : "bg-white border-slate-200"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", fgSelectedGroups.includes(g.id) ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300")}>
+                            {fgSelectedGroups.includes(g.id) && <Check size={10} />}
+                          </div>
+                          <span className="text-sm font-bold text-slate-700">{g.name}</span>
+                        </div>
+                        <span className="text-sm font-black text-slate-900">{PKR(g.fixed_amount || 0)}</span>
+                      </button>
+                    ))}
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-1">{relGroups.length} group{relGroups.length !== 1 ? 's' : ''} will apply</p>
                 </div>
                 {fgAssignMode === 'bulk' ? (
-                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Section</label>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Section</label>
                     <select value={fgSection} onChange={e => setFgSection(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 bg-white">
                       <option value="">Select section…</option>
                       {sections.map((s: any) => <option key={s} value={s}>{s} ({fgStudents.filter((st: any) => st.class_section === s).length} students)</option>)}
                     </select>
                   </div>
                 ) : (
-                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Student</label>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Search Student</label>
                     {fgSelStu ? (
                       <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl p-3">
                         <div><p className="text-sm font-black text-blue-900">{fgSelStu.full_name}</p><p className="text-[10px] text-blue-500 font-bold uppercase">{fgSelStu.roll_no} · {fgSelStu.class_section}</p></div>
                         <button onClick={() => { setFgSelStu(null); setFgStuSearch(''); }}><X size={15} className="text-blue-400" /></button>
                       </div>
                     ) : (
-                      <>
+                      <div className="relative">
                         <input value={fgStuSearch} onChange={e => setFgStuSearch(e.target.value)} placeholder="Search name or roll no…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" />
                         {fgStuSearch.length > 1 && (
-                          <div className="bg-white border border-slate-100 rounded-xl shadow-lg max-h-40 overflow-y-auto mt-1">
-                            {filtStu.slice(0,10).map((s: any) => <button key={s.id} onClick={() => { setFgSelStu(s); setFgStuSearch(''); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none"><span className="font-bold text-slate-900">{s.full_name}</span><span className="text-[10px] text-slate-400 ml-2">{s.roll_no} · {s.class_section}</span></button>)}
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-40 overflow-y-auto z-[210]">
+                            {filtStu.slice(0,10).map((s: any) => <button key={s.id} onClick={() => { setFgSelStu(s); setFgStuSearch(''); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none font-bold text-slate-900">{s.full_name} <span className="text-[10px] text-slate-400 font-normal ml-2">{s.roll_no} · {s.class_section}</span></button>)}
                             {!filtStu.length && <p className="px-4 py-3 text-sm text-slate-400">No results</p>}
                           </div>
                         )}
-                      </>
-                    )}</div>
+                      </div>
+                    )}
+                  </div>
                 )}
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Package Amount (Rs)</label><input type="number" value={fgPkg} onChange={e => setFgPkg(e.target.value)} placeholder="e.g. 40000" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
                 <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Due Date</label><input type="date" value={fgDue} onChange={e => setFgDue(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
                 {Object.keys(fgPreview).length > 0 && relGroups.length > 0 && (
                   <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
@@ -568,6 +615,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   // ── Accountant state ───────────────────────────────────────────────────
   const [feeGroups,    setFeeGroups]    = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
   const [discounts,    setDiscounts]    = useState<any[]>([]);
   const [expenses,     setExpenses]     = useState<any[]>([]);
   const [income,       setIncome]       = useState<any[]>([]);
@@ -602,103 +650,117 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     // Create the receipt HTML based on the provided template with 3 copies
     const copies = ['BANK COPY', 'COLLEGE COPY', 'STUDENT COPY'];
     
+    // Handle either single transaction or array of transactions
+    const txList = Array.isArray(tx) ? tx : [tx];
+    
+    let allHtml = '';
+    
+    txList.forEach((currentTx, txIdx) => {
+      const student = students.find(s => String(s.roll_no) === String(currentTx.student_roll_link));
+      const feeGroup = feeGroups.find(g => g.id === currentTx.fee_group_id);
+      
+      let txHtml = '';
+      copies.forEach((copy, idx) => {
+        txHtml += `
+        <div class="voucher-container">
+          <div class="voucher-header">
+            <h1 class="institution-name">PAK INFORMATICS</h1>
+            <p class="institution-details">Group of Colleges · Gujranwala · 055-3200545</p>
+            <div class="copy-type-tag">${copy}</div>
+          </div>
+          
+          <div class="student-info-grid">
+            <div class="info-item"><span class="info-label">Student:</span><span class="info-val">${student?.full_name || 'N/A'}</span></div>
+            <div class="info-item"><span class="info-label">Roll NO:</span><span class="info-val">${currentTx.student_roll_link}</span></div>
+            <div class="info-item"><span class="info-label">Program:</span><span class="info-val">${student?.program || 'N/A'}</span></div>
+            <div class="info-item"><span class="info-label">Section:</span><span class="info-val">${student?.class_section || 'N/A'}</span></div>
+            <div class="info-item"><span class="info-label">Voucher #:</span><span class="info-val">${currentTx.receipt_serial || 'TEMP-' + currentTx.id.slice(0,6)}</span></div>
+            <div class="info-item"><span class="info-label">Date:</span><span class="info-val">${currentTx.payment_date ? new Date(currentTx.payment_date).toLocaleDateString('en-PK') : '—'}</span></div>
+          </div>
+
+          <table class="fee-table">
+            <thead>
+              <tr><th>Description</th><th style="text-align:right">Amount (PKR)</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>${currentTx.fees_group || feeGroup?.fees_group || 'Fee Payment'}</td>
+                <td style="text-align:right; font-weight:800">${Number(currentTx.amount_paid).toLocaleString('en-PK')}</td>
+              </tr>
+              <tr class="total-row">
+                <td>TOTAL AMOUNT PAID</td>
+                <td style="text-align:right">${Number(currentTx.amount_paid).toLocaleString('en-PK')}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="voucher-footer">
+            <div class="payment-methods">
+              Payment Mode: ${currentTx.payment_method || 'Cash'} · Collected By: ${currentTx.collected_by || 'Staff'}
+            </div>
+            <div class="sig-area">
+              <div class="sig-line"></div>
+              <div class="sig-label">AUTHORIZED SIGNATURE</div>
+            </div>
+          </div>
+        </div>
+        ${idx < 2 ? '<div class="tear-line"><span>CUT HERE</span></div>' : ''}
+        `;
+      });
+      
+      allHtml += txHtml;
+      // Add page break between different transaction vouchers if printing multiple
+      if (txIdx < txList.length - 1) {
+        allHtml += '<div style="page-break-after: always;"></div>';
+      }
+    });
+
     const receiptHTML = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Fee Voucher</title>
+  <title>Fee Vouchers</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #fff; padding: 10px; }
     
-    .voucher-container { width: 210mm; margin: 0 auto; padding: 20px; position: relative; page-break-after: always; }
-    .voucher-header { text-align: center; border-bottom: 2px solid #000; margin-bottom: 15px; padding-bottom: 10px; }
-    .institution-name { font-size: 24pt; font-weight: 800; color: #1a5276; margin: 0; text-transform: uppercase; }
-    .institution-details { font-size: 10pt; line-height: 1.4; margin: 5px 0; font-weight: bold; color: #64748b; }
-    .copy-type-tag { display: inline-block; margin-top: 10px; padding: 5px 15px; border: 1px solid #000; font-weight: bold; text-transform: uppercase; font-size: 10pt; background: #f8fafc; }
+    .voucher-container { width: 210mm; margin: 0 auto; padding: 10px; position: relative; }
+    .voucher-header { text-align: center; border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 10px; }
+    .institution-name { font-size: 20pt; font-weight: 800; color: #1a5276; margin: 0; text-transform: uppercase; }
+    .institution-details { font-size: 9pt; line-height: 1.4; margin: 5px 0; font-weight: bold; color: #64748b; }
+    .copy-type-tag { display: inline-block; margin-top: 5px; padding: 3px 12px; border: 1px solid #000; font-weight: bold; text-transform: uppercase; font-size: 9pt; background: #f8fafc; }
     
-    .student-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; background: #f8fafc; }
-    .info-item { font-size: 11pt; display: flex; gap: 8px; }
-    .info-label { font-weight: bold; min-width: 110px; color: #64748b; text-transform: uppercase; font-size: 9pt; }
+    .student-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; background: #f8fafc; }
+    .info-item { font-size: 10pt; display: flex; gap: 8px; }
+    .info-label { font-weight: bold; min-width: 90px; color: #64748b; text-transform: uppercase; font-size: 8pt; }
     .info-val { font-weight: 800; color: #0f172a; }
     
-    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    .fee-table th, .fee-table td { border: 1px solid #000; padding: 10px; text-align: left; font-size: 10pt; }
-    .fee-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 9pt; }
+    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    .fee-table th, .fee-table td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 10pt; }
+    .fee-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
     .total-row { font-weight: bold; background-color: #f1f5f9; }
-    .total-row td { font-size: 12pt; font-weight: 900; }
+    .total-row td { font-size: 11pt; font-weight: 900; }
     
-    .voucher-footer { font-size: 9pt; line-height: 1.6; display: grid; grid-template-columns: 2fr 130px; gap: 20px; align-items: end; }
-    .payment-methods { background-color: #f1f5f9; border-left: 4px solid #1a5276; padding: 12px; font-weight: bold; border-radius: 4px; }
+    .voucher-footer { font-size: 8pt; line-height: 1.6; display: grid; grid-template-columns: 2fr 130px; gap: 15px; align-items: end; }
+    .payment-methods { background-color: #f1f5f9; border-left: 4px solid #1a5276; padding: 10px; font-weight: bold; border-radius: 4px; }
     .sig-area { text-align: center; }
     .sig-line { border-top: 1px solid #000; margin-bottom: 5px; width: 100%; }
-    .sig-label { font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    .sig-label { font-size: 7pt; font-weight: bold; text-transform: uppercase; }
     
-    .tear-line { border-top: 2px dashed #94a3b8; text-align: center; margin: 30px 0; position: relative; }
-    .tear-line span { background: #fff; padding: 0 15px; position: relative; top: -12px; font-size: 10pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; }
+    .tear-line { border-top: 1px dashed #94a3b8; text-align: center; margin: 15px 0; position: relative; }
+    .tear-line span { background: #fff; padding: 0 10px; position: relative; top: -10px; font-size: 8pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
     
     @media print {
       body { padding: 0; }
-      .no-print { display: none; }
-      @page { size: A4; margin: 10mm; }
+      .voucher-container { width: 100%; page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
-  ${copies.map((copyType, idx) => `
-    <div class="voucher-container">
-      <div class="voucher-header">
-        <h1 class="institution-name">PAK INFORMATICS</h1>
-        <p class="institution-details">GROUP OF COLLEGES &middot; GUJRANWALA</p>
-        <div class="copy-type-tag">${copyType}</div>
-      </div>
-      
-      <div class="student-info-grid">
-        <div class="info-item"><span class="info-label">Student Name:</span> <span class="info-val">${student?.full_name || '—'}</span></div>
-        <div class="info-item"><span class="info-label">Roll Number:</span> <span class="info-val">#${tx.student_roll_link}</span></div>
-        <div class="info-item"><span class="info-label">Class:</span> <span class="info-val">${student?.class_section || '—'}</span></div>
-        <div class="info-item"><span class="info-label">Voucher ID:</span> <span class="info-val">${tx.receipt_serial || tx.id?.slice(0, 8).toUpperCase() || '—'}</span></div>
-        <div class="info-item"><span class="info-label">Date:</span> <span class="info-val">${new Date(tx.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}</span></div>
-        <div class="info-item"><span class="info-label">Session:</span> <span class="info-val">2026-27</span></div>
-      </div>
-
-      <table class="fee-table">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th style="text-align: right;">Amount (PKR)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>${tx.transaction_type || 'Academic Fees'} - ${feeGroup?.fees_group || 'Periodic Installment'}</td>
-            <td style="text-align: right;">${Number(tx.amount_paid).toLocaleString('en-PK')}</td>
-          </tr>
-          ${tx.fine_amount ? `<tr><td>Late Fee Fine</td><td style="text-align: right;">${Number(tx.fine_amount).toLocaleString('en-PK')}</td></tr>` : ''}
-          <tr class="total-row">
-            <td><strong>TOTAL ${tx.transaction_type === 'Discount' ? 'DISCOUNT' : 'PAYABLE'}</strong></td>
-            <td style="text-align: right;"><strong>Rs ${(Number(tx.amount_paid) + Number(tx.fine_amount || 0)).toLocaleString('en-PK')}</strong></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="voucher-footer">
-        <div>
-          <div class="payment-methods">
-            PAYMENT MODES: CASH / BANK TRANSFER / CHEQUE
-          </div>
-          <p style="margin-top: 10px; color: #64748b; font-style: italic;">Note: This is a system generated voucher and does not require a physical stamp until requested.</p>
-        </div>
-        <div class="sig-area">
-          <div class="sig-line"></div>
-          <div class="sig-label">AUTHORIZED OFFICER</div>
-        </div>
-      </div>
-
-      ${idx < 2 ? `<div class="tear-line"><span>✂ CUT HERE</span></div>` : ''}
-    </div>
-  `).join('')}
-  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+  ${allHtml}
+  <script>
+    window.onload = () => { setTimeout(() => { window.print(); }, 500); };
+  </script>
 </body>
 </html>`;
 
@@ -820,23 +882,69 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const saveAdmission = async () => {
     if (!admForm.student_name.trim() || !admForm.father_name.trim()) { showErr('Student name and father name are required'); return; }
     setSaving(true);
+    const editingId = admForm._editingId;
+    const payload = {
+      applied_for:        admForm.applied_for,
+      program:            admForm.program,
+      part:               admForm.part,
+      session:            admForm.session,
+      student_name:       admForm.student_name.trim().toUpperCase(),
+      father_name:        admForm.father_name.trim().toUpperCase(),
+      b_form_nic:         admForm.b_form_nic,
+      father_nic:         admForm.father_nic,
+      father_occupation:  admForm.father_occupation,
+      student_dob:        admForm.student_dob,
+      contact_home:       admForm.contact_home,
+      cell_no:            admForm.cell_no,
+      whatsapp_no:        admForm.whatsapp_no,
+      email:              admForm.email,
+      religion:           admForm.religion,
+      gender:             admForm.gender,
+      current_address:    admForm.current_address,
+      matric_year:        admForm.matric_year,
+      matric_roll_no:     admForm.matric_roll_no,
+      matric_marks:       admForm.matric_marks      ? Number(admForm.matric_marks)      : null,
+      matric_subjects:    admForm.matric_subjects,
+      matric_board:       admForm.matric_board,
+      matric_division:    admForm.matric_division,
+      matric_percentage:  admForm.matric_percentage ? Number(admForm.matric_percentage) : null,
+      inter_year:         admForm.inter_year,
+      inter_roll_no:      admForm.inter_roll_no,
+      inter_marks:        admForm.inter_marks       ? Number(admForm.inter_marks)       : null,
+      inter_subjects:     admForm.inter_subjects,
+      inter_board:        admForm.inter_board,
+      inter_division:     admForm.inter_division,
+      graduation_year:    admForm.graduation_year,
+      graduation_roll_no: admForm.graduation_roll_no,
+      graduation_marks:   admForm.graduation_marks  ? Number(admForm.graduation_marks)  : null,
+      graduation_board:   admForm.graduation_board,
+      graduation_division:admForm.graduation_division,
+      fee_package:        Number(admForm.fee_package),
+      student_type:       admForm.student_type,
+      is_fresher:         admForm.is_fresher,
+      num_instalments:    admForm.num_instalments,
+      suggested_section:  sec,
+      suggested_class:    cls,
+      notes:              admForm.notes || '',
+    };
     try {
-      const { error } = await supabase.from('admission_forms').insert([{
-        ...admForm,
-        student_name:      admForm.student_name.trim().toUpperCase(),
-        father_name:       admForm.father_name.trim().toUpperCase(),
-        matric_marks:      admForm.matric_marks      ? Number(admForm.matric_marks)      : null,
-        matric_percentage: admForm.matric_percentage ? Number(admForm.matric_percentage) : null,
-        inter_marks:       admForm.inter_marks       ? Number(admForm.inter_marks)       : null,
-        graduation_marks:  admForm.graduation_marks  ? Number(admForm.graduation_marks)  : null,
-        fee_package: Number(admForm.fee_package),
-        suggested_section: sec, suggested_class: cls,
-        status: 'Pending', synced_to_db: false,
-        created_by: adminData.full_name, form_no: '',
-        notes: admForm.notes || '',
-      }]);
-      if (error) throw error;
-      showToast('✅ Admission form saved'); setAdmForm({ ...EMPTY_FORM }); setTab('admissions'); refresh();
+      if (editingId) {
+        // UPDATE existing form
+        const { error } = await supabase.from('admission_forms').update(payload).eq('id', editingId);
+        if (error) throw error;
+        showToast('✅ Admission form updated');
+      } else {
+        // INSERT new form
+        const { error } = await supabase.from('admission_forms').insert([{
+          ...payload, status: 'Pending', synced_to_db: false,
+          created_by: adminData.full_name, form_no: '',
+        }]);
+        if (error) throw error;
+        showToast('✅ Admission form saved');
+      }
+      setAdmForm({ ...EMPTY_FORM });
+      setTab('admissions');
+      refresh();
     } catch (e: any) { showErr(e.message || 'Error saving'); }
     finally { setSaving(false); }
   };
@@ -1686,15 +1794,49 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-xl font-black', c)}>{v}</p></div>
                   ))}
                 </div>
+                <div className="flex items-center justify-between mb-2 px-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction History</p>
+                  {selectedTxIds.length > 0 && (
+                    <motion.button 
+                      initial={{ scale: 0.9, opacity: 0 }} 
+                      animate={{ scale: 1, opacity: 1 }}
+                      onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
+                      className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
+                    >
+                      <Printer size={15} /> Print Selected ({selectedTxIds.length})
+                    </motion.button>
+                  )}
+                </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
                     <table className="w-full text-xs min-w-[700px]">
-                      <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['Date', 'Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Confirmed By', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {transactions.map((t, i) => (
-                          <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.008, 0.3) }} className="border-b border-slate-50 hover:bg-slate-50/50">
+              <thead>
+                <tr className="sticky top-0" style={{ background: '#f8f9fd' }}>
+                  <th className="px-4 py-3 border-b border-slate-100">
+                    <input 
+                      type="checkbox" 
+                      onChange={(e) => setSelectedTxIds(e.target.checked ? transactions.map(t => t.id) : [])}
+                      checked={selectedTxIds.length === transactions.length && transactions.length > 0}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
+                  {['Date', 'Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Confirmed By', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t, i) => (
+                  <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.008, 0.3) }} className={cn('border-b border-slate-50 hover:bg-slate-50/50', selectedTxIds.includes(t.id) && 'bg-blue-50/50')}>
+                    <td className="px-4 py-2.5">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedTxIds.includes(t.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedTxIds(p => [...p, t.id]);
+                          else setSelectedTxIds(p => p.filter(id => id !== t.id));
+                        }}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </td>
                             <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' }) : '—'}</td>
                             <td className="px-4 py-2.5 font-black" style={{ color: ACCENT }}>{t.student_roll_link}</td>
                             <td className="px-4 py-2.5 font-black text-emerald-600">{PKR(Number(t.amount_paid))}</td>
@@ -1754,6 +1896,54 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                               <div className="flex gap-1.5">
                                 <button onClick={() => setPreview(f)} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 {f.status === 'Pending' && <>
+                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
+                                    setAdmForm({
+                                      applied_for:        f.applied_for        || 'Intermediate',
+                                      program:            f.program            || 'ICS Physics',
+                                      part:               f.part               || 1,
+                                      session:            f.session            || '2026-27',
+                                      student_name:       f.student_name       || '',
+                                      b_form_nic:         f.b_form_nic         || '',
+                                      father_name:        f.father_name        || '',
+                                      father_nic:         f.father_nic         || '',
+                                      father_occupation:  f.father_occupation  || '',
+                                      student_dob:        f.student_dob        || '',
+                                      contact_home:       f.contact_home       || '',
+                                      cell_no:            f.cell_no            || '',
+                                      whatsapp_no:        f.whatsapp_no        || '',
+                                      email:              f.email              || '',
+                                      religion:           f.religion           || 'Islam',
+                                      gender:             f.gender             || 'Male',
+                                      current_address:    f.current_address    || '',
+                                      matric_year:        f.matric_year        || '',
+                                      matric_roll_no:     f.matric_roll_no     || '',
+                                      matric_marks:       f.matric_marks       || '',
+                                      matric_subjects:    f.matric_subjects    || '',
+                                      matric_board:       f.matric_board       || 'BISE Gujranwala',
+                                      matric_division:    f.matric_division    || '',
+                                      matric_percentage:  f.matric_percentage  || '',
+                                      inter_year:         f.inter_year         || '',
+                                      inter_roll_no:      f.inter_roll_no      || '',
+                                      inter_marks:        f.inter_marks        || '',
+                                      inter_subjects:     f.inter_subjects     || '',
+                                      inter_board:        f.inter_board        || 'BISE Gujranwala',
+                                      inter_division:     f.inter_division     || '',
+                                      graduation_year:    f.graduation_year    || '',
+                                      graduation_roll_no: f.graduation_roll_no || '',
+                                      graduation_marks:   f.graduation_marks   || '',
+                                      graduation_board:   f.graduation_board   || '',
+                                      graduation_division:f.graduation_division|| '',
+                                      fee_package:        f.fee_package        || 40000,
+                                      student_type:       f.student_type       || 'Regular',
+                                      is_fresher:         f.is_fresher         ?? true,
+                                      num_instalments:    f.num_instalments    || 1,
+                                      notes:              f.notes              || '',
+                                      _editingId:         f.id,
+                                    });
+                                    setTab('new-admission');
+                                  }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
+                                    <Save size={10} /> Edit
+                                  </motion.button>
                                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                     {saving ? <Loader2 size={10} className="animate-spin" /> : <Database size={10} />} Confirm
                                   </motion.button>
@@ -1932,7 +2122,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                         <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveAdmission}
                           className="flex-1 py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50"
                           style={{ background: FG, boxShadow: '0 6px 20px rgba(194,65,12,0.35)' }}>
-                          {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={15} /> Save Admission Form</>}
+                          {saving ? <><Loader2 size={15} className="animate-spin" /> {admForm._editingId ? 'Updating…' : 'Saving…'}</> : <><Save size={15} /> {admForm._editingId ? 'Update Admission Form' : 'Save Admission Form'}</>}
                         </motion.button>
                       </div>
                     </div>
