@@ -175,7 +175,7 @@ const RoleAssignModal = ({ onClose, onSave, assignableRoles, principalName, GRAD
 };
 
 // ── FeeGroupsTab Component ───────────────────────────────────────────────
-const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: any) => {
+const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, onAssigned }: any) => {
   const LEVEL_LABELS: Record<string, string> = { inter: 'Intermediate', university: 'University', all: 'All Levels' };
   const SUGGESTED_NAMES = ['Tuition Fee','Admission Fee','Exam Fee','Lab Fee','Library Fee','Sports Fee','Board Examination Fee','University Examination Fee','Computer Lab Fee','Development Fee'];
 
@@ -196,6 +196,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   const [editFixedAmt, setEditFixedAmt]   = useState('');
   const [editWeight, setEditWeight]       = useState('1');
   const [editSaving, setEditSaving]       = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showAssignFg, setShowAssignFg]   = useState(false);
   const [fgAssignMode, setFgAssignMode]   = useState<'bulk'|'individual'>('bulk');
   const [fgAssignLevel, setFgAssignLevel] = useState('all');
@@ -301,8 +302,9 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
   };
 
   const deleteGroup = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"?`)) return;
-    await supabase.from('fee_groups_config').delete().eq('id', id);
+    setConfirmDelete(null);
+    const { error } = await supabase.from('fee_groups_config').delete().eq('id', id);
+    if (error) { showErr(error.message); return; }
     showToast('Deleted'); reload();
   };
 
@@ -330,13 +332,17 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
       targets = [fgSelStu];
     }
     setFgAssigning(true);
+    const rolls = [...new Set(targets.map((t: any) => t.roll_no))];
+    // Delete existing fee groups for these students first — prevents duplicates
+    for (const roll of rolls) {
+      await supabase.from('fee_groups').delete().eq('student_roll', roll);
+    }
     const rows: any[] = [];
     for (const stu of targets) {
       for (const grp of rel) {
         rows.push({ student_roll: stu.roll_no, fees_group: grp.name, fees_code: grp.id.slice(0, 8).toUpperCase(), amount: split[grp.id] ?? 0, due_date: fgDue, status: 'Unpaid', paid: 0 });
       }
     }
-    const rolls = [...new Set(targets.map((t: any) => t.roll_no))];
     for (const roll of rolls) { await supabase.from('students').update({ total_package: pkg }).eq('roll_no', roll); }
     for (let i = 0; i < rows.length; i += 200) {
       const { error } = await supabase.from('fee_groups').insert(rows.slice(i, i+200));
@@ -345,6 +351,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
     setFgAssigning(false);
     showToast(fgAssignMode === 'bulk' ? `Created for ${targets.length} students` : `Created for ${fgSelStu.full_name}`);
     setShowAssignFg(false); setFgPkg(''); setFgDue(''); setFgSelStu(null); setFgStuSearch('');
+    onAssigned?.();
   };
 
   const relGroups = fgGroups.filter(g => g.level === fgAssignLevel || g.level === 'all');
@@ -390,7 +397,14 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR }: 
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
                         <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 flex items-center justify-center transition-all"><Save size={12} /></div>
-                        <button onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }} className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
+                        {confirmDelete === g.id ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }} className="px-2 py-1 bg-rose-500 text-white text-[9px] font-black rounded-lg">Confirm</button>
+                            <button onClick={e => { e.stopPropagation(); setConfirmDelete(null); }} className="p-1 bg-slate-100 text-slate-400 rounded-lg"><X size={10} /></button>
+                          </div>
+                        ) : (
+                          <button onClick={e => { e.stopPropagation(); setConfirmDelete(g.id); }} className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -627,6 +641,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [stuFeeGroups,    setStuFeeGroups]    = useState<any[]>([]);
   const [stuFeeLoading,   setStuFeeLoading]   = useState(false);
   const [collectModal,    setCollectModal]    = useState<any>(null);
+  const [deleteId,        setDeleteId]        = useState<string | null>(null);
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
@@ -643,139 +658,128 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
 
-  const handlePrint = (tx: any) => {
-    const student = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
-    const feeGroup = feeGroups.find(g => g.id === tx.fee_group_id);
+  const handlePrint = (txData: any) => {
+    const txList = Array.isArray(txData) ? txData : [txData];
+    // If bulk printing, we group by student roll so we don't print the same ledger multiple times
+    const uniqueRolls = [...new Set(txList.map(t => String(t.student_roll_link)))];
     
-    // Create the receipt HTML based on the provided template with 3 copies
-    const copies = ['BANK COPY', 'COLLEGE COPY', 'STUDENT COPY'];
-    
-    // Handle either single transaction or array of transactions
-    const txList = Array.isArray(tx) ? tx : [tx];
-    
-    let allHtml = '';
-    
-    txList.forEach((currentTx, txIdx) => {
-      const student = students.find(s => String(s.roll_no) === String(currentTx.student_roll_link));
-      const feeGroup = feeGroups.find(g => g.id === currentTx.fee_group_id);
-      
-      let txHtml = '';
-      copies.forEach((copy, idx) => {
-        txHtml += `
-        <div class="voucher-container">
-          <div class="voucher-header">
-            <h1 class="institution-name">PAK INFORMATICS</h1>
-            <p class="institution-details">Group of Colleges · Gujranwala · 055-3200545</p>
-            <div class="copy-type-tag">${copy}</div>
-          </div>
-          
-          <div class="student-info-grid">
-            <div class="info-item"><span class="info-label">Student:</span><span class="info-val">${student?.full_name || 'N/A'}</span></div>
-            <div class="info-item"><span class="info-label">Roll NO:</span><span class="info-val">${currentTx.student_roll_link}</span></div>
-            <div class="info-item"><span class="info-label">Program:</span><span class="info-val">${student?.program || 'N/A'}</span></div>
-            <div class="info-item"><span class="info-label">Section:</span><span class="info-val">${student?.class_section || 'N/A'}</span></div>
-            <div class="info-item"><span class="info-label">Voucher #:</span><span class="info-val">${currentTx.receipt_serial || 'TEMP-' + currentTx.id.slice(0,6)}</span></div>
-            <div class="info-item"><span class="info-label">Date:</span><span class="info-val">${currentTx.payment_date ? new Date(currentTx.payment_date).toLocaleDateString('en-PK') : '—'}</span></div>
-          </div>
+    let allVouchersHtml = '';
+    const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
 
+    uniqueRolls.forEach((roll, rollIdx) => {
+      const student = students.find(s => String(s.roll_no) === roll);
+      const stuFees = feeGroups.filter(g => String(g.student_roll) === roll);
+      const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
+      const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
+      const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
+      const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
+
+      const feeRowsHTML = stuFees.map((g) => `
+        <tr>
+          <td>${g.fees_group}</td>
+          <td>${g.due_date || '—'}</td>
+          <td>${g.status}</td>
+          <td>Rs ${(g.amount || 0).toLocaleString('en-PK')}</td>
+          <td>Rs ${(g.paid || 0).toLocaleString('en-PK')}</td>
+          <td>${g.fine ? 'Rs ' + g.fine.toLocaleString('en-PK') : '—'}</td>
+          <td>Rs ${(g.balance || 0).toLocaleString('en-PK')}</td>
+        </tr>`).join('') + `
+        <tr class="grand-total">
+          <td colspan="3"><strong>GRAND TOTAL</strong></td>
+          <td><strong>Rs ${totalAmount.toLocaleString('en-PK')}</strong></td>
+          <td><strong>Rs ${totalPaid.toLocaleString('en-PK')}</strong></td>
+          <td><strong>${totalFine ? 'Rs ' + totalFine.toLocaleString('en-PK') : '—'}</strong></td>
+          <td><strong>Rs ${totalBalance.toLocaleString('en-PK')}</strong></td>
+        </tr>`;
+
+      const copyHTML = (label: string) => `
+        <div class="copy">
+          <div class="header">
+            <h1>Pak Informatics Group of Colleges</h1>
+            <p>Head Office, Gujranwala | Ph: 0300-0642973</p>
+            <p>PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</p>
+            <p class="copy-label">[${label}]</p>
+          </div>
+          <table class="info-table">
+            <tr>
+              <td>Student Name (ID): <strong>${student?.full_name || '—'}</strong> (#${roll})</td>
+              <td>Date: <strong>${dateStr}</strong></td>
+            </tr>
+            <tr>
+              <td>Father Name: <strong>${student?.father_name || '—'}</strong></td>
+              <td>Class: <strong>${student?.class_section || '—'}</strong></td>
+            </tr>
+          </table>
           <table class="fee-table">
             <thead>
-              <tr><th>Description</th><th style="text-align:right">Amount (PKR)</th></tr>
-            </thead>
-            <tbody>
               <tr>
-                <td>${currentTx.fees_group || feeGroup?.fees_group || 'Fee Payment'}</td>
-                <td style="text-align:right; font-weight:800">${Number(currentTx.amount_paid).toLocaleString('en-PK')}</td>
+                <th>Fees Group</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Paid</th>
+                <th>Fine</th>
+                <th>Balance</th>
               </tr>
-              <tr class="total-row">
-                <td>TOTAL AMOUNT PAID</td>
-                <td style="text-align:right">${Number(currentTx.amount_paid).toLocaleString('en-PK')}</td>
-              </tr>
-            </tbody>
+            </thead>
+            <tbody>${feeRowsHTML}</tbody>
           </table>
-
-          <div class="voucher-footer">
-            <div class="payment-methods">
-              Payment Mode: ${currentTx.payment_method || 'Cash'} · Collected By: ${currentTx.collected_by || 'Staff'}
-            </div>
-            <div class="sig-area">
-              <div class="sig-line"></div>
-              <div class="sig-label">AUTHORIZED SIGNATURE</div>
-            </div>
+          <div class="notes">
+            <p>NOTE 1: The Fee once deposited is not refundable and transferable.</p>
+            <p>NOTE 2: After due date, a fine of Rs. 100 per day will be charged.</p>
+            <p>ONLINE PAYMENT: UBL A/C 078533426309 | JazzCash: 03000642780 (Till: 980244377)</p>
           </div>
-        </div>
-        ${idx < 2 ? '<div class="tear-line"><span>CUT HERE</span></div>' : ''}
-        `;
-      });
-      
-      allHtml += txHtml;
-      // Add page break between different transaction vouchers if printing multiple
-      if (txIdx < txList.length - 1) {
-        allHtml += '<div style="page-break-after: always;"></div>';
-      }
+        </div>`;
+
+      allVouchersHtml += `
+        ${copyHTML('COLLEGE COPY')}
+        <div class="tear-line">✂ &nbsp;&nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp;&nbsp; ✂</div>
+        ${copyHTML('STUDENT COPY')}
+        ${rollIdx < uniqueRolls.length - 1 ? '<div style="page-break-after: always;"></div>' : ''}
+      `;
     });
 
-    const receiptHTML = `<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Fee Vouchers</title>
+  <title>Fee Voucher</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #fff; padding: 10px; }
-    
-    .voucher-container { width: 210mm; margin: 0 auto; padding: 10px; position: relative; }
-    .voucher-header { text-align: center; border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 10px; }
-    .institution-name { font-size: 20pt; font-weight: 800; color: #1a5276; margin: 0; text-transform: uppercase; }
-    .institution-details { font-size: 9pt; line-height: 1.4; margin: 5px 0; font-weight: bold; color: #64748b; }
-    .copy-type-tag { display: inline-block; margin-top: 5px; padding: 3px 12px; border: 1px solid #000; font-weight: bold; text-transform: uppercase; font-size: 9pt; background: #f8fafc; }
-    
-    .student-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; background: #f8fafc; }
-    .info-item { font-size: 10pt; display: flex; gap: 8px; }
-    .info-label { font-weight: bold; min-width: 90px; color: #64748b; text-transform: uppercase; font-size: 8pt; }
-    .info-val { font-weight: 800; color: #0f172a; }
-    
-    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .fee-table th, .fee-table td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 10pt; }
-    .fee-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 8pt; }
-    .total-row { font-weight: bold; background-color: #f1f5f9; }
-    .total-row td { font-size: 11pt; font-weight: 900; }
-    
-    .voucher-footer { font-size: 8pt; line-height: 1.6; display: grid; grid-template-columns: 2fr 130px; gap: 15px; align-items: end; }
-    .payment-methods { background-color: #f1f5f9; border-left: 4px solid #1a5276; padding: 10px; font-weight: bold; border-radius: 4px; }
-    .sig-area { text-align: center; }
-    .sig-line { border-top: 1px solid #000; margin-bottom: 5px; width: 100%; }
-    .sig-label { font-size: 7pt; font-weight: bold; text-transform: uppercase; }
-    
-    .tear-line { border-top: 1px dashed #94a3b8; text-align: center; margin: 15px 0; position: relative; }
-    .tear-line span { background: #fff; padding: 0 10px; position: relative; top: -10px; font-size: 8pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-    
+    body { font-family: 'Times New Roman', serif; font-size: 11px; color: #000; background: #fff; padding: 15px; }
+    .copy { max-width: 680px; margin: 0 auto 10px; padding: 10px; }
+    .header { text-align: center; margin-bottom: 10px; }
+    .header h1 { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+    .header p { font-size: 10px; margin: 1px 0; }
+    .copy-label { font-weight: bold; font-size: 12px; margin-top: 6px; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .info-table td { border: 1px solid #000; padding: 4px 6px; width: 50%; font-size: 10px; }
+    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .fee-table th, .fee-table td { border: 1px solid #000; padding: 4px 5px; text-align: left; font-size: 10px; }
+    .fee-table th { font-weight: bold; background: #f0f0f0; }
+    .grand-total td { font-weight: bold; background: #f9f9f9; }
+    .notes { font-size: 9.5px; margin-top: 6px; line-height: 1.6; }
+    .notes p { margin: 2px 0; }
+    .tear-line { text-align: center; margin: 8px 0; font-size: 11px; border-top: 1px dashed #555; padding-top: 6px; letter-spacing: 1px; color: #333; }
     @media print {
-      body { padding: 0; }
-      .voucher-container { width: 100%; page-break-inside: avoid; }
+      body { padding: 5px; }
+      .copy { margin-bottom: 5px; }
     }
   </style>
 </head>
 <body>
-  ${allHtml}
-  <script>
-    window.onload = () => { setTimeout(() => { window.print(); }, 500); };
-  </script>
+  ${allVouchersHtml}
+  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
 </body>
 </html>`;
 
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
     document.body.appendChild(iframe);
     iframe.contentWindow!.document.open();
-    iframe.contentWindow!.document.write(receiptHTML);
+    iframe.contentWindow!.document.write(html);
     iframe.contentWindow!.document.close();
-    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 10000);
+    setTimeout(() => document.body.removeChild(iframe), 5000);
   };
 
   // ── Load: Principal ────────────────────────────────────────────────────
@@ -803,21 +807,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   // ── Load: Accountant ───────────────────────────────────────────────────
   const loadAccountant = useCallback(async () => {
     setLoading(true);
-    const [s1, s2, s3, s4, s5, s6, s7, s8] = await Promise.all([
-      supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
-      supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(600),
-      supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(150),
-      supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
-      supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(50),
-      supabase.from('income').select('*').order('income_date', { ascending: false }).limit(50),
-      supabase.from('admission_forms').select('*').order('created_at', { ascending: false }),
-      supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
-    ]);
-    setStudents(s1.data || []); setFeeGroups(s2.data || []); setTransactions(s3.data || []);
-    setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
-    setAdmForms(s7.data || []);
-    if (s8.data?.[0]) setNextRoll(s8.data[0].roll_no + 1);
-    setLoading(false);
+    try {
+      const [s1, s2, s3, s4, s5, s6, s7, s8] = await Promise.all([
+        supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
+        supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
+        supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
+        supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(50),
+        supabase.from('income').select('*').order('income_date', { ascending: false }).limit(50),
+        supabase.from('admission_forms').select('*').order('created_at', { ascending: false }),
+        supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
+      ]);
+      setStudents(s1.data || []); setFeeGroups(s2.data || []); setTransactions(s3.data || []);
+      setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
+      setAdmForms(s7.data || []);
+      if (s8.data?.[0]) setNextRoll(s8.data[0].roll_no + 1);
+    } catch (e: any) {
+      showErr("Data failed to load. Please check your connection.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadStaff = async () => { const { data } = await supabase.from('admin_users').select('id,full_name,username,role').order('role'); setStaffList(data || []); };
@@ -961,14 +971,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
       }]);
       if (se) throw se;
-      await supabase.from('fee_groups').insert([
-        { student_roll: roll, fees_group: 'Admission Fee',       fees_code: 'ADM-001', due_date: '2026-01-15', amount: 2500,  paid: 0, status: 'Unpaid' },
-        { student_roll: roll, fees_group: 'Tuition Fee - Term 1',fees_code: 'TUI-T1',  due_date: '2026-03-10', amount: 13000, paid: 0, status: 'Unpaid' },
-        { student_roll: roll, fees_group: 'Tuition Fee - Term 2',fees_code: 'TUI-T2',  due_date: '2026-06-10', amount: 13000, paid: 0, status: 'Unpaid' },
-        { student_roll: roll, fees_group: 'Tuition Fee - Term 3',fees_code: 'TUI-T3',  due_date: '2026-09-10', amount: 9000,  paid: 0, status: 'Unpaid' },
-        { student_roll: roll, fees_group: 'Examination Fee',     fees_code: 'EXM-001', due_date: '2026-11-01', amount: 1500,  paid: 0, status: 'Unpaid' },
-        { student_roll: roll, fees_group: 'Student Card Fee',    fees_code: 'SCD-001', due_date: '2026-01-15', amount: 500,   paid: 0, status: 'Unpaid' },
-      ]);
+      // Load fee groups from config (the real source of truth)
+      const { data: fgConfig } = await supabase.from('fee_groups_config').select('*');
+      if (fgConfig && fgConfig.length > 0) {
+        await supabase.from('fee_groups').insert(
+          fgConfig.map((g: any) => ({
+            student_roll: roll,
+            fees_group:   g.name,
+            fees_code:    g.id.slice(0, 8).toUpperCase(),
+            amount:       g.fixed_amount || g.amount || 0,
+            due_date:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status:       'Unpaid',
+            paid:         0,
+          }))
+        );
+      }
       await supabase.from('admission_forms').update({
         status: 'Approved', synced_to_db: true, student_roll_no: roll,
         approved_by: adminData.full_name, approved_at: new Date().toISOString(),
@@ -1022,6 +1039,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const rejectDiscount = async (d: any) => {
     await supabase.from('discount_requests').update({ status: 'Rejected', reviewed_by: adminData.full_name, reviewed_at: new Date().toISOString() }).eq('id', d.id);
     showToast('Discount rejected'); refresh();
+  };
+
+  const deleteAssignment = async (id: string) => {
+    const { error } = await supabase.from('fee_groups').delete().eq('id', id);
+    if (error) { showErr('Failed to delete assignment'); return; }
+    showToast('Assignment removed');
+    setDeleteId(null);
+    loadAccountant();
   };
 
   const collectFee = async () => {
@@ -1671,7 +1696,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               const ledgerSectionOptions = students.filter(s => !ledgerProgram || s.program === ledgerProgram).map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
               const ledgerFiltered = feeGroups.filter(g => {
                 if (ledgerStatus && g.status !== ledgerStatus) return false;
-                const st = students.find(s => s.roll_no === g.student_roll);
+                const st = students.find(s => String(s.roll_no) === String(g.student_roll));
                 if (ledgerProgram && (!st || st.program !== ledgerProgram)) return false;
                 if (ledgerSection && (!st || st.class_section !== ledgerSection)) return false;
                 if (!searchQ) return true;
@@ -1724,7 +1749,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <div className="flex gap-2 flex-wrap">
                               {ledgerSectionOptions.map(sec => {
                                 const active = ledgerSection === sec;
-                                const cnt = feeGroups.filter(g => { const st2 = students.find(s => s.roll_no === g.student_roll); return st2?.class_section === sec; }).length;
+                                const cnt = feeGroups.filter(g => { const st2 = students.find(s => String(s.roll_no) === String(g.student_roll)); return st2?.class_section === sec; }).length;
                                 return <motion.button key={sec} whileTap={{ scale: 0.96 }} onClick={() => setLedgerSection(active ? '' : sec)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{sec} <span className="ml-1 text-[9px] opacity-70">{cnt}</span></motion.button>;
                               })}
                             </div>
@@ -1750,7 +1775,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                         </thead>
                         <tbody>
                           {ledgerFiltered.slice(0, 200).map((g, i) => {
-                            const st = students.find(s => s.roll_no === g.student_roll);
+                            const st = students.find(s => String(s.roll_no) === String(g.student_roll));
                             return (
                               <motion.tr key={g.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.005, 0.3) }} className="border-b border-slate-50 hover:bg-slate-50/50">
                                 <td className="px-4 py-2.5 font-mono font-bold" style={{ color: ACCENT }}>{g.student_roll}</td>
@@ -1765,14 +1790,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                                 <td className="px-4 py-2.5"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>{g.status}</span></td>
                                 <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{g.due_date || '—'}</td>
                                 <td className="px-4 py-2.5">
-                                  {g.status !== 'Paid' && g.balance > 0 && (
-                                    <motion.button whileTap={{ scale: 0.95 }}
-                                      onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '' }); }}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white"
-                                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                      <DollarSign size={11} /> Collect
-                                    </motion.button>
-                                  )}
+                                  <div className="flex items-center gap-2">
+                                    {g.status !== 'Paid' && g.balance > 0 && (
+                                      <motion.button whileTap={{ scale: 0.95 }}
+                                        onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '' }); }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white"
+                                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                        <DollarSign size={11} /> Collect
+                                      </motion.button>
+                                    )}
+                                    {deleteId === g.id ? (
+                                      <div className="flex items-center gap-1">
+                                        <button onClick={() => deleteAssignment(g.id)} className="bg-rose-600 text-white px-2 py-1 rounded-lg text-[9px] font-black">Void</button>
+                                        <button onClick={() => setDeleteId(null)} className="bg-slate-100 text-slate-400 p-1 rounded-lg"><X size={10} /></button>
+                                      </div>
+                                    ) : (
+                                      <button onClick={() => setDeleteId(g.id)} className="p-1 px-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={12} /></button>
+                                    )}
+                                  </div>
                                 </td>
                               </motion.tr>
                             );
