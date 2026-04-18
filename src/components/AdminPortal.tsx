@@ -597,11 +597,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
 
   const handlePrint = (tx: any) => {
     setPrintTx(tx);
-    // Wait for the printable content to render
-    setTimeout(() => {
-      window.print();
-    }, 150);
+    showToast("Generating receipt...");
   };
+
+  useEffect(() => {
+    if (printTx) {
+      const timer = setTimeout(() => {
+        try {
+          window.print();
+        } catch (err) {
+          console.error("Print error:", err);
+          showErr("Print blocked by browser. Please try in a new tab.");
+        }
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [printTx]);
+
+  useEffect(() => {
+    const onAfterPrint = () => setPrintTx(null);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => window.removeEventListener('afterprint', onAfterPrint);
+  }, []);
 
   // ── Load: Principal ────────────────────────────────────────────────────
   const loadPrincipal = useCallback(async () => {
@@ -1568,8 +1585,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400">{t.receipt_serial || '—'}</td>
                             <td className="px-4 py-2.5">{t.confirmed_by ? <span className="text-emerald-600 font-bold text-[10px]">✓ {t.confirmed_by}</span> : <span className="text-amber-500 text-[10px]">Pending</span>}</td>
                             <td className="px-4 py-2.5 text-right">
-                              <button onClick={() => handlePrint(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors">
-                                <Printer size={14} />
+                              <button 
+                                onClick={() => handlePrint(t)} 
+                                title="Print Receipt"
+                                className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-all active:scale-90"
+                              >
+                                <Printer size={18} />
                               </button>
                             </td>
                           </motion.tr>
