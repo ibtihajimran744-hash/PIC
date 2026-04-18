@@ -6,7 +6,7 @@ import {
   Shield, UserPlus, Loader2, Home, UserCog, Trash2,
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
-  Plus, Lock, Unlock, User, Printer
+  Plus, Lock, Unlock, User, Printer, Minus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -55,6 +55,8 @@ const EMPTY_FORM: any = {
 };
 
 // ── Shared UI primitives ──────────────────────────────────────────────────
+const TI = (props: any) => <input {...props} className={cn("w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 transition-all", props.className)} />;
+
 const ProgressBar = ({ pct, color = '#0F766E', label, sub }: { pct: number; color?: string; label?: string; sub?: string }) => {
   const [w, setW] = useState(0);
   useEffect(() => { const t = setTimeout(() => setW(pct), 120); return () => clearTimeout(t); }, [pct]);
@@ -101,9 +103,6 @@ const F = ({ label, req, children }: any) => (
     </label>
     {children}
   </div>
-);
-const TI = (p: React.InputHTMLAttributes<HTMLInputElement>) => (
-  <input {...p} className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors placeholder:text-slate-300" />
 );
 const TS = ({ children, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
   <select {...p} className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors appearance-none">{children}</select>
@@ -642,7 +641,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [stuFeeLoading,   setStuFeeLoading]   = useState(false);
   const [collectModal,    setCollectModal]    = useState<any>(null);
   const [deleteId,        setDeleteId]        = useState<string | null>(null);
-  const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '' });
+  const [finType, setFinType]         = useState<'Income' | 'Expense'>('Expense');
+  const [finCategory, setFinCategory] = useState('');
+  const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
+  const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
+  const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '', discount: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
@@ -658,86 +661,72 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
 
-  const handlePrint = (txData: any) => {
-    const txList = Array.isArray(txData) ? txData : [txData];
-    // If bulk printing, we group by student roll so we don't print the same ledger multiple times
-    const uniqueRolls = [...new Set(txList.map(t => String(t.student_roll_link)))];
-    
-    let allVouchersHtml = '';
-    const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
+  const handlePrint = (tx: any) => {
+    const student  = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
+    const stuFees  = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
+    const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
+    const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
+    const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
+    const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
+    const dateStr      = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
+    const LOGO_B64     = '/9j/4AAQSkZJRgABAQEA3ADcAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAA7ADsDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KD0oJA6mmkgr1oA5n4l/Fn4X/BrwzL4z+LPxE0Xw1pMLKJtS17U4rWBCTgAvIwXk8Dmvhv4+/8AByL+wP8ACbVW0D4bQeJviFcIzJNdaBpogs42WTaymW6aMvkZZWiR0bj5gDmvlX/gvN+yr8Nv2afiN4H+Our/ABV8XfElta8SX/8AaPgHxv4we68iOfdMBZ7VDWtuHwgUA5wgzxXxP8FP+CX37dv7QrWN18MP2bvEsmmalC01lrmsWf2CxkUcH/SJisY5yAN2T+lfoGRcOZLiMGsVjazUXttFX1utXd2tvotTOUpKVkfu5+yd/wAFmf2Gv2sNFhvdJ8fT+Db241L7DBpPjuJLCSa4JG2KKbe1vNIwYMI45WcBgWVcivq23uYbmNZ7eZJI2HyujAg/jX8t3xN/YR/bX/ZF1x/FPxg/Z58a6RpelagLW+1rTY5I4J1cESRw3sSun7yPeu8blwTkMMg/vD/wSg+DXwL+Gv7PXhr4i/Bj4jfEG+034geHba/03w7458WrfrpMKKCYLaGJUhgCmTDbFBPAPAAHl8SZJlmWU418LW5oydls1ftdP7tCqblLofWtFAYEdaK+TKI25r4d/ay/4KQy/DL44eLv+EO8WXWm6J8IvDEc3iKzk06K8j8W315dQwwWNku5SjxS7Y3uS+1Gn8vy3JZo/t6+edbOWS1XMqxMYxtzlsccfWvypu/hXD448G6b8ZJfB3i3T7LVviIda8ZWvijw/wD2bG3iKyttTSQtbGJDJp51We3SFZTI7bGJPAdp9vh8LB1q/wAEE3L0WrNsPQqYjERpQ3k0vvNz9hf9lnW9W+K+tfti/t66Xp/i/wCKWsSPGkPiqSI6XoLLF532OCN8x+bDHgsThIhkAmQkj6Y8f/FT9mWDxlr3xp8U/tIr4v1LwjdCOLwtYalKtppLGEtDvs7Z904JBZndZQQy7UBAJk+LnwD8MaloPgf9mzxjr0Vr4bXSLzVNYsrRTMdcv4Ig7faosgvbht0pLMA7qiHO7FflP/wV/wDGz/Bn9rzQPiP8EvBFx4Z8ZSadbeJ18cxQmIuhhMMMVvCy7IkRACVw2GYc4wK9zI1iM+xkKOKqctWcXJRVlGMU1aK7JbaJu+uppjKdOMpSor3E7J9/N+u9jovjL/wWu/a+0a5l1fwH8YY/FHhvVJJB4qhu/CMVvDo00uYzYW0UpEjRoi7gZ1Bcs2eCMfUH/BMf/goL8Ivix8Fde8QfCX4daLpPxY8L6V9v1jwrcXzafob2jXUS6hq0KIHFtiBTNJDGOTCoVS0m5vzm+Lf7VHiX9unwRHc+L/A3wx0DxV4fsfPstc0/SltdU1aa1RJJEO3EbNNveUlwcmJlB6A/aP8AwS6/4JmftafsuftffC354W1Xwt4m0nVLvxNdXN9tuEsSg8iC4gX5ElZnjkAUnjeMqmr7LOMrymjk7pV4qnWjqldPma1Wqsn5aJp+ZxRlPmvF+R+nX7H3xc1z43/s9+HfiN4m1XTr7UL61/0u80mMrbyyKSCVGSAR0YKzKHDBWYAMfUq+Wv2Evh0fgx8dPi18I/D3xMuNY8MWd/BqGg6DP4mutR/sH7Te6g0tswuRvgbeu4JuZfLMZViuK+pa/MyyOWKO4hkhmXKyKVYeoNfm1Y/s6+Fv2a/jJ8af2fdPi1ixuvihb6dr3wy0m2upJtKP8AY0U8kllALiZ5luSpE074WAiSNVYSfK36TnJOT6V5n8Zf2erD4v8Ajbwv441nX7xoPCMlxdW/h2FYY4dSuyg+zvLP5ZmQQyASKEYLvCsysUXHJjsLHHYKph57TTj96OjCYmeDxUK8N4tNfJ3PzF/aC8c/HW5+Py/GP4Z6vqDeKdKa38V6LBpqu8Ot+HL2G2s9YsjFK4ST7PNbCVo0U4jZm4619yfDzwf8Ffj18OfiBH8VPCE3hvwbpmuroPw+1S00+S+k8HaIkMIghtJ4o/JaSZY2keRFVd0yqqxqsSHC8e6D8IvifQWqfBf4U/A3xr4k0bwR8OPEfxH1jXNW0a21DR7mQeG/AfiJLeO7gkjtTKY/s8JkZXOxYzKwBYvIVHW/s9fst/ss3/jzQf2ivhN4k0TVrPwFHcNe+ENW0c6n4s8Vm4tp47ya8uGimuoYpbWCJWhKq7OMZVY0A5fYZfhMLhJy55wacU09Wn3SXT1/4OFadWSbk/d7I8C/4JCf8E9Ph/wDH/wDbi8R61488F3F54X8A+LrjSbfw5qOnXDN/aBd2tGm+XaY1SNmYORzsJ6jP7bfGn4lfDn4KeA5/G3jTxRb6Xa+HdPn1KGCTWILIXiQx7PJHnOiMC0sSAMyqJHiyRkV89fAf4Q/sz/sueHrn4z/ALP/AIU0rSNS8UWE3irSPC0WoC9uLH7Xq81rcXPmeVG0ZuI3bymAc/OZMfIBX1LRQAUUUUAP/9k=';
 
-    uniqueRolls.forEach((roll, rollIdx) => {
-      const student = students.find(s => String(s.roll_no) === roll);
-      const stuFees = feeGroups.filter(g => String(g.student_roll) === roll);
-      const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
-      const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
-      const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
-      const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
+    const feeRowsHTML = (stuFees: any[]) => stuFees.map(g => `
+      <tr>
+        <td>${g.fees_group}</td>
+        <td>${g.due_date || '—'}</td>
+        <td>${g.status}</td>
+        <td>Rs ${(g.amount || 0).toLocaleString('en-PK')}</td>
+        <td>Rs ${(g.paid || 0).toLocaleString('en-PK')}</td>
+        <td>${g.fine ? 'Rs ' + Number(g.fine).toLocaleString('en-PK') : '—'}</td>
+        <td>Rs ${(g.balance || 0).toLocaleString('en-PK')}</td>
+      </tr>`).join('') + `
+      <tr class="grand-total">
+        <td colspan="3"><strong>GRAND TOTAL</strong></td>
+        <td><strong>Rs ${totalAmount.toLocaleString('en-PK')}</strong></td>
+        <td><strong>Rs ${totalPaid.toLocaleString('en-PK')}</strong></td>
+        <td><strong>${totalFine ? 'Rs ' + totalFine.toLocaleString('en-PK') : '—'}</strong></td>
+        <td><strong>Rs ${totalBalance.toLocaleString('en-PK')}</strong></td>
+      </tr>`;
 
-      const feeRowsHTML = stuFees.map((g) => `
-        <tr>
-          <td>${g.fees_group}</td>
-          <td>${g.due_date || '—'}</td>
-          <td>${g.status}</td>
-          <td>Rs ${(g.amount || 0).toLocaleString('en-PK')}</td>
-          <td>Rs ${(g.paid || 0).toLocaleString('en-PK')}</td>
-          <td>${g.fine ? 'Rs ' + g.fine.toLocaleString('en-PK') : '—'}</td>
-          <td>Rs ${(g.balance || 0).toLocaleString('en-PK')}</td>
-        </tr>`).join('') + `
-        <tr class="grand-total">
-          <td colspan="3"><strong>GRAND TOTAL</strong></td>
-          <td><strong>Rs ${totalAmount.toLocaleString('en-PK')}</strong></td>
-          <td><strong>Rs ${totalPaid.toLocaleString('en-PK')}</strong></td>
-          <td><strong>${totalFine ? 'Rs ' + totalFine.toLocaleString('en-PK') : '—'}</strong></td>
-          <td><strong>Rs ${totalBalance.toLocaleString('en-PK')}</strong></td>
-        </tr>`;
-
-      const copyHTML = (label: string) => `
-        <div class="copy">
-          <div class="header">
+    const copyHTML = (label: string) => `
+      <div class="copy">
+        <div class="header">
+          <div class="header-inner">
+            <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" alt="PIC Logo"/>
             <h1>Pak Informatics Group of Colleges</h1>
-            <p>Head Office, Gujranwala | Ph: 0300-0642973</p>
-            <p>PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</p>
-            <p class="copy-label">[${label}]</p>
           </div>
-          <table class="info-table">
+          <p class="address">Original Campus, Gujranwala | Ph: 0300-0642973</p>
+          <p class="address">PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</p>
+          <p class="copy-label">[${label}]</p>
+        </div>
+        <table class="info-table">
+          <tr>
+            <td>Student Name (ID): <strong>${student?.full_name || '—'}</strong> (#${tx.student_roll_link})</td>
+            <td>Date: <strong>${dateStr}</strong></td>
+          </tr>
+          <tr>
+            <td>Father Name: <strong>${student?.father_name || '—'}</strong></td>
+            <td>Class: <strong>${student?.class_section || '—'}</strong></td>
+          </tr>
+        </table>
+        <table class="fee-table">
+          <thead>
             <tr>
-              <td>Student Name (ID): <strong>${student?.full_name || '—'}</strong> (#${roll})</td>
-              <td>Date: <strong>${dateStr}</strong></td>
+              <th>Fees Group</th><th>Due Date</th><th>Status</th>
+              <th>Amount</th><th>Paid</th><th>Fine</th><th>Balance</th>
             </tr>
-            <tr>
-              <td>Father Name: <strong>${student?.father_name || '—'}</strong></td>
-              <td>Class: <strong>${student?.class_section || '—'}</strong></td>
-            </tr>
-          </table>
-          <table class="fee-table">
-            <thead>
-              <tr>
-                <th>Fees Group</th>
-                <th>Due Date</th>
-                <th>Status</th>
-                <th>Amount</th>
-                <th>Paid</th>
-                <th>Fine</th>
-                <th>Balance</th>
-              </tr>
-            </thead>
-            <tbody>${feeRowsHTML}</tbody>
-          </table>
-          <div class="notes">
-            <p>NOTE 1: The Fee once deposited is not refundable and transferable.</p>
-            <p>NOTE 2: After due date, a fine of Rs. 100 per day will be charged.</p>
-            <p>ONLINE PAYMENT: UBL A/C 078533426309 | JazzCash: 03000642780 (Till: 980244377)</p>
-          </div>
-        </div>`;
-
-      allVouchersHtml += `
-        ${copyHTML('COLLEGE COPY')}
-        <div class="tear-line">✂ &nbsp;&nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp;&nbsp; ✂</div>
-        ${copyHTML('STUDENT COPY')}
-        ${rollIdx < uniqueRolls.length - 1 ? '<div style="page-break-after: always;"></div>' : ''}
-      `;
-    });
+          </thead>
+          <tbody>${feeRowsHTML(stuFees)}</tbody>
+        </table>
+        <div class="notes">
+          <p>NOTE 1: The Fee once deposited is not refundable and transferable.</p>
+          <p>NOTE 2: After due date, a fine of Rs. 100 per day will be charged.
+            <span class="accountant-sig">Accountant: _______________</span>
+          </p>
+          <p>ONLINE PAYMENT: UBL A/C 078533426309 | JazzCash: 03000642780 (Till: 980244377)</p>
+        </div>
+      </div>`;
 
     const html = `<!DOCTYPE html>
 <html>
@@ -746,29 +735,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   <title>Fee Voucher</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Times New Roman', serif; font-size: 11px; color: #000; background: #fff; padding: 15px; }
-    .copy { max-width: 680px; margin: 0 auto 10px; padding: 10px; }
-    .header { text-align: center; margin-bottom: 10px; }
-    .header h1 { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
-    .header p { font-size: 10px; margin: 1px 0; }
-    .copy-label { font-weight: bold; font-size: 12px; margin-top: 6px; }
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    .info-table td { border: 1px solid #000; padding: 4px 6px; width: 50%; font-size: 10px; }
-    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-    .fee-table th, .fee-table td { border: 1px solid #000; padding: 4px 5px; text-align: left; font-size: 10px; }
-    .fee-table th { font-weight: bold; background: #f0f0f0; }
-    .grand-total td { font-weight: bold; background: #f9f9f9; }
-    .notes { font-size: 9.5px; margin-top: 6px; line-height: 1.6; }
+    body { font-family: Calibri, 'Segoe UI', sans-serif; font-size: 11pt; color: #000; background: #fff; padding: 20px; }
+    .copy { max-width: 700px; margin: 0 auto 12px; }
+    .header { text-align: center; margin-bottom: 14px; }
+    .header-inner { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 6px; }
+    .logo { width: 58px; height: 58px; object-fit: contain; }
+    h1 { font-size: 22pt; font-weight: bold; color: #000; }
+    .address { font-size: 10pt; margin: 2px 0; }
+    .copy-label { font-weight: bold; font-size: 12pt; margin-top: 10px; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    .info-table td { border: 1px solid #000; padding: 6px 8px; width: 50%; font-size: 10.5pt; vertical-align: top; }
+    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .fee-table th { border: 1px solid #000; padding: 6px 7px; text-align: left; font-size: 10.5pt; font-weight: bold; background: #fff; }
+    .fee-table td { border: 1px solid #000; padding: 8px 7px; font-size: 10.5pt; vertical-align: top; }
+    .grand-total td { font-weight: bold; }
+    .notes { font-size: 10pt; line-height: 1.8; margin-top: 8px; }
     .notes p { margin: 2px 0; }
-    .tear-line { text-align: center; margin: 8px 0; font-size: 11px; border-top: 1px dashed #555; padding-top: 6px; letter-spacing: 1px; color: #333; }
+    .accountant-sig { float: right; }
+    .tear-line { text-align: center; margin: 10px 0; font-size: 11pt; border-top: 1px dashed #555; padding-top: 8px; letter-spacing: 1px; }
     @media print {
       body { padding: 5px; }
-      .copy { margin-bottom: 5px; }
+      .copy { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
-  ${allVouchersHtml}
+  ${copyHTML('COLLEGE COPY')}
+  <div class="tear-line">✂ &nbsp;&nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp;&nbsp; ✂</div>
+  ${copyHTML('STUDENT COPY')}
   <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
 </body>
 </html>`;
@@ -779,7 +773,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     iframe.contentWindow!.document.open();
     iframe.contentWindow!.document.write(html);
     iframe.contentWindow!.document.close();
-    setTimeout(() => document.body.removeChild(iframe), 5000);
+    setTimeout(() => document.body.removeChild(iframe), 6000);
   };
 
   // ── Load: Principal ────────────────────────────────────────────────────
@@ -942,6 +936,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         // UPDATE existing form
         const { error } = await supabase.from('admission_forms').update(payload).eq('id', editingId);
         if (error) throw error;
+        
+        // If it was already synced to students table, update the student record too
+        const oldForm = admForms.find(f => f.id === editingId);
+        if (oldForm && oldForm.synced_to_db && oldForm.student_roll_no) {
+          await supabase.from('students').update({
+            full_name: payload.student_name,
+            father_name: payload.father_name,
+            gender: payload.gender,
+            program: payload.program,
+            part: payload.part,
+            class_section: payload.suggested_section || oldForm.suggested_section,
+            total_package: payload.fee_package,
+          }).eq('roll_no', oldForm.student_roll_no);
+        }
+        
         showToast('✅ Admission form updated');
       } else {
         // INSERT new form
@@ -1052,24 +1061,79 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const collectFee = async () => {
     if (!collectModal) return;
     const amt = Number(feePayForm.amount);
-    if (!amt || amt <= 0) { showErr('Enter a valid amount'); return; }
-    if (amt > collectModal.balance) { showErr(`Amount exceeds balance of ${PKR(collectModal.balance)}`); return; }
+    const disc = Number(feePayForm.discount || 0);
+    
+    if ((!amt || amt <= 0) && (!disc || disc <= 0)) { showErr('Enter a valid amount or discount'); return; }
+    if (amt + disc > collectModal.balance) { showErr(`Total exceeds balance of ${PKR(collectModal.balance)}`); return; }
+    
     setSaving(true);
     try {
-      const newPaid   = (collectModal.paid || 0) + amt;
-      const newBalance = (collectModal.balance || 0) - amt;
-      const newStatus = newBalance === 0 ? 'Paid' : 'Partial';
-      await supabase.from('fee_groups').update({ paid: newPaid, status: newStatus }).eq('id', collectModal.id);
-      await supabase.from('fee_transactions').insert([{
-        student_roll_link: String(collectModal.student_roll),
-        amount_paid: amt, payment_method: feePayForm.method,
-        receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
-        payment_date: new Date().toISOString(), transaction_type: 'Payment',
-        fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
-      }]);
-      showToast(`✅ Rs ${amt.toLocaleString('en-PK')} collected`);
-      setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '' }); refresh();
+      const newPaid     = (collectModal.paid || 0) + amt;
+      const newDiscount = (collectModal.discount || 0) + disc;
+      const newBalance  = (collectModal.balance || 0) - amt - disc;
+      const newStatus   = newBalance <= 0 ? 'Paid' : 'Partial';
+
+      await supabase.from('fee_groups').update({ 
+        paid: newPaid, 
+        discount: newDiscount,
+        balance: newBalance,
+        status: newStatus 
+      }).eq('id', collectModal.id);
+
+      // Record Payment Transaction
+      if (amt > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(collectModal.student_roll),
+          amount_paid: amt, payment_method: feePayForm.method,
+          receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(), transaction_type: 'Payment',
+          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+        }]);
+      }
+
+      // Record Discount Transaction
+      if (disc > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(collectModal.student_roll),
+          amount_paid: disc, payment_method: 'Discount',
+          receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`, 
+          collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(), transaction_type: 'Discount',
+          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+        }]);
+      }
+
+      showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
+      setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); refresh();
     } catch (e: any) { showErr(e.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const saveFinancialRecord = async () => {
+    const amt = Number(feePayForm.amount);
+    if (!amt || amt <= 0) { showErr('Enter a valid amount'); return; }
+    if (!finCategory.trim()) { showErr('Category is required'); return; }
+    
+    setSaving(true);
+    try {
+      const table = finType === 'Income' ? 'income' : 'expenses';
+      const payload = {
+        description: finCategory.trim(),
+        [finType === 'Income' ? 'income_date' : 'expense_date']: finDate,
+        amount: amt,
+        category: finCategory.trim(),
+        recorded_by: adminData.full_name
+      };
+      
+      const { error } = await supabase.from(table).insert([payload]);
+      if (error) throw error;
+      
+      showToast(`✅ ${finType} recorded successfully`);
+      setTab('reports');
+      setFeePayForm(p => ({ ...p, amount: '' }));
+      setFinCategory('');
+      refresh();
+    } catch (e: any) { showErr(e.message || 'Failed to save'); }
     finally { setSaving(false); }
   };
 
@@ -1793,7 +1857,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                                   <div className="flex items-center gap-2">
                                     {g.status !== 'Paid' && g.balance > 0 && (
                                       <motion.button whileTap={{ scale: 0.95 }}
-                                        onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '' }); }}
+                                        onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white"
                                         style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                         <DollarSign size={11} /> Collect
@@ -1930,55 +1994,55 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <td className="px-4 py-3">
                               <div className="flex gap-1.5">
                                 <button onClick={() => setPreview(f)} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
+                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
+                                  setAdmForm({
+                                    applied_for:        f.applied_for        || 'Intermediate',
+                                    program:            f.program            || 'ICS Physics',
+                                    part:               f.part               || 1,
+                                    session:            f.session            || '2026-27',
+                                    student_name:       f.student_name       || '',
+                                    b_form_nic:         f.b_form_nic         || '',
+                                    father_name:        f.father_name        || '',
+                                    father_nic:         f.father_nic         || '',
+                                    father_occupation:  f.father_occupation  || '',
+                                    student_dob:        f.student_dob        || '',
+                                    contact_home:       f.contact_home       || '',
+                                    cell_no:            f.cell_no            || '',
+                                    whatsapp_no:        f.whatsapp_no        || '',
+                                    email:              f.email              || '',
+                                    religion:           f.religion           || 'Islam',
+                                    gender:             f.gender             || 'Male',
+                                    current_address:    f.current_address    || '',
+                                    matric_year:        f.matric_year        || '',
+                                    matric_roll_no:     f.matric_roll_no     || '',
+                                    matric_marks:       f.matric_marks       || '',
+                                    matric_subjects:    f.matric_subjects    || '',
+                                    matric_board:       f.matric_board       || 'BISE Gujranwala',
+                                    matric_division:    f.matric_division    || '',
+                                    matric_percentage:  f.matric_percentage  || '',
+                                    inter_year:         f.inter_year         || '',
+                                    inter_roll_no:      f.inter_roll_no      || '',
+                                    inter_marks:        f.inter_marks        || '',
+                                    inter_subjects:     f.inter_subjects     || '',
+                                    inter_board:        f.inter_board        || 'BISE Gujranwala',
+                                    inter_division:     f.inter_division     || '',
+                                    graduation_year:    f.graduation_year    || '',
+                                    graduation_roll_no: f.graduation_roll_no || '',
+                                    graduation_marks:   f.graduation_marks   || '',
+                                    graduation_board:   f.graduation_board   || '',
+                                    graduation_division:f.graduation_division|| '',
+                                    fee_package:        f.fee_package        || 40000,
+                                    student_type:       f.student_type       || 'Regular',
+                                    is_fresher:         f.is_fresher         ?? true,
+                                    num_instalments:    f.num_instalments    || 1,
+                                    notes:              f.notes              || '',
+                                    _editingId:         f.id,
+                                  });
+                                  setTab('new-admission');
+                                }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
+                                  <Save size={10} /> Edit
+                                </motion.button>
                                 {f.status === 'Pending' && <>
-                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
-                                    setAdmForm({
-                                      applied_for:        f.applied_for        || 'Intermediate',
-                                      program:            f.program            || 'ICS Physics',
-                                      part:               f.part               || 1,
-                                      session:            f.session            || '2026-27',
-                                      student_name:       f.student_name       || '',
-                                      b_form_nic:         f.b_form_nic         || '',
-                                      father_name:        f.father_name        || '',
-                                      father_nic:         f.father_nic         || '',
-                                      father_occupation:  f.father_occupation  || '',
-                                      student_dob:        f.student_dob        || '',
-                                      contact_home:       f.contact_home       || '',
-                                      cell_no:            f.cell_no            || '',
-                                      whatsapp_no:        f.whatsapp_no        || '',
-                                      email:              f.email              || '',
-                                      religion:           f.religion           || 'Islam',
-                                      gender:             f.gender             || 'Male',
-                                      current_address:    f.current_address    || '',
-                                      matric_year:        f.matric_year        || '',
-                                      matric_roll_no:     f.matric_roll_no     || '',
-                                      matric_marks:       f.matric_marks       || '',
-                                      matric_subjects:    f.matric_subjects    || '',
-                                      matric_board:       f.matric_board       || 'BISE Gujranwala',
-                                      matric_division:    f.matric_division    || '',
-                                      matric_percentage:  f.matric_percentage  || '',
-                                      inter_year:         f.inter_year         || '',
-                                      inter_roll_no:      f.inter_roll_no      || '',
-                                      inter_marks:        f.inter_marks        || '',
-                                      inter_subjects:     f.inter_subjects     || '',
-                                      inter_board:        f.inter_board        || 'BISE Gujranwala',
-                                      inter_division:     f.inter_division     || '',
-                                      graduation_year:    f.graduation_year    || '',
-                                      graduation_roll_no: f.graduation_roll_no || '',
-                                      graduation_marks:   f.graduation_marks   || '',
-                                      graduation_board:   f.graduation_board   || '',
-                                      graduation_division:f.graduation_division|| '',
-                                      fee_package:        f.fee_package        || 40000,
-                                      student_type:       f.student_type       || 'Regular',
-                                      is_fresher:         f.is_fresher         ?? true,
-                                      num_instalments:    f.num_instalments    || 1,
-                                      notes:              f.notes              || '',
-                                      _editingId:         f.id,
-                                    });
-                                    setTab('new-admission');
-                                  }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-                                    <Save size={10} /> Edit
-                                  </motion.button>
                                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                     {saving ? <Loader2 size={10} className="animate-spin" /> : <Database size={10} />} Confirm
                                   </motion.button>
@@ -2384,46 +2448,159 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
             )}
 
             {/* ════ ACCOUNTANT REPORTS ════ */}
-            {isAccountant && tab === 'reports' && (
-              <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard icon={DollarSign}    label="Total Balance Due" value={PKR(totalBalance)} color="bg-rose-50 text-rose-600" alert={totalBalance > 0} />
-                  <StatCard icon={AlertTriangle} label="Total Fines"       value={PKR(totalFines)}   color="bg-amber-50 text-amber-600" />
-                  <StatCard icon={Receipt}       label="Transactions"      value={transactions.length} sub="This session" color="bg-blue-50 text-blue-600" />
-                  <StatCard icon={BarChart3}     label="Session Revenue"   value={PKR(transactions.reduce((s, t) => s + Number(t.amount_paid || 0), 0))} color="bg-emerald-50 text-emerald-600" />
+      {isAccountant && tab === 'reports' && (() => {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+        const filterDate = (d: string) => {
+          const dt = new Date(d);
+          if (reportType === 'Daily') return dt >= startOfDay;
+          if (reportType === 'Monthly') return dt >= startOfMonth;
+          return dt >= startOfYear;
+        };
+
+        const filtTx = transactions.filter(t => filterDate(t.payment_date));
+        const filtExp = expenses.filter(e => filterDate(e.expense_date));
+        const filtInc = income.filter(i => filterDate(i.income_date));
+
+        const feeRevenue = filtTx.filter(t => t.transaction_type === 'Payment').reduce((s, t) => s + Number(t.amount_paid || 0), 0);
+        const otherInc = filtInc.reduce((s, i) => s + Number(i.amount || 0), 0);
+        const totalExp = filtExp.reduce((s, e) => s + Number(e.amount || 0), 0);
+        const totalDiscounts = filtTx.filter(t => t.transaction_type === 'Discount').reduce((s, t) => s + Number(t.amount_paid || 0), 0);
+        
+        const netProfit = (feeRevenue + otherInc) - totalExp;
+
+        return (
+          <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
+              <div className="flex gap-2">
+                {['Daily', 'Monthly', 'Yearly'].map((r: any) => (
+                  <button key={r} onClick={() => setReportType(r)} 
+                    className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', reportType === r ? 'text-white border-transparent' : 'bg-slate-50 text-slate-500 border-slate-100')}
+                    style={reportType === r ? { background: GRADIENT } : {}}>{r} Report</button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setFinType('Income'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-2"><Plus size={14}/> Add Income</button>
+                <button onClick={() => { setFinType('Expense'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-100 flex items-center gap-2"><Plus size={14}/> Add Expense</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <StatCard icon={DollarSign}    label="Fee Revenue" value={PKR(feeRevenue)} color="bg-emerald-50 text-emerald-600" />
+              <StatCard icon={Plus}          label="Other Income" value={PKR(otherInc)} color="bg-teal-50 text-teal-600" />
+              <StatCard icon={Trash2}        label="Expenses"      value={PKR(totalExp)} color="bg-rose-50 text-rose-600" alert={totalExp > (feeRevenue + otherInc)} />
+              <StatCard icon={Tag}           label="Discounts"     value={PKR(totalDiscounts)} color="bg-amber-50 text-amber-600" />
+              <StatCard icon={BarChart3}     label="Net Profit"    value={PKR(netProfit)} color={netProfit >= 0 ? "bg-blue-50 text-blue-600" : "bg-rose-50 text-rose-600"} alert={netProfit < 0} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-black text-slate-900 flex items-center gap-2 text-sm"><Receipt size={16} className="text-emerald-500" /> Recent Transactions</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{reportType} Breakdown</p>
                 </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Fee Collection Status</h3></div>
-                  <div className="p-5 space-y-4">
-                    {[{ label: 'Paid Groups', count: paidGroups, color: '#059669' }, { label: 'Partial Groups', count: partialGroups, color: '#D97706' }, { label: 'Unpaid Groups', count: unpaidGroups, color: '#C0392B' }].map(({ label, count, color }) => (
-                      <ProgressBar key={label} pct={Math.round((count / totalGroups) * 100)} color={color} label={label} sub={`${count} · ${Math.round((count / totalGroups) * 100)}%`} />
-                    ))}
+                <div className="overflow-y-auto max-h-[400px]">
+                  {filtTx.length > 0 ? filtTx.map((t, i) => (
+                    <div key={t.id} className="flex items-center justify-between p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/30 transition-colors">
+                      <div className="flex items-center gap-3">
+                         <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", t.transaction_type === 'Discount' ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600")}>
+                           {t.transaction_type === 'Discount' ? <Tag size={14}/> : <DollarSign size={14}/>}
+                         </div>
+                         <div>
+                           <p className="text-xs font-bold text-slate-800">Roll #{t.student_roll_link}</p>
+                           <p className="text-[10px] text-slate-400 capitalize">{t.transaction_type} · {t.payment_method}</p>
+                         </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={cn("text-xs font-black", t.transaction_type === 'Discount' ? "text-amber-600" : "text-emerald-600")}>{PKR(t.amount_paid)}</p>
+                        <p className="text-[9px] text-slate-400">{new Date(t.payment_date).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="p-10 text-center"><p className="text-sm text-slate-400">No transactions for this {reportType.toLowerCase().replace('ly', '')}</p></div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-black text-slate-900 flex items-center gap-2 text-sm"><AlertTriangle size={16} className="text-rose-500" /> Other Financials</h3>
+                  <div className="flex gap-2">
+                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">In: {PKR(otherInc)}</span>
+                    <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded">Out: {PKR(totalExp)}</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💸 Expenses</h3><p className="font-black text-rose-600">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</p></div>
-                    {expenses.slice(0, 8).map((e, i) => (
-                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
-                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.expense_date}</p></div>
-                        <span className="font-black text-rose-600">{PKR(e.amount)}</span>
-                      </motion.div>
-                    ))}
-                    {!expenses.length && <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>}
-                  </div>
-                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💵 Other Income</h3><p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p></div>
-                    {income.slice(0, 8).map((e, i) => (
-                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
-                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
-                        <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
-                      </motion.div>
-                    ))}
-                    {!income.length && <p className="p-6 text-center text-slate-400 text-sm">No income recorded</p>}
-                  </div>
+                <div className="overflow-y-auto max-h-[400px]">
+                  {([...filtInc, ...filtExp].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())).length > 0 ? 
+                    ([...filtInc, ...filtExp].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())).map((r, i) => {
+                      const isInc = filtInc.includes(r);
+                      return (
+                        <div key={r.id} className="flex items-center justify-between p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/30 transition-colors">
+                          <div className="flex items-center gap-3">
+                             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", isInc ? "bg-teal-50 text-teal-600" : "bg-rose-50 text-rose-600")}>
+                               {isInc ? <Plus size={14}/> : <Minus size={14}/>}
+                             </div>
+                             <div>
+                               <p className="text-xs font-bold text-slate-800">{r.description}</p>
+                               <p className="text-[10px] text-slate-400">{r.category} · {isInc ? r.income_date : r.expense_date}</p>
+                             </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={cn("text-xs font-black", isInc ? "text-teal-600" : "text-rose-600")}>{isInc ? '+' : '-'}{PKR(r.amount)}</p>
+                            <p className="text-[9px] text-slate-400">By {r.recorded_by}</p>
+                          </div>
+                        </div>
+                      );
+                    }) : (
+                    <div className="p-10 text-center"><p className="text-sm text-slate-400">No records for this period</p></div>
+                  )}
                 </div>
-              </motion.div>
-            )}
+              </div>
+            </div>
+          </motion.div>
+        );
+      })()}
+
+      {/* ════ ACCOUNTANT FINANCIAL ENTRY (New Tab) ════ */}
+      {isAccountant && tab === 'manage-financials' && (
+        <motion.div key="fin-man" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-xl mx-auto">
+          <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-xl">
+             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between" style={{ background: finType === 'Income' ? '#f0fdf4' : '#fef2f2' }}>
+               <h3 className="font-black text-slate-900">Record {finType}</h3>
+               <button onClick={() => setTab('reports')} className="text-slate-400"><X size={20}/></button>
+             </div>
+             <div className="p-6 space-y-5">
+               <div className="flex gap-2">
+                 {['Income', 'Expense'].map((t: any) => (
+                   <button key={t} onClick={() => setFinType(t)} className={cn('flex-1 py-3 rounded-2xl text-sm font-black transition-all border', finType === t ? 'text-white border-transparent' : 'bg-slate-50 text-slate-500 border-slate-100')} style={finType === t ? { background: t === 'Income' ? 'linear-gradient(135deg,#059669,#10b981)' : 'linear-gradient(135deg,#e11d48,#fb7185)' } : {}}>{t}</button>
+                 ))}
+               </div>
+               <div>
+                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Description</label>
+                 <TI placeholder={finType === 'Income' ? "e.g. Donation, Library Fund" : "e.g. Electricity Bill, Stationery"} value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)} />
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount (PKR)</label>
+                   <TI type="number" placeholder="0.00" value={feePayForm.amount} onChange={(e: any) => setFeePayForm(p => ({ ...p, amount: e.target.value }))} />
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Date</label>
+                   <TI type="date" value={finDate} onChange={(e: any) => setFinDate(e.target.value)} />
+                 </div>
+               </div>
+               <div className="pt-2">
+                 <motion.button whileTap={{ scale: 0.97 }} onClick={saveFinancialRecord} disabled={saving} className="w-full py-4 rounded-2xl text-sm font-black text-white shadow-lg flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: finType === 'Income' ? 'linear-gradient(135deg,#059669,#10b981)' : 'linear-gradient(135deg,#e11d48,#fb7185)' }}>
+                   {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16}/> Save {finType} Record</>}
+                 </motion.button>
+               </div>
+             </div>
+          </div>
+        </motion.div>
+      )}
 
           </AnimatePresence>
         </div>
@@ -2487,14 +2664,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   ))}
                 </div>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount to Collect (PKR)</label>
-                    <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder={`Max: Rs ${collectModal.balance?.toLocaleString('en-PK')}`} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all" />
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      {[collectModal.balance, Math.round(collectModal.balance / 2), Math.round(collectModal.balance / 4)].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map(amt => (
-                        <button key={amt} onClick={() => setFeePayForm(p => ({ ...p, amount: String(amt) }))} className="px-3 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">{PKR(amt)}</button>
-                      ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount to Collect (PKR)</label>
+                      <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder={`Max: Rs ${collectModal.balance?.toLocaleString('en-PK')}`} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all" />
                     </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Direct Discount (PKR)</label>
+                      <input type="number" value={feePayForm.discount} onChange={e => setFeePayForm(p => ({ ...p, discount: e.target.value }))} placeholder="Apply Discount" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 transition-all bg-amber-50/30" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {[collectModal.balance, Math.round(collectModal.balance / 2), Math.round(collectModal.balance / 4)].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map(amt => (
+                      <button key={amt} onClick={() => setFeePayForm(p => ({ ...p, amount: String(amt) }))} className="px-3 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">{PKR(amt)}</button>
+                    ))}
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Payment Method</label>
