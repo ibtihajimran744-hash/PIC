@@ -40,3 +40,30 @@
 .admin-card {
   @apply bg-[#121212] border border-white/5 rounded-2xl p-6;
 }
+
+@media print {
+  body {
+    background: white !important;
+    margin: 0;
+    padding: 0;
+  }
+  #printable-receipt {
+    display: block !important;
+    visibility: visible !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: black !important;
+  }
+  body > *:not(#printable-receipt) {
+    display: none !important;
+  }
+  #printable-receipt * {
+    visibility: visible !important;
+  }
+}
+
+#printable-receipt {
+  display: none;
+}

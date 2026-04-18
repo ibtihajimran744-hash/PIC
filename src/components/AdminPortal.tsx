@@ -6,7 +6,7 @@ import {
   Shield, UserPlus, Loader2, Home, UserCog, Trash2,
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
-  Plus, Lock, Unlock, User
+  Plus, Lock, Unlock, User, Printer
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -583,6 +583,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
+  const [printTx,         setPrintTx]         = useState<any>(null);
 
   const [admForm, setAdmForm] = useState<any>({ ...EMPTY_FORM });
   const pct = Number(admForm.matric_percentage) || 0;
@@ -593,6 +594,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const showToast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); };
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
+
+  const handlePrint = (tx: any) => {
+    setPrintTx(tx);
+    // Wait for the printable content to render
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
 
   // ── Load: Principal ────────────────────────────────────────────────────
   const loadPrincipal = useCallback(async () => {
@@ -1545,7 +1554,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
                     <table className="w-full text-xs min-w-[700px]">
                       <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['Date', 'Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Confirmed By'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
+                        <tr>{['Date', 'Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Confirmed By', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
                       </thead>
                       <tbody>
                         {transactions.map((t, i) => (
@@ -1558,6 +1567,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-50 text-blue-700">{t.transaction_type || 'Payment'}</span></td>
                             <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400">{t.receipt_serial || '—'}</td>
                             <td className="px-4 py-2.5">{t.confirmed_by ? <span className="text-emerald-600 font-bold text-[10px]">✓ {t.confirmed_by}</span> : <span className="text-amber-500 text-[10px]">Pending</span>}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              <button onClick={() => handlePrint(t)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-colors">
+                                <Printer size={14} />
+                              </button>
+                            </td>
                           </motion.tr>
                         ))}
                         {!transactions.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No transactions yet</td></tr>}
@@ -2203,6 +2217,78 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
           </div>
         )}
       </AnimatePresence>
+
+      {/* PRINTABLE RECEIPT (Hidden in UI, visible in print) */}
+      <div id="printable-receipt" className="p-8 text-black bg-white">
+        {printTx && (
+          <div className="max-w-[450px] mx-auto border-2 border-slate-200 p-8 rounded-lg shadow-sm">
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-900">PAK INFORMATICS</h2>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">Group of Colleges · Gujranwala</p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <span className="h-px w-12 bg-slate-200" />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Official Fee Receipt</span>
+                <span className="h-px w-12 bg-slate-200" />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-8 mb-8">
+              <div>
+                <p className="text-[10px] uppercase font-black text-slate-400 mb-1">Receipt Number</p>
+                <p className="text-base font-black text-slate-900">{printTx.receipt_serial || printTx.id?.slice(0, 8).toUpperCase()}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase font-black text-slate-400 mb-1">Date Issued</p>
+                <p className="text-base font-black text-slate-900">{new Date(printTx.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 mb-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <span className="text-xs text-slate-500 font-bold uppercase">Student Roll ID</span>
+                <span className="text-sm font-black text-slate-900">#{printTx.student_roll_link}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <span className="text-xs text-slate-500 font-bold uppercase">Payment Method</span>
+                <span className="text-sm font-black text-slate-900">{printTx.payment_method}</span>
+              </div>
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <span className="text-xs text-slate-500 font-bold uppercase">Category</span>
+                <span className="text-sm font-black text-slate-900">{printTx.transaction_type || 'Academic Fee'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500 font-bold uppercase">Processed By</span>
+                <span className="text-sm font-black text-slate-900">{printTx.collected_by || 'Accountant Office'}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 text-white p-6 rounded-2xl text-center mb-8 shadow-xl shadow-slate-200">
+              <p className="text-[10px] uppercase font-black text-slate-400 mb-2 tracking-widest">Total Amount Collected</p>
+              <p className="text-4xl font-black">{PKR(Number(printTx.amount_paid))}</p>
+              <p className="text-[10px] text-slate-300 font-bold mt-2 italic uppercase">Received with thanks</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-12 mt-12">
+              <div className="text-center">
+                <div className="h-px border-b border-slate-300 w-full mb-2" />
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Authorized Signature</p>
+              </div>
+              <div className="text-center">
+                <div className="h-px border-b border-slate-300 w-full mb-2" />
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Student / Guardian</p>
+              </div>
+            </div>
+
+            <div className="mt-12 pt-6 border-t border-slate-100 text-center">
+              <p className="text-[10px] text-slate-400 font-bold leading-relaxed px-4">
+                Thank you for choosing Pak Informatics. This receipt validates your financial commitment to excellence. 
+                Keep this safe for future reference.
+              </p>
+              <p className="text-[8px] text-slate-300 font-black mt-4 uppercase tracking-[0.3em]">Generated via Admin Portal</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
