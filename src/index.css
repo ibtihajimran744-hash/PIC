@@ -2,68 +2,143 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-admin-bg: #0d0d0d;
-  --color-admin-sidebar: #121212;
-  --color-admin-accent: #00f3ff;
-  --color-neon-cyan: #00f3ff;
-  --color-neon-purple: #bc13fe;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-@layer base {
-  body {
-    @apply font-sans bg-[#0d0d0d] text-slate-200;
-  }
+:root {
+  --accent: #0F766E;
+  --accent-foreground: #ffffff;
 }
 
-.neon-border-cyan {
-  box-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff;
-  border: 1px solid #00f3ff;
-}
-
-.neon-border-purple {
-  box-shadow: 0 0 5px #bc13fe, 0 0 10px #bc13fe;
-  border: 1px solid #bc13fe;
-}
-
-.neon-text-cyan {
-  text-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff;
-}
-
-.neon-text-purple {
-  text-shadow: 0 0 5px #bc13fe, 0 0 10px #bc13fe;
-}
-
-.glass-card {
-  @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl;
-}
-
-.admin-card {
-  @apply bg-[#121212] border border-white/5 rounded-2xl p-6;
-}
-
-@media print {
-  body {
-    background: white !important;
-    margin: 0;
-    padding: 0;
-  }
-  #printable-receipt {
-    display: block !important;
-    visibility: visible !important;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    color: black !important;
-  }
-  body > *:not(#printable-receipt) {
-    display: none !important;
-  }
-  #printable-receipt * {
-    visibility: visible !important;
-  }
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: var(--font-sans);
 }
 
 #printable-receipt {
   display: none;
+}
+
+/* Fee Voucher Template Styles */
+.voucher-container {
+    width: 210mm;
+    margin: 0 auto;
+    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+    background-color: #fff;
+    padding: 20px;
+}
+
+.voucher-header {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+}
+
+.institution-name {
+    font-size: 24pt;
+    font-weight: 800;
+    color: #1a5276;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.institution-details {
+    font-size: 10pt;
+    line-height: 1.4;
+    margin: 5px 0;
+}
+
+.copy-type-tag {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 5px 15px;
+    border: 1px solid #000;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 9pt;
+}
+
+.student-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ccc;
+    padding: 15px;
+}
+
+.info-item {
+    font-size: 11pt;
+    display: flex;
+    gap: 5px;
+}
+
+.info-label {
+    font-weight: bold;
+    min-width: 100px;
+}
+
+.fee-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+.fee-table th, .fee-table td {
+    border: 1px solid #000;
+    padding: 8px;
+    text-align: left;
+    font-size: 10pt;
+}
+
+.fee-table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+.total-row {
+    font-weight: bold;
+    background-color: #eee;
+}
+
+.voucher-footer {
+    font-size: 9pt;
+    line-height: 1.6;
+}
+
+.payment-methods {
+    background-color: #f9f9f9;
+    border-left: 4px solid #1a5276;
+    padding: 10px;
+    font-weight: bold;
+}
+
+.tear-line {
+    border-top: 2px dashed #888;
+    text-align: center;
+    margin: 40px 0;
+    position: relative;
+}
+
+.tear-line span {
+    background: #fff;
+    padding: 0 10px;
+    position: relative;
+    top: -12px;
+    font-size: 12pt;
+}
+
+@media print {
+    body { background: white !important; margin: 0; padding: 0; }
+    #printable-receipt { 
+        display: block !important; 
+        visibility: visible !important;
+        position: static !important;
+        width: 100% !important;
+        color: black !important;
+    }
+    body > *:not(#printable-receipt) { display: none !important; }
+    .no-print { display: none; }
 }

@@ -583,7 +583,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
-  const [printTx,         setPrintTx]         = useState<any>(null);
+
 
   const [admForm, setAdmForm] = useState<any>({ ...EMPTY_FORM });
   const pct = Number(admForm.matric_percentage) || 0;
@@ -596,29 +596,125 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const refresh   = () => setRefreshKey(k => k + 1);
 
   const handlePrint = (tx: any) => {
-    setPrintTx(tx);
-    showToast("Generating receipt...");
-  };
-
-  useEffect(() => {
-    if (printTx) {
-      const timer = setTimeout(() => {
-        try {
-          window.print();
-        } catch (err) {
-          console.error("Print error:", err);
-          showErr("Print blocked by browser. Please try in a new tab.");
-        }
-      }, 400);
-      return () => clearTimeout(timer);
+    const student = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
+    const feeGroup = feeGroups.find(g => g.id === tx.fee_group_id);
+    
+    // Create the receipt HTML based on the provided template with 3 copies
+    const copies = ['BANK COPY', 'COLLEGE COPY', 'STUDENT COPY'];
+    
+    const receiptHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Fee Voucher</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #fff; padding: 10px; }
+    
+    .voucher-container { width: 210mm; margin: 0 auto; padding: 20px; position: relative; page-break-after: always; }
+    .voucher-header { text-align: center; border-bottom: 2px solid #000; margin-bottom: 15px; padding-bottom: 10px; }
+    .institution-name { font-size: 24pt; font-weight: 800; color: #1a5276; margin: 0; text-transform: uppercase; }
+    .institution-details { font-size: 10pt; line-height: 1.4; margin: 5px 0; font-weight: bold; color: #64748b; }
+    .copy-type-tag { display: inline-block; margin-top: 10px; padding: 5px 15px; border: 1px solid #000; font-weight: bold; text-transform: uppercase; font-size: 10pt; background: #f8fafc; }
+    
+    .student-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; background: #f8fafc; }
+    .info-item { font-size: 11pt; display: flex; gap: 8px; }
+    .info-label { font-weight: bold; min-width: 110px; color: #64748b; text-transform: uppercase; font-size: 9pt; }
+    .info-val { font-weight: 800; color: #0f172a; }
+    
+    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .fee-table th, .fee-table td { border: 1px solid #000; padding: 10px; text-align: left; font-size: 10pt; }
+    .fee-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 9pt; }
+    .total-row { font-weight: bold; background-color: #f1f5f9; }
+    .total-row td { font-size: 12pt; font-weight: 900; }
+    
+    .voucher-footer { font-size: 9pt; line-height: 1.6; display: grid; grid-template-columns: 2fr 130px; gap: 20px; align-items: end; }
+    .payment-methods { background-color: #f1f5f9; border-left: 4px solid #1a5276; padding: 12px; font-weight: bold; border-radius: 4px; }
+    .sig-area { text-align: center; }
+    .sig-line { border-top: 1px solid #000; margin-bottom: 5px; width: 100%; }
+    .sig-label { font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    
+    .tear-line { border-top: 2px dashed #94a3b8; text-align: center; margin: 30px 0; position: relative; }
+    .tear-line span { background: #fff; padding: 0 15px; position: relative; top: -12px; font-size: 10pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; }
+    
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+      @page { size: A4; margin: 10mm; }
     }
-  }, [printTx]);
+  </style>
+</head>
+<body>
+  ${copies.map((copyType, idx) => `
+    <div class="voucher-container">
+      <div class="voucher-header">
+        <h1 class="institution-name">PAK INFORMATICS</h1>
+        <p class="institution-details">GROUP OF COLLEGES &middot; GUJRANWALA</p>
+        <div class="copy-type-tag">${copyType}</div>
+      </div>
+      
+      <div class="student-info-grid">
+        <div class="info-item"><span class="info-label">Student Name:</span> <span class="info-val">${student?.full_name || '—'}</span></div>
+        <div class="info-item"><span class="info-label">Roll Number:</span> <span class="info-val">#${tx.student_roll_link}</span></div>
+        <div class="info-item"><span class="info-label">Class:</span> <span class="info-val">${student?.class_section || '—'}</span></div>
+        <div class="info-item"><span class="info-label">Voucher ID:</span> <span class="info-val">${tx.receipt_serial || tx.id?.slice(0, 8).toUpperCase() || '—'}</span></div>
+        <div class="info-item"><span class="info-label">Date:</span> <span class="info-val">${new Date(tx.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}</span></div>
+        <div class="info-item"><span class="info-label">Session:</span> <span class="info-val">2026-27</span></div>
+      </div>
 
-  useEffect(() => {
-    const onAfterPrint = () => setPrintTx(null);
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => window.removeEventListener('afterprint', onAfterPrint);
-  }, []);
+      <table class="fee-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th style="text-align: right;">Amount (PKR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${tx.transaction_type || 'Academic Fees'} - ${feeGroup?.fees_group || 'Periodic Installment'}</td>
+            <td style="text-align: right;">${Number(tx.amount_paid).toLocaleString('en-PK')}</td>
+          </tr>
+          ${tx.fine_amount ? `<tr><td>Late Fee Fine</td><td style="text-align: right;">${Number(tx.fine_amount).toLocaleString('en-PK')}</td></tr>` : ''}
+          <tr class="total-row">
+            <td><strong>TOTAL ${tx.transaction_type === 'Discount' ? 'DISCOUNT' : 'PAYABLE'}</strong></td>
+            <td style="text-align: right;"><strong>Rs ${(Number(tx.amount_paid) + Number(tx.fine_amount || 0)).toLocaleString('en-PK')}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="voucher-footer">
+        <div>
+          <div class="payment-methods">
+            PAYMENT MODES: CASH / BANK TRANSFER / CHEQUE
+          </div>
+          <p style="margin-top: 10px; color: #64748b; font-style: italic;">Note: This is a system generated voucher and does not require a physical stamp until requested.</p>
+        </div>
+        <div class="sig-area">
+          <div class="sig-line"></div>
+          <div class="sig-label">AUTHORIZED OFFICER</div>
+        </div>
+      </div>
+
+      ${idx < 2 ? `<div class="tear-line"><span>✂ CUT HERE</span></div>` : ''}
+    </div>
+  `).join('')}
+  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    iframe.contentWindow!.document.open();
+    iframe.contentWindow!.document.write(receiptHTML);
+    iframe.contentWindow!.document.close();
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 10000);
+  };
 
   // ── Load: Principal ────────────────────────────────────────────────────
   const loadPrincipal = useCallback(async () => {
@@ -787,9 +883,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     setDiscSaving(d.id);
     try {
       await supabase.from('discount_requests').update({ status: 'Approved', reviewed_by: adminData.full_name, reviewed_at: new Date().toISOString(), applied: true }).eq('id', d.id);
-      await supabase.from('fee_groups').update({ discount: d.discount_amount }).eq('student_roll', d.student_roll).eq('status', 'Unpaid').limit(1);
+      
+      // Apply to an unpaid fee group
+      const { data: groups } = await supabase.from('fee_groups').select('*').eq('student_roll', d.student_roll).eq('status', 'Unpaid').limit(1);
+      if (groups && groups.length > 0) {
+        const group = groups[0];
+        const newDiscount = (group.discount || 0) + d.discount_amount;
+        await supabase.from('fee_groups').update({ discount: newDiscount }).eq('id', group.id);
+        
+        // Also record as a transaction so it can be printed
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(d.student_roll),
+          amount_paid: d.discount_amount,
+          payment_method: 'Discount',
+          collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(),
+          transaction_type: 'Discount',
+          fee_group_id: group.id,
+          receipt_serial: `DISC-${d.id.slice(0, 4).toUpperCase()}`
+        }]);
+      }
+      
       showToast('✅ Discount approved & applied'); refresh();
-    } catch { showErr('Failed'); }
+    } catch (error) { 
+      console.error(error);
+      showErr('Failed to apply discount'); 
+    }
     finally { setDiscSaving(null); }
   };
   const rejectDiscount = async (d: any) => {
@@ -2239,77 +2358,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         )}
       </AnimatePresence>
 
-      {/* PRINTABLE RECEIPT (Hidden in UI, visible in print) */}
-      <div id="printable-receipt" className="p-8 text-black bg-white">
-        {printTx && (
-          <div className="max-w-[450px] mx-auto border-2 border-slate-200 p-8 rounded-lg shadow-sm">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-black uppercase tracking-tighter text-slate-900">PAK INFORMATICS</h2>
-              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">Group of Colleges · Gujranwala</p>
-              <div className="mt-4 flex items-center justify-center gap-2">
-                <span className="h-px w-12 bg-slate-200" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Official Fee Receipt</span>
-                <span className="h-px w-12 bg-slate-200" />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-8 mb-8">
-              <div>
-                <p className="text-[10px] uppercase font-black text-slate-400 mb-1">Receipt Number</p>
-                <p className="text-base font-black text-slate-900">{printTx.receipt_serial || printTx.id?.slice(0, 8).toUpperCase()}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] uppercase font-black text-slate-400 mb-1">Date Issued</p>
-                <p className="text-base font-black text-slate-900">{new Date(printTx.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-              </div>
-            </div>
-
-            <div className="space-y-4 mb-8 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <span className="text-xs text-slate-500 font-bold uppercase">Student Roll ID</span>
-                <span className="text-sm font-black text-slate-900">#{printTx.student_roll_link}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <span className="text-xs text-slate-500 font-bold uppercase">Payment Method</span>
-                <span className="text-sm font-black text-slate-900">{printTx.payment_method}</span>
-              </div>
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <span className="text-xs text-slate-500 font-bold uppercase">Category</span>
-                <span className="text-sm font-black text-slate-900">{printTx.transaction_type || 'Academic Fee'}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-bold uppercase">Processed By</span>
-                <span className="text-sm font-black text-slate-900">{printTx.collected_by || 'Accountant Office'}</span>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 text-white p-6 rounded-2xl text-center mb-8 shadow-xl shadow-slate-200">
-              <p className="text-[10px] uppercase font-black text-slate-400 mb-2 tracking-widest">Total Amount Collected</p>
-              <p className="text-4xl font-black">{PKR(Number(printTx.amount_paid))}</p>
-              <p className="text-[10px] text-slate-300 font-bold mt-2 italic uppercase">Received with thanks</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-12 mt-12">
-              <div className="text-center">
-                <div className="h-px border-b border-slate-300 w-full mb-2" />
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Authorized Signature</p>
-              </div>
-              <div className="text-center">
-                <div className="h-px border-b border-slate-300 w-full mb-2" />
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Student / Guardian</p>
-              </div>
-            </div>
-
-            <div className="mt-12 pt-6 border-t border-slate-100 text-center">
-              <p className="text-[10px] text-slate-400 font-bold leading-relaxed px-4">
-                Thank you for choosing Pak Informatics. This receipt validates your financial commitment to excellence. 
-                Keep this safe for future reference.
-              </p>
-              <p className="text-[8px] text-slate-300 font-black mt-4 uppercase tracking-[0.3em]">Generated via Admin Portal</p>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
