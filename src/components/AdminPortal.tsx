@@ -776,6 +776,80 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     setTimeout(() => document.body.removeChild(iframe), 6000);
   };
 
+  const handlePrintReport = (data: any) => {
+    const { type, feeRev, otherInc, totalExp, discounts, net, txs, others, receivable } = data;
+    const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
+    const LOGO_B64 = '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';
+
+    const txRowsHTML = txs.map((t: any) => `
+      <tr>
+        <td>Roll #${t.student_roll_link}</td>
+        <td>${t.transaction_type}</td>
+        <td>${t.payment_method}</td>
+        <td>Rs ${(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+        <td>${new Date(t.payment_date).toLocaleDateString()}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Calibri, sans-serif; padding: 30px; color: #333; }
+    .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+    .logo { width: 60px; height: 60px; }
+    h1 { margin: 10px 0 5px; font-size: 24pt; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
+    .stat-box { border: 1px solid #eee; padding: 15px; border-radius: 10px; background: #fafafa; }
+    .stat-label { font-size: 9pt; text-transform: uppercase; color: #888; font-weight: bold; }
+    .stat-value { font-size: 16pt; font-weight: bold; margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
+    th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
+    th { background: #f4f4f4; }
+    .section-title { font-size: 12pt; font-weight: bold; margin: 20px 0 10px; border-left: 4px solid #0F766E; padding-left: 10px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
+    <h1>Pak Informatics Group of Colleges</h1>
+    <p>${type} Financial Report - ${dateStr}</p>
+  </div>
+  
+  <div class="summary-grid">
+    <div class="stat-box"><p class="stat-label">Fee Revenue</p><p class="stat-value">${PKR(feeRev)}</p></div>
+    <div class="stat-box"><p class="stat-label">Other Income</p><p class="stat-value">${PKR(otherInc)}</p></div>
+    <div class="stat-box"><p class="stat-label">Total Income</p><p class="stat-value" style="color:#059669">${PKR(feeRev + otherInc)}</p></div>
+    <div class="stat-box"><p class="stat-label">Receivables</p><p class="stat-value" style="color:#D97706">${PKR(receivable)}</p></div>
+    <div class="stat-box"><p class="stat-label">Expenses</p><p class="stat-value">${PKR(totalExp)}</p></div>
+    <div class="stat-box"><p class="stat-label">Discounts</p><p class="stat-value">${PKR(discounts)}</p></div>
+    <div class="stat-box"><p class="stat-label">Net Profit</p><p class="stat-value" style="color:${net >= 0 ? '#059669' : '#e11d48'}">${PKR(net)}</p></div>
+  </div>
+
+  <div class="section-title">Transactions (Fee Collection)</div>
+  <table>
+    <thead><tr><th>Student</th><th>Type</th><th>Method</th><th>Amount</th><th>Date</th></tr></thead>
+    <tbody>${txRowsHTML || '<tr><td colspan="5" align="center">No transactions</td></tr>'}</tbody>
+  </table>
+
+  <div class="section-title">Other Financials (Income/Expenses)</div>
+  <table>
+    <thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
+    <tbody>${others.map((r: any) => `<tr><td>${r.description}</td><td>${r.category}</td><td>${PKR(r.amount)}</td><td>${r.income_date || r.expense_date}</td></tr>`).join('') || '<tr><td colspan="4" align="center">No other financials</td></tr>'}</tbody>
+  </table>
+
+  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+    document.body.appendChild(iframe);
+    iframe.contentWindow!.document.open();
+    iframe.contentWindow!.document.write(html);
+    iframe.contentWindow!.document.close();
+    setTimeout(() => document.body.removeChild(iframe), 6000);
+  };
+
   // ── Load: Principal ────────────────────────────────────────────────────
   const loadPrincipal = useCallback(async () => {
     setLoading(true);
@@ -2475,22 +2549,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
         return (
           <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-              <div className="flex gap-2">
-                {['Daily', 'Monthly', 'Yearly'].map((r: any) => (
-                  <button key={r} onClick={() => setReportType(r)} 
-                    className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', reportType === r ? 'text-white border-transparent' : 'bg-slate-50 text-slate-500 border-slate-100')}
-                    style={reportType === r ? { background: GRADIENT } : {}}>{r} Report</button>
-                ))}
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl">
+                  {['Daily', 'Monthly', 'Yearly'].map((r: any) => (
+                    <button key={r} onClick={() => setReportType(r)} 
+                      className={cn('px-4 py-2 rounded-xl text-xs font-black transition-all', reportType === r ? 'text-white shadow-md' : 'text-slate-500 hover:bg-slate-200')}
+                      style={reportType === r ? { background: GRADIENT } : {}}>{r}</button>
+                  ))}
+                </div>
+                <button 
+                  onClick={() => handlePrintReport({ type: reportType, feeRev: feeRevenue, otherInc, totalExp, discounts: totalDiscounts, net: netProfit, txs: filtTx, others: [...filtInc, ...filtExp], receivable: totalBalance })}
+                  className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
+                  title="Print Report">
+                  <Printer size={18} />
+                </button>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setFinType('Income'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-2"><Plus size={14}/> Add Income</button>
-                <button onClick={() => { setFinType('Expense'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-100 flex items-center gap-2"><Plus size={14}/> Add Expense</button>
+                <button onClick={() => { setFinType('Income'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-2 hover:bg-emerald-100 transition-all"><Plus size={14}/> Add Income</button>
+                <button onClick={() => { setFinType('Expense'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-100 flex items-center gap-2 hover:bg-rose-100 transition-all"><Plus size={14}/> Add Expense</button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
               <StatCard icon={DollarSign}    label="Fee Revenue" value={PKR(feeRevenue)} color="bg-emerald-50 text-emerald-600" />
               <StatCard icon={Plus}          label="Other Income" value={PKR(otherInc)} color="bg-teal-50 text-teal-600" />
+              <StatCard icon={Database}      label="Total Income" value={PKR(feeRevenue + otherInc)} color="bg-emerald-100 text-emerald-800" />
+              <StatCard icon={Clock}         label="Fees Receivable" value={PKR(totalBalance)} color="bg-orange-50 text-orange-600" />
               <StatCard icon={Trash2}        label="Expenses"      value={PKR(totalExp)} color="bg-rose-50 text-rose-600" alert={totalExp > (feeRevenue + otherInc)} />
               <StatCard icon={Tag}           label="Discounts"     value={PKR(totalDiscounts)} color="bg-amber-50 text-amber-600" />
               <StatCard icon={BarChart3}     label="Net Profit"    value={PKR(netProfit)} color={netProfit >= 0 ? "bg-blue-50 text-blue-600" : "bg-rose-50 text-rose-600"} alert={netProfit < 0} />
