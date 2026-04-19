@@ -2522,131 +2522,239 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
             )}
 
             {/* ════ ACCOUNTANT REPORTS ════ */}
-      {isAccountant && tab === 'reports' && (() => {
-        const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
+      {/* ════ ACCOUNTANT REPORTS ════ */}
+            {isAccountant && tab === 'reports' && (() => {
+              const [reportFrom, setReportFrom] = React.useState(today);
+              const [reportTo,   setReportTo]   = React.useState(today);
 
-        const filterDate = (d: string) => {
-          const dt = new Date(d);
-          if (reportType === 'Daily') return dt >= startOfDay;
-          if (reportType === 'Monthly') return dt >= startOfMonth;
-          return dt >= startOfYear;
-        };
+              const reportTx = transactions.filter(t => {
+                if (!t.payment_date) return false;
+                const d = t.payment_date.slice(0, 10);
+                return d >= reportFrom && d <= reportTo;
+              });
 
-        const filtTx = transactions.filter(t => filterDate(t.payment_date));
-        const filtExp = expenses.filter(e => filterDate(e.expense_date));
-        const filtInc = income.filter(i => filterDate(i.income_date));
+              const grandPaid    = reportTx.reduce((s, t) => s + Number(t.amount_paid   || 0), 0);
+              const grandDisc    = reportTx.reduce((s, t) => s + Number(t.discount      || 0), 0);
+              const grandFine    = reportTx.reduce((s, t) => s + Number(t.fine_amount   || 0), 0);
+              const grandTotal   = reportTx.reduce((s, t) => s + Number(t.amount_paid   || 0), 0);
 
-        const feeRevenue = filtTx.filter(t => t.transaction_type === 'Payment').reduce((s, t) => s + Number(t.amount_paid || 0), 0);
-        const otherInc = filtInc.reduce((s, i) => s + Number(i.amount || 0), 0);
-        const totalExp = filtExp.reduce((s, e) => s + Number(e.amount || 0), 0);
-        const totalDiscounts = filtTx.filter(t => t.transaction_type === 'Discount').reduce((s, t) => s + Number(t.amount_paid || 0), 0);
-        
-        const netProfit = (feeRevenue + otherInc) - totalExp;
+              const LOGO_B64 = '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';
 
-        return (
-          <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl">
-                  {['Daily', 'Monthly', 'Yearly'].map((r: any) => (
-                    <button key={r} onClick={() => setReportType(r)} 
-                      className={cn('px-4 py-2 rounded-xl text-xs font-black transition-all', reportType === r ? 'text-white shadow-md' : 'text-slate-500 hover:bg-slate-200')}
-                      style={reportType === r ? { background: GRADIENT } : {}}>{r}</button>
-                  ))}
+              const printReport = () => {
+                const fromFmt = new Date(reportFrom).toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' });
+                const toFmt   = new Date(reportTo).toLocaleDateString('en-PK',   { day:'2-digit', month:'2-digit', year:'numeric' });
+
+                const rows = reportTx.map((t, i) => {
+                  const stu = students.find(s => String(s.roll_no) === String(t.student_roll_link));
+                  return `<tr>
+                    <td>${i + 1}</td>
+                    <td>${t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'}</td>
+                    <td>${t.student_roll_link || '—'}</td>
+                    <td>${stu?.full_name || '—'}</td>
+                    <td>${stu?.class_section || '—'}</td>
+                    <td>${t.transaction_type || 'Fee Payment'}</td>
+                    <td>${t.collected_by || '—'}</td>
+                    <td>${t.payment_method || '—'}</td>
+                    <td>${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                    <td>0.00</td>
+                    <td>0.00</td>
+                    <td>${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                  </tr>`;
+                }).join('');
+
+                const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>Fees Collection Report</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; color: #000; padding: 20px; }
+  .header { text-align: center; margin-bottom: 16px; }
+  .header-top { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; }
+  .logo { width: 52px; height: 52px; object-fit: contain; }
+  .college-name { font-size: 18pt; font-weight: bold; }
+  .address { font-size: 9pt; color: #333; margin: 2px 0; }
+  .report-title { font-size: 13pt; font-weight: bold; margin-top: 10px; }
+  .report-sub { font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th { background: #f2f2f2; border: 1px solid #999; padding: 5px 4px; font-size: 8.5pt; font-weight: bold; text-align: left; white-space: nowrap; }
+  td { border: 1px solid #bbb; padding: 4px; font-size: 8pt; vertical-align: top; }
+  .grand-row td { font-weight: bold; background: #f9f9f9; border-top: 2px solid #666; }
+  @media print { body { padding: 8px; } }
+</style>
+</head><body>
+  <div class="header">
+    <div class="header-top">
+      <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" alt="Logo"/>
+      <div class="college-name">Pak Informatics Group of Colleges</div>
+    </div>
+    <div class="address">Original Campus, Gujranwala | Ph: 0300-0642973</div>
+    <div class="address">PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
+    <div class="report-title">Fees Collection Report</div>
+    <div class="report-sub">(Search Type: ${fromFmt} To ${toFmt})</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Date</th>
+        <th>Admission No</th>
+        <th>Name</th>
+        <th>Class</th>
+        <th>Fee Type</th>
+        <th>Collect By</th>
+        <th>Mode</th>
+        <th>Paid (PKR)</th>
+        <th>Discount (PKR)</th>
+        <th>Fine (PKR)</th>
+        <th>Total (PKR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows || '<tr><td colspan="12" style="text-align:center;padding:12px">No transactions in this date range</td></tr>'}
+      <tr class="grand-row">
+        <td colspan="8" style="text-align:right"><strong>Grand Total</strong></td>
+        <td><strong>${grandPaid.toLocaleString('en-PK')}</strong></td>
+        <td><strong>${grandDisc.toLocaleString('en-PK')}</strong></td>
+        <td><strong>${grandFine.toLocaleString('en-PK')}</strong></td>
+        <td><strong>${grandTotal.toLocaleString('en-PK')}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
+</body></html>`;
+
+                const iframe = document.createElement('iframe');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+                document.body.appendChild(iframe);
+                iframe.contentWindow!.document.open();
+                iframe.contentWindow!.document.write(html);
+                iframe.contentWindow!.document.close();
+                setTimeout(() => document.body.removeChild(iframe), 6000);
+              };
+
+              return (
+              <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+                {/* Summary cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard icon={DollarSign}    label="Total Balance Due" value={PKR(totalBalance)} color="bg-rose-50 text-rose-600" alert={totalBalance > 0} />
+                  <StatCard icon={AlertTriangle} label="Total Fines"       value={PKR(totalFines)}   color="bg-amber-50 text-amber-600" />
+                  <StatCard icon={Receipt}       label="Transactions"      value={transactions.length} sub="This session" color="bg-blue-50 text-blue-600" />
+                  <StatCard icon={BarChart3}     label="Session Revenue"   value={PKR(transactions.reduce((s, t) => s + Number(t.amount_paid || 0), 0))} color="bg-emerald-50 text-emerald-600" />
                 </div>
-                <button 
-                  onClick={() => handlePrintReport({ type: reportType, feeRev: feeRevenue, otherInc, totalExp, discounts: totalDiscounts, net: netProfit, txs: filtTx, others: [...filtInc, ...filtExp], receivable: totalBalance })}
-                  className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
-                  title="Print Report">
-                  <Printer size={18} />
-                </button>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setFinType('Income'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-2 hover:bg-emerald-100 transition-all"><Plus size={14}/> Add Income</button>
-                <button onClick={() => { setFinType('Expense'); setTab('manage-financials'); }} className="px-4 py-2 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-100 flex items-center gap-2 hover:bg-rose-100 transition-all"><Plus size={14}/> Add Expense</button>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-7 gap-3">
-              <StatCard icon={DollarSign}    label="Fee Revenue" value={PKR(feeRevenue)} color="bg-emerald-50 text-emerald-600" />
-              <StatCard icon={Plus}          label="Other Income" value={PKR(otherInc)} color="bg-teal-50 text-teal-600" />
-              <StatCard icon={Database}      label="Total Income" value={PKR(feeRevenue + otherInc)} color="bg-emerald-100 text-emerald-800" />
-              <StatCard icon={Clock}         label="Fees Receivable" value={PKR(totalBalance)} color="bg-orange-50 text-orange-600" />
-              <StatCard icon={Trash2}        label="Expenses"      value={PKR(totalExp)} color="bg-rose-50 text-rose-600" alert={totalExp > (feeRevenue + otherInc)} />
-              <StatCard icon={Tag}           label="Discounts"     value={PKR(totalDiscounts)} color="bg-amber-50 text-amber-600" />
-              <StatCard icon={BarChart3}     label="Net Profit"    value={PKR(netProfit)} color={netProfit >= 0 ? "bg-blue-50 text-blue-600" : "bg-rose-50 text-rose-600"} alert={netProfit < 0} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2 text-sm"><Receipt size={16} className="text-emerald-500" /> Recent Transactions</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{reportType} Breakdown</p>
-                </div>
-                <div className="overflow-y-auto max-h-[400px]">
-                  {filtTx.length > 0 ? filtTx.map((t, i) => (
-                    <div key={t.id} className="flex items-center justify-between p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/30 transition-colors">
-                      <div className="flex items-center gap-3">
-                         <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", t.transaction_type === 'Discount' ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600")}>
-                           {t.transaction_type === 'Discount' ? <Tag size={14}/> : <DollarSign size={14}/>}
-                         </div>
-                         <div>
-                           <p className="text-xs font-bold text-slate-800">Roll #{t.student_roll_link}</p>
-                           <p className="text-[10px] text-slate-400 capitalize">{t.transaction_type} · {t.payment_method}</p>
-                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={cn("text-xs font-black", t.transaction_type === 'Discount' ? "text-amber-600" : "text-emerald-600")}>{PKR(t.amount_paid)}</p>
-                        <p className="text-[9px] text-slate-400">{new Date(t.payment_date).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="p-10 text-center"><p className="text-sm text-slate-400">No transactions for this {reportType.toLowerCase().replace('ly', '')}</p></div>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2 text-sm"><AlertTriangle size={16} className="text-rose-500" /> Other Financials</h3>
-                  <div className="flex gap-2">
-                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">In: {PKR(otherInc)}</span>
-                    <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded">Out: {PKR(totalExp)}</span>
+                {/* Fee collection progress */}
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Fee Collection Status</h3></div>
+                  <div className="p-5 space-y-4">
+                    {[{ label: 'Paid Groups', count: paidGroups, color: '#059669' }, { label: 'Partial Groups', count: partialGroups, color: '#D97706' }, { label: 'Unpaid Groups', count: unpaidGroups, color: '#C0392B' }].map(({ label, count, color }) => (
+                      <ProgressBar key={label} pct={Math.round((count / totalGroups) * 100)} color={color} label={label} sub={`${count} · ${Math.round((count / totalGroups) * 100)}%`} />
+                    ))}
                   </div>
                 </div>
-                <div className="overflow-y-auto max-h-[400px]">
-                  {([...filtInc, ...filtExp].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())).length > 0 ? 
-                    ([...filtInc, ...filtExp].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())).map((r, i) => {
-                      const isInc = filtInc.includes(r);
-                      return (
-                        <div key={r.id} className="flex items-center justify-between p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/30 transition-colors">
-                          <div className="flex items-center gap-3">
-                             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", isInc ? "bg-teal-50 text-teal-600" : "bg-rose-50 text-rose-600")}>
-                               {isInc ? <Plus size={14}/> : <Minus size={14}/>}
-                             </div>
-                             <div>
-                               <p className="text-xs font-bold text-slate-800">{r.description}</p>
-                               <p className="text-[10px] text-slate-400">{r.category} · {isInc ? r.income_date : r.expense_date}</p>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                            <p className={cn("text-xs font-black", isInc ? "text-teal-600" : "text-rose-600")}>{isInc ? '+' : '-'}{PKR(r.amount)}</p>
-                            <p className="text-[9px] text-slate-400">By {r.recorded_by}</p>
-                          </div>
-                        </div>
-                      );
-                    }) : (
-                    <div className="p-10 text-center"><p className="text-sm text-slate-400">No records for this period</p></div>
-                  )}
+
+                {/* ── Fees Collection Report Export ── */}
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black text-slate-900">Fees Collection Report</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Filter by date range and export to print</p>
+                    </div>
+                    <motion.button whileTap={{ scale: 0.97 }} onClick={printReport}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white"
+                      style={{ background: GRADIENT }}>
+                      <Printer size={15} /> Export & Print
+                    </motion.button>
+                  </div>
+
+                  {/* Date range filters */}
+                  <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap gap-4 items-end">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">From Date</label>
+                      <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)}
+                        className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-all" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">To Date</label>
+                      <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)}
+                        className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400 transition-all" />
+                    </div>
+                    <div className="flex gap-3 text-sm font-bold text-slate-600">
+                      <span className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl">{reportTx.length} transactions</span>
+                      <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl">{PKR(grandPaid)} collected</span>
+                    </div>
+                  </div>
+
+                  {/* Preview table */}
+                  <div className="overflow-x-auto" style={{ maxHeight: 460 }}>
+                    <table className="w-full text-xs min-w-[900px]">
+                      <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
+                        <tr>{['#','Date','Admission No','Name','Class','Fee Type','Collect By','Mode','Paid (PKR)','Discount','Fine','Total'].map(h => (
+                          <th key={h} className="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>
+                        ))}</tr>
+                      </thead>
+                      <tbody>
+                        {reportTx.length === 0 ? (
+                          <tr><td colSpan={12} className="px-4 py-12 text-center text-slate-400">No transactions in this date range</td></tr>
+                        ) : reportTx.map((t, i) => {
+                          const stu = students.find(s => String(s.roll_no) === String(t.student_roll_link));
+                          return (
+                            <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.005, 0.2) }}
+                              className="border-b border-slate-50 hover:bg-slate-50/50">
+                              <td className="px-3 py-2.5 text-slate-400">{i + 1}</td>
+                              <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' }) : '—'}</td>
+                              <td className="px-3 py-2.5 font-bold" style={{ color: ACCENT }}>{t.student_roll_link}</td>
+                              <td className="px-3 py-2.5 font-black text-slate-900 max-w-[110px] truncate">{stu?.full_name || '—'}</td>
+                              <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{stu?.class_section || '—'}</td>
+                              <td className="px-3 py-2.5 text-slate-600">{t.transaction_type || 'Fee Payment'}</td>
+                              <td className="px-3 py-2.5 text-slate-600 max-w-[100px] truncate">{t.collected_by || '—'}</td>
+                              <td className="px-3 py-2.5 text-slate-600">{t.payment_method || '—'}</td>
+                              <td className="px-3 py-2.5 font-black text-emerald-600">{Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                              <td className="px-3 py-2.5 text-slate-400">0.00</td>
+                              <td className="px-3 py-2.5 text-slate-400">0.00</td>
+                              <td className="px-3 py-2.5 font-black text-slate-900">{Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                            </motion.tr>
+                          );
+                        })}
+                        {/* Grand total row */}
+                        {reportTx.length > 0 && (
+                          <tr className="border-t-2 border-slate-300 bg-slate-50">
+                            <td colSpan={8} className="px-3 py-3 text-right font-black text-slate-900 text-xs uppercase tracking-widest">Grand Total</td>
+                            <td className="px-3 py-3 font-black text-emerald-700">{grandPaid.toLocaleString('en-PK')}</td>
+                            <td className="px-3 py-3 font-black text-slate-600">{grandDisc.toLocaleString('en-PK')}</td>
+                            <td className="px-3 py-3 font-black text-slate-600">{grandFine.toLocaleString('en-PK')}</td>
+                            <td className="px-3 py-3 font-black text-slate-900">{grandTotal.toLocaleString('en-PK')}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </motion.div>
-        );
-      })()}
+
+                {/* Expenses & Income */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💸 Expenses</h3><p className="font-black text-rose-600">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</p></div>
+                    {expenses.slice(0, 8).map((e, i) => (
+                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
+                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.expense_date}</p></div>
+                        <span className="font-black text-rose-600">{PKR(e.amount)}</span>
+                      </motion.div>
+                    ))}
+                    {!expenses.length && <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>}
+                  </div>
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💵 Other Income</h3><p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p></div>
+                    {income.slice(0, 8).map((e, i) => (
+                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
+                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
+                        <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
+                      </motion.div>
+                    ))}
+                    {!income.length && <p className="p-6 text-center text-slate-400 text-sm">No income recorded</p>}
+                  </div>
+                </div>
+              </motion.div>
+              );
+            })()}
 
       {/* ════ ACCOUNTANT FINANCIAL ENTRY (New Tab) ════ */}
       {isAccountant && tab === 'manage-financials' && (
