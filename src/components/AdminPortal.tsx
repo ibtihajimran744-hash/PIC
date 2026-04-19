@@ -647,6 +647,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
   const [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 10));
   const [reportTo, setReportTo]     = useState(new Date().toISOString().slice(0, 10));
+  const [showFinModal, setShowFinModal] = useState(false);
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '', discount: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
@@ -843,6 +844,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
 </body>
 </html>`;
 
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+    document.body.appendChild(iframe);
+    iframe.contentWindow!.document.open();
+    iframe.contentWindow!.document.write(html);
+    iframe.contentWindow!.document.close();
+    setTimeout(() => document.body.removeChild(iframe), 6000);
+  };
+
+  const handlePrintList = (title: string, columns: string[], rows: any[][], summary?: string) => {
+    const LOGO_B64 = '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';
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title}</title><style>
+      body { font-family: Calibri, sans-serif; padding: 25px; color: #333; }
+      .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 15px; }
+      .logo { width: 50px; height: 50px; }
+      h1 { margin: 8px 0 3px; font-size: 20pt; }
+      .summary { font-size: 11pt; font-weight: bold; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 8px; }
+      table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+      th { background: #f4f4f4; text-transform: uppercase; font-size: 8pt; font-weight: bold; }
+    </style></head><body>
+      <div class="header">
+        <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
+        <h1>Pak Informatics Group of Colleges</h1>
+        <p style="font-size:12pt;font-weight:bold">${title}</p>
+        <p style="font-size:10pt;color:#777">Printed on ${new Date().toLocaleString('en-PK')}</p>
+      </div>
+      ${summary ? `<div class="summary">${summary}</div>` : ''}
+      <table>
+        <thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr>${r.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
+    </body></html>`;
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
     document.body.appendChild(iframe);
@@ -1905,7 +1940,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   {/* Ledger table — clicking Collect opens the collect modal */}
                   <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                     <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-500">{ledgerFiltered.length} records{ledgerProgram ? ` · ${ledgerProgram}` : ''}{ledgerSection ? ` · ${ledgerSection}` : ''}{ledgerStatus ? ` · ${ledgerStatus}` : ''}</p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-xs font-bold text-slate-500">{ledgerFiltered.length} records{ledgerProgram ? ` · ${ledgerProgram}` : ''}{ledgerSection ? ` · ${ledgerSection}` : ''}{ledgerStatus ? ` · ${ledgerStatus}` : ''}</p>
+                        <button 
+                          onClick={() => {
+                            const rows = ledgerFiltered.map(g => {
+                              const s = students.find(st => String(st.roll_no) === String(g.student_roll));
+                              return [g.student_roll, s?.full_name || '—', s?.class_section || '—', g.fees_group, PKR(g.amount), PKR(g.paid), PKR(g.balance), g.status, g.due_date || '—'];
+                            });
+                            handlePrintList('Fees Ledger Report', ['Roll','Name','Class','Group','Amount','Paid','Balance','Status','Due Date'], rows, `Summary: Total Balance Due ${PKR(ledgerFiltered.reduce((s,g)=>s+(g.balance||0),0))}`);
+                          }}
+                          className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
+                        >
+                          <Printer size={12} /> Print List
+                        </button>
+                      </div>
                       <p className="text-[10px] font-black text-rose-600">Outstanding: {PKR(ledgerFiltered.reduce((s, g) => s + (g.balance || 0), 0))}</p>
                     </div>
                     <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
@@ -2051,6 +2100,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('new-admission')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}><UserPlus size={15} /> New Admission</motion.button>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-5 py-3 border-b border-slate-100 mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admission Forms</p>
+                      <button 
+                        onClick={() => {
+                          const rows = filteredAdmForms.map(f => [f.student_name, f.father_name, f.program, f.matric_percentage+'%', f.status, f.cell_no || '—', f.created_at?.slice(0,10) || '—']);
+                          handlePrintList('Admissions Report', ['Candidate','Parent','Program','Matric %','Status','Contact','Date'], rows);
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
+                      >
+                        <Printer size={12} /> Print Report
+                      </button>
+                    </div>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs min-w-[640px]">
                       <thead style={{ background: '#f8f9fd' }}>
@@ -2410,7 +2473,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 {/* Student table — click opens full profile panel */}
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-bold text-slate-500">{filteredStudents.length} of {students.length} students · click a row to view full profile</p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-xs font-bold text-slate-500">{filteredStudents.length} of {students.length} students · click a row to view full profile</p>
+                      <button 
+                        onClick={() => {
+                          const rows = filteredStudents.map(s => [s.roll_no, s.full_name, s.father_name || '—', s.class_section, s.program, s.gender, s.status]);
+                          handlePrintList('Student Record Report', ['Roll','Name','Father','Class','Program','Gender','Status'], rows);
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
+                      >
+                        <Printer size={12} /> Print Student List
+                      </button>
+                    </div>
                   </div>
                   <div className="overflow-x-auto" style={{ maxHeight: 400 }}>
                     <table className="w-full text-xs min-w-[580px]">
@@ -2532,6 +2606,37 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 return d >= reportFrom && d <= reportTo;
               });
 
+              const generateStatement = (period: 'Daily' | 'Weekly' | 'Monthly') => {
+                const now = new Date();
+                let start = new Date();
+                if (period === 'Daily') start.setHours(0,0,0,0);
+                else if (period === 'Weekly') start.setDate(now.getDate() - 7);
+                else if (period === 'Monthly') start.setMonth(now.getMonth() - 1);
+                
+                const sStr = start.toISOString().slice(0, 10);
+                const filteredTx = transactions.filter(t => t.payment_date?.slice(0,10) >= sStr);
+                const filteredExp = expenses.filter(e => e.expense_date >= sStr);
+                const filteredInc = income.filter(i => i.income_date >= sStr);
+
+                const feeRev = filteredTx.reduce((s,t) => s + Number(t.amount_paid || 0), 0);
+                const otherInc = filteredInc.reduce((s,i) => s + i.amount, 0);
+                const totalExp = filteredExp.reduce((s,e) => s + e.amount, 0);
+                const disc = filteredTx.reduce((s,t) => s + Number(t.discount || 0), 0);
+                const receivable = feeGroups.reduce((s,g) => s + (g.balance || 0), 0);
+
+                handlePrintReport({
+                  type: period,
+                  feeRev,
+                  otherInc,
+                  totalExp,
+                  discounts: disc,
+                  net: (feeRev + otherInc) - totalExp,
+                  txs: filteredTx,
+                  others: [...filteredInc, ...filteredExp],
+                  receivable
+                });
+              };
+
               const grandPaid    = reportTx.reduce((s, t) => s + Number(t.amount_paid   || 0), 0);
               const grandDisc    = reportTx.reduce((s, t) => s + Number(t.discount      || 0), 0);
               const grandFine    = reportTx.reduce((s, t) => s + Number(t.fine_amount   || 0), 0);
@@ -2633,11 +2738,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
               return (
               <motion.div key="rep" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
                 {/* Summary cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard icon={DollarSign}    label="Total Balance Due" value={PKR(totalBalance)} color="bg-rose-50 text-rose-600" alert={totalBalance > 0} />
-                  <StatCard icon={AlertTriangle} label="Total Fines"       value={PKR(totalFines)}   color="bg-amber-50 text-amber-600" />
-                  <StatCard icon={Receipt}       label="Transactions"      value={transactions.length} sub="This session" color="bg-blue-50 text-blue-600" />
-                  <StatCard icon={BarChart3}     label="Session Revenue"   value={PKR(transactions.reduce((s, t) => s + Number(t.amount_paid || 0), 0))} color="bg-emerald-50 text-emerald-600" />
+                <div className="relative group">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <StatCard icon={DollarSign}    label="Total Balance Due" value={PKR(totalBalance)} color="bg-rose-50 text-rose-600" alert={totalBalance > 0} />
+                    <StatCard icon={AlertTriangle} label="Total Fines"       value={PKR(totalFines)}   color="bg-amber-50 text-amber-600" />
+                    <StatCard icon={Receipt}       label="Transactions"      value={transactions.length} sub="This session" color="bg-blue-50 text-blue-600" />
+                    <StatCard icon={BarChart3}     label="Session Revenue"   value={PKR(transactions.reduce((s, t) => s + Number(t.amount_paid || 0), 0))} color="bg-emerald-50 text-emerald-600" />
+                  </div>
+                  <button 
+                    onClick={() => generateStatement('Daily')}
+                    className="absolute -top-12 right-0 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-white border border-slate-100 text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                  >
+                    <Printer size={14} /> Print Summary Report
+                  </button>
+                </div>
+
+                {/* ── Income / Expense Periodic Statements ── */}
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black text-slate-900">Income & Expense Reports</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Generate periodic financial statements</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => generateStatement('Daily')} className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all uppercase tracking-wider">Daily</button>
+                      <button onClick={() => generateStatement('Weekly')} className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all uppercase tracking-wider">Weekly</button>
+                      <button onClick={() => generateStatement('Monthly')} className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all uppercase tracking-wider">Monthly</button>
+                      <button 
+                        onClick={() => { setFinType('Expense'); setShowFinModal(true); }}
+                        className="px-4 py-1.5 rounded-xl bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100 flex items-center gap-1.5 ml-2 transition-all active:scale-95"
+                      >
+                        <Plus size={12} /> Record
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Fee collection progress */}
@@ -2686,13 +2820,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                   <div className="overflow-x-auto" style={{ maxHeight: 460 }}>
                     <table className="w-full text-xs min-w-[900px]">
                       <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['#','Date','Admission No','Name','Class','Fee Type','Collect By','Mode','Paid (PKR)','Discount','Fine','Total'].map(h => (
+                        <tr>{['#','Date','Admission No','Name','Class','Fee Type','Collect By','Mode','Paid (PKR)','Discount','Fine','Total','Action'].map(h => (
                           <th key={h} className="px-3 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>
                         ))}</tr>
                       </thead>
                       <tbody>
                         {reportTx.length === 0 ? (
-                          <tr><td colSpan={12} className="px-4 py-12 text-center text-slate-400">No transactions in this date range</td></tr>
+                          <tr><td colSpan={13} className="px-4 py-12 text-center text-slate-400">No transactions in this date range</td></tr>
                         ) : reportTx.map((t, i) => {
                           const stu = students.find(s => String(s.roll_no) === String(t.student_roll_link));
                           return (
@@ -2710,6 +2844,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                               <td className="px-3 py-2.5 text-slate-400">0.00</td>
                               <td className="px-3 py-2.5 text-slate-400">0.00</td>
                               <td className="px-3 py-2.5 font-black text-slate-900">{Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                              <td className="px-3 py-2.5">
+                                <button onClick={() => handlePrint(t)} className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-blue-100 hover:text-blue-600 transition-colors tooltip" title="Print Receipt">
+                                  <Printer size={12} />
+                                </button>
+                              </td>
                             </motion.tr>
                           );
                         })}
@@ -2721,6 +2860,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                             <td className="px-3 py-3 font-black text-slate-600">{grandDisc.toLocaleString('en-PK')}</td>
                             <td className="px-3 py-3 font-black text-slate-600">{grandFine.toLocaleString('en-PK')}</td>
                             <td className="px-3 py-3 font-black text-slate-900">{grandTotal.toLocaleString('en-PK')}</td>
+                            <td className="px-3 py-3"></td>
                           </tr>
                         )}
                       </tbody>
@@ -2731,7 +2871,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 {/* Expenses & Income */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💸 Expenses</h3><p className="font-black text-rose-600">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</p></div>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-black text-slate-900">💸 Expenses</h3>
+                        <button 
+                          onClick={() => {
+                            const rows = expenses.map(e => [e.expense_date, e.description, e.category, PKR(e.amount), e.recorded_by || '—']);
+                            handlePrintList('Expenditure Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Expenditure: ${PKR(expenses.reduce((s,e)=>s+e.amount,0))}`);
+                          }}
+                          className="text-slate-400 hover:text-blue-600 transition-colors" title="Print Expenses"
+                        >
+                          <Printer size={14} />
+                        </button>
+                      </div>
+                      <p className="font-black text-rose-600">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</p>
+                    </div>
                     {expenses.slice(0, 8).map((e, i) => (
                       <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
                         <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.expense_date}</p></div>
@@ -2741,7 +2895,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     {!expenses.length && <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>}
                   </div>
                   <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">💵 Other Income</h3><p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p></div>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-black text-slate-900">💵 Other Income</h3>
+                        <button 
+                          onClick={() => {
+                            const rows = income.map(e => [e.income_date, e.description, e.category, PKR(e.amount), e.recorded_by || '—']);
+                            handlePrintList('Other Income Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Other Income: ${PKR(income.reduce((s,e)=>s+e.amount,0))}`);
+                          }}
+                          className="text-slate-400 hover:text-blue-600 transition-colors" title="Print Income"
+                        >
+                          <Printer size={14} />
+                        </button>
+                      </div>
+                      <p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p>
+                    </div>
                     {income.slice(0, 8).map((e, i) => (
                       <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
                         <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
@@ -2788,10 +2956,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                    {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16}/> Save {finType} Record</>}
                  </motion.button>
                </div>
-             </div>
-          </div>
-        </motion.div>
-      )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
           </AnimatePresence>
         </div>
@@ -2923,6 +3091,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
           </div>
         )}
       </AnimatePresence>
+      
+      {/* RECORD FINANCIAL MODAL */}
+      <AnimatePresence>
+        {showFinModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowFinModal(false)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92 }} className="relative bg-white rounded-3xl w-full max-w-sm overflow-hidden z-10 shadow-2xl">
+              <div className="p-6">
+                <h3 className="font-black text-slate-900 text-lg mb-4">Record Daily Financials</h3>
+                <div className="space-y-4">
+                  <div className="flex p-1 bg-slate-100 rounded-2xl">
+                    {['Expense', 'Income'].map((t: any) => (
+                      <button key={t} onClick={() => setFinType(t)} className={cn('flex-1 py-2 rounded-xl text-xs font-black transition-all', finType === t ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400')}>{t}</button>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Description</label>
+                    <input value={finCategory} onChange={e => setFinCategory(e.target.value)} placeholder="e.g. Utility Bills, Stationary…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount (PKR)</label>
+                    <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-black outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Date</label>
+                    <input type="date" value={finDate} onChange={e => setFinDate(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setShowFinModal(false)} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-50">Cancel</button>
+                    <button onClick={async () => { await saveFinancialRecord(); setShowFinModal(false); }} disabled={saving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">Save Record</button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* FORM PREVIEW MODAL */}
       <AnimatePresence>
@@ -2956,7 +3161,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
           </div>
         )}
       </AnimatePresence>
-
     </div>
   );
 };
