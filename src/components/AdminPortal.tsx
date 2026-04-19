@@ -645,6 +645,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [finCategory, setFinCategory] = useState('');
   const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
+  const [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [reportTo, setReportTo]     = useState(new Date().toISOString().slice(0, 10));
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '', discount: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
@@ -2524,9 +2526,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
             {/* ════ ACCOUNTANT REPORTS ════ */}
       {/* ════ ACCOUNTANT REPORTS ════ */}
             {isAccountant && tab === 'reports' && (() => {
-              const [reportFrom, setReportFrom] = React.useState(today);
-              const [reportTo,   setReportTo]   = React.useState(today);
-
               const reportTx = transactions.filter(t => {
                 if (!t.payment_date) return false;
                 const d = t.payment_date.slice(0, 10);
