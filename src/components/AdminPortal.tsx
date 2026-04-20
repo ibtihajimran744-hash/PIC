@@ -682,174 +682,366 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const refresh   = () => setRefreshKey(k => k + 1);
 
   const handlePrint = (tx: any) => {
+
   const student = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
+
   const stuFees = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
-  const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
-  const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
-  const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
-  const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
-  const dateStr = new Date().toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' });
 
-  const fmt     = (n: number) => `PKR${(n ?? 0).toLocaleString('en-PK')}`;
-  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' }).replace(/\//g, '-') : '-';
+  const totalAmount = stuFees.reduce((s, g) => s + (g.amount || 0), 0);
+  const totalPaid   = stuFees.reduce((s, g) => s + (g.paid || 0), 0);
+  const totalFine   = stuFees.reduce((s, g) => s + (g.fine || 0), 0);
+  const totalDiscount = stuFees.reduce((s, g) => s + (g.discount || 0), 0);
 
-  const feeRows = stuFees.map(f => {
-    const history: any[] = f.payment_history ?? [];
-    const payments = history.length > 0 ? history : [null];
-    return payments.map((p: any, pi: number) => `
+  const totalBalance = stuFees.reduce((s, g) => {
+    const amount = g.amount || 0;
+    const paid = g.paid || 0;
+    const fine = g.fine || 0;
+    const discount = g.discount || 0;
+
+    const balance = Math.max(0, amount + fine - paid - discount);
+    return s + balance;
+  }, 0);
+
+  const dateStr = new Date().toLocaleDateString('en-PK', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  const fmt = (n: number) => `PKR${(n ?? 0).toLocaleString('en-PK')}`;
+
+  const fmtDate = (d: string) =>
+    d
+      ? new Date(d)
+          .toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+          })
+          .replace(/\//g, '-')
+      : '-';
+
+  const feeRows = stuFees
+    .map(f => {
+
+      const history: any[] = f.payment_history ?? [];
+      const payments = history.length > 0 ? history : [null];
+
+      const amount = f.amount || 0;
+      const paid = f.paid || 0;
+      const fine = f.fine || 0;
+      const discount = f.discount || 0;
+
+      const balance = Math.max(0, amount + fine - paid - discount);
+
+      return payments
+        .map((p: any, pi: number) => `
       <tr>
-        ${pi === 0 ? `
+
+        ${
+          pi === 0
+            ? `
           <td rowspan="${payments.length}" style="vertical-align:top">${f.fees_group ?? '-'}</td>
           <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.fees_code ?? '-'}</td>
           <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${fmtDate(f.due_date)}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.status ?? '-'}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:right">${fmt(f.amount)}</td>
-        ` : ''}
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${balance === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID'}</td>
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:right">${fmt(amount)}</td>
+        `
+            : ''
+        }
+
         <td style="text-align:center">${p?.payment_id ?? '-'}</td>
         <td style="text-align:center">${p?.method ?? '-'}</td>
         <td style="text-align:center">${p ? fmtDate(p.date) : '-'}</td>
-        <td style="text-align:right">${fmt(f.paid)}</td>
-        <td style="text-align:right">${fmt(f.fine)}</td>
-        <td style="text-align:right">${fmt(f.discount ?? 0)}</td>
-        <td style="text-align:right"><strong>${fmt(f.balance)}</strong></td>
-      </tr>`).join('');
-  }).join('');
+        <td style="text-align:right">${fmt(p?.amount ?? 0)}</td>
+        <td style="text-align:right">${fmt(fine)}</td>
+        <td style="text-align:right">${fmt(discount)}</td>
+        <td style="text-align:right"><strong>${fmt(balance)}</strong></td>
+
+      </tr>
+    `)
+        .join('');
+    })
+    .join('');
 
   const html = `<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Fee Voucher</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: Arial, sans-serif; font-size: 9pt; color: #000; background: #fff; padding: 18px 22px; }
+<meta charset="utf-8"/>
+<title>Fee Voucher</title>
 
-    /* ── Header ── */
-    .header { display:flex; align-items:center; gap:14px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 4px; }
-    .logo-box { width:62px; height:62px; border:2px solid #555; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0; }
-    .header-text { flex:1; }
-    .college-name { font-size:20pt; font-weight:bold; line-height:1.1; }
-    .header-sub { font-size:9pt; margin-top:2px; }
-    .header-address { font-size:8.5pt; margin-top:1px; color:#333; }
-    .copy-label { text-align:center; font-weight:bold; font-size:10.5pt; margin: 6px 0 8px; letter-spacing:0.5px; }
+<style>
 
-    /* ── Student info row ── */
-    .student-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 10px; }
-    .student-info { font-size:9.5pt; line-height:1.8; }
-    .student-info strong { font-size:10pt; }
-    .date-label { font-size:9.5pt; font-weight:bold; white-space:nowrap; }
+*{margin:0;padding:0;box-sizing:border-box;}
 
-    /* ── Fee table ── */
-    .fee-table { width:100%; border-collapse:collapse; margin-bottom:10px; font-size:8.5pt; }
-    .fee-table th { border:1px solid #000; padding:4px 5px; text-align:left; font-weight:bold; background:#f0f0f0; white-space:nowrap; font-size:8pt; }
-    .fee-table td { border:1px solid #000; padding:4px 5px; vertical-align:middle; }
-    .fee-table tfoot td { border:1px solid #000; padding:5px; font-weight:bold; background:#f5f5f5; }
+body{
+font-family:Arial, sans-serif;
+font-size:9pt;
+color:#000;
+background:#fff;
+padding:18px 22px;
+}
 
-    /* ── Notes ── */
-    .notes { font-size:8.5pt; line-height:1.9; margin-bottom:10px; }
-    .notes p { margin-bottom:1px; }
-    .urdu { font-family:'Noto Nastaliq Urdu', serif; direction:rtl; font-size:9.5pt; margin-top:4px; }
+/* Header */
 
-    /* ── Payment details ── */
-    .payment-title { font-size:9pt; font-weight:bold; text-decoration:underline; margin-bottom:6px; }
-    .payment-cols { display:flex; gap:40px; font-size:8.5pt; }
-    .payment-cols > div { flex:1; }
-    .payment-cols p { margin-bottom:3px; }
+.header{
+display:flex;
+align-items:center;
+gap:14px;
+border-bottom:2px solid #000;
+padding-bottom:8px;
+margin-bottom:4px;
+}
 
-    @media print { body { padding: 6px 10px; } }
-  </style>
+.logo-box{
+width:62px;
+height:62px;
+border:2px solid #555;
+border-radius:4px;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:28px;
+flex-shrink:0;
+}
+
+.header-text{flex:1;}
+
+.college-name{
+font-size:20pt;
+font-weight:bold;
+line-height:1.1;
+}
+
+.header-sub{
+font-size:9pt;
+margin-top:2px;
+}
+
+.header-address{
+font-size:8.5pt;
+margin-top:1px;
+color:#333;
+}
+
+.copy-label{
+text-align:center;
+font-weight:bold;
+font-size:10.5pt;
+margin:6px 0 8px;
+letter-spacing:0.5px;
+}
+
+/* Student info */
+
+.student-row{
+display:flex;
+justify-content:space-between;
+align-items:flex-start;
+margin-bottom:10px;
+}
+
+.student-info{
+font-size:9.5pt;
+line-height:1.8;
+}
+
+.student-info strong{
+font-size:10pt;
+}
+
+.date-label{
+font-size:9.5pt;
+font-weight:bold;
+white-space:nowrap;
+}
+
+/* Fee table */
+
+.fee-table{
+width:100%;
+border-collapse:collapse;
+margin-bottom:10px;
+font-size:8.5pt;
+}
+
+.fee-table th{
+border:1px solid #000;
+padding:4px 5px;
+text-align:left;
+font-weight:bold;
+background:#f0f0f0;
+white-space:nowrap;
+font-size:8pt;
+}
+
+.fee-table td{
+border:1px solid #000;
+padding:4px 5px;
+vertical-align:middle;
+}
+
+.fee-table tfoot td{
+border:1px solid #000;
+padding:5px;
+font-weight:bold;
+background:#f5f5f5;
+}
+
+/* Notes */
+
+.notes{
+font-size:8.5pt;
+line-height:1.9;
+margin-bottom:10px;
+}
+
+.notes p{
+margin-bottom:1px;
+}
+
+.urdu{
+font-family:'Noto Nastaliq Urdu', serif;
+direction:rtl;
+font-size:9.5pt;
+margin-top:4px;
+}
+
+/* Payment */
+
+.payment-title{
+font-size:9pt;
+font-weight:bold;
+text-decoration:underline;
+margin-bottom:6px;
+}
+
+.payment-cols{
+display:flex;
+gap:40px;
+font-size:8.5pt;
+}
+
+.payment-cols>div{
+flex:1;
+}
+
+.payment-cols p{
+margin-bottom:3px;
+}
+
+@media print{
+body{padding:6px 10px;}
+}
+
+</style>
 </head>
+
 <body>
 
-  <!-- HEADER -->
-  <div class="header">
-    <div class="logo-box">🌐</div>
-    <div class="header-text">
-      <div class="college-name">Pak Informatics Group of Colleges</div>
-      <div class="header-sub">Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
-      <div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
-    </div>
-  </div>
+<div class="header">
+<div class="logo-box">🌐</div>
+<div class="header-text">
+<div class="college-name">Pak Informatics Group of Colleges</div>
+<div class="header-sub">Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
+<div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
+</div>
+</div>
 
-  <!-- COPY LABEL -->
-  <div class="copy-label">Student Copy</div>
+<div class="copy-label">Student Copy</div>
 
-  <!-- STUDENT INFO -->
-  <div class="student-row">
-    <div class="student-info">
-      <strong>${student?.full_name ?? '—'}</strong> (${student?.roll_no ?? '—'})<br/>
-      Father Name: ${student?.father_name ?? '—'}<br/>
-      Class: ${student?.class_section ?? '—'}
-    </div>
-    <div class="date-label">Date: ${dateStr}</div>
-  </div>
+<div class="student-row">
+<div class="student-info">
+<strong>${student?.full_name ?? '—'}</strong> (${student?.roll_no ?? '—'})<br/>
+Father Name: ${student?.father_name ?? '—'}<br/>
+Class: ${student?.class_section ?? '—'}
+</div>
+<div class="date-label">Date: ${dateStr}</div>
+</div>
 
-  <!-- FEE TABLE -->
-  <table class="fee-table">
-    <thead>
-      <tr>
-        <th>Fees Group</th>
-        <th style="text-align:center">Fees Code</th>
-        <th style="text-align:center">Due Date</th>
-        <th style="text-align:center">Status</th>
-        <th style="text-align:right">Amount</th>
-        <th style="text-align:center">Payment ID</th>
-        <th style="text-align:center">Mode</th>
-        <th style="text-align:center">Date</th>
-        <th style="text-align:right">Paid</th>
-        <th style="text-align:right">Fine</th>
-        <th style="text-align:right">Discount</th>
-        <th style="text-align:right">Balance</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee records found</td></tr>'}
-    </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="4" style="text-align:right">Grand Total</td>
-        <td style="text-align:right">${fmt(totalAmount)}</td>
-        <td colspan="3"></td>
-        <td style="text-align:right">${fmt(totalPaid)}</td>
-        <td style="text-align:right">${fmt(totalFine)}</td>
-        <td></td>
-        <td style="text-align:right">${fmt(totalBalance)}</td>
-      </tr>
-    </tfoot>
-  </table>
+<table class="fee-table">
 
-  <!-- NOTES -->
-  <div class="notes">
-    <p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
-    <p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
-    <p class="urdu">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
-  </div>
+<thead>
+<tr>
+<th>Fees Group</th>
+<th style="text-align:center">Fees Code</th>
+<th style="text-align:center">Due Date</th>
+<th style="text-align:center">Status</th>
+<th style="text-align:right">Amount</th>
+<th style="text-align:center">Payment ID</th>
+<th style="text-align:center">Mode</th>
+<th style="text-align:center">Date</th>
+<th style="text-align:right">Paid</th>
+<th style="text-align:right">Fine</th>
+<th style="text-align:right">Discount</th>
+<th style="text-align:right">Balance</th>
+</tr>
+</thead>
 
-  <!-- ONLINE PAYMENT -->
-  <div class="payment-title">ONLINE PAYMENT DETAILS:</div>
-  <div class="payment-cols">
-    <div>
-      <p><strong><u>1) UBL Bank Limited</u></strong></p>
-      <p><u>Account No</u>: 0785335426309</p>
-      <p><u>Account Title</u>: Pak Informatics Educational Network Pvt.</p>
-    </div>
-    <div>
-      <p><strong><u>2) Jazz Cash Account:</u></strong></p>
-      <p><u>Account No.</u>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
-      <p><u>Account Title:</u> Informatics Group of Colleges GRW</p>
-    </div>
-  </div>
+<tbody>
 
-  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
+${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee records found</td></tr>'}
+
+</tbody>
+
+<tfoot>
+<tr>
+<td colspan="4" style="text-align:right">Grand Total</td>
+<td style="text-align:right">${fmt(totalAmount)}</td>
+<td colspan="3"></td>
+<td style="text-align:right">${fmt(totalPaid)}</td>
+<td style="text-align:right">${fmt(totalFine)}</td>
+<td style="text-align:right">${fmt(totalDiscount)}</td>
+<td style="text-align:right">${fmt(totalBalance)}</td>
+</tr>
+</tfoot>
+
+</table>
+
+<div class="notes">
+<p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
+<p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
+<p class="urdu">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
+</div>
+
+<div class="payment-title">ONLINE PAYMENT DETAILS:</div>
+
+<div class="payment-cols">
+
+<div>
+<p><strong><u>1) UBL Bank Limited</u></strong></p>
+<p><u>Account No</u>: 0785335426309</p>
+<p><u>Account Title</u>: Pak Informatics Educational Network Pvt.</p>
+</div>
+
+<div>
+<p><strong><u>2) Jazz Cash Account:</u></strong></p>
+<p><u>Account No.</u>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
+<p><u>Account Title:</u> Informatics Group of Colleges GRW</p>
+</div>
+
+</div>
+
+<script>
+window.onload=function(){
+window.print();
+window.onafterprint=function(){window.close();}
+}
+</script>
+
 </body>
 </html>`;
 
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+  iframe.style.cssText =
+    'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+
   document.body.appendChild(iframe);
+
   iframe.contentWindow!.document.open();
   iframe.contentWindow!.document.write(html);
   iframe.contentWindow!.document.close();
+
   setTimeout(() => document.body.removeChild(iframe), 6000);
 };
 
