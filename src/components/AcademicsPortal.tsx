@@ -5,7 +5,7 @@ import {
   Calendar, Megaphone, Mail, LogOut, RefreshCw, X, Plus,
   Search, Trash2, ChevronRight, CheckCircle, AlertCircle,
   Clock, BookMarked, BarChart2, FileText, Send, Eye,
-  Menu, Bell
+  Menu, Bell, Save, Upload
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
@@ -19,15 +19,17 @@ const GRADIENT = 'linear-gradient(135deg,#059669,#10b981)';
 
 const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
 
-type Tab = 'dashboard'|'scheme'|'teachers'|'students'|'announcements'|'messages'|'timetable'|'progress';
+type Tab = 'dashboard'|'scheme'|'teachers'|'classes'|'students'|'announcements'|'messages'|'timetable'|'progress'|'exams';
 
 const TABS = [
   { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
+  { id: 'classes',       label: 'Class Management', icon: Users },
+  { id: 'teachers',      label: 'Teacher Management', icon: Users },
   { id: 'scheme',        label: 'Scheme of Study',  icon: BookMarked },
-  { id: 'teachers',      label: 'Teacher Profiles', icon: Users },
+  { id: 'timetable',     label: 'Timetable',        icon: Calendar },
+  { id: 'exams',         label: 'Exam Schedules',   icon: BookOpen },
   { id: 'students',      label: 'Student Academics',icon: GraduationCap },
   { id: 'progress',      label: 'Course Progress',  icon: TrendingUp },
-  { id: 'timetable',     label: 'Timetable',        icon: Calendar },
   { id: 'announcements', label: 'Announcements',    icon: Megaphone },
   { id: 'messages',      label: 'Messages',         icon: Mail },
 ];
@@ -77,6 +79,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [schemes,        setSchemes]        = useState<any[]>([]);
   const [teachers,       setTeachers]       = useState<any[]>([]);
+  const [classes,        setClasses]        = useState<any[]>([]);
   const [teacherProfs,   setTeacherProfs]   = useState<any[]>([]);
   const [students,       setStudents]       = useState<any[]>([]);
   const [courseProgress, setCourseProgress] = useState<any[]>([]);
@@ -85,6 +88,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [messages,       setMessages]       = useState<any[]>([]);
   const [grades,         setGrades]         = useState<any[]>([]);
   const [attendance,     setAttendance]     = useState<any[]>([]);
+  const [examSchedules,  setExamSchedules]  = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
@@ -105,6 +109,16 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [msgForm, setMsgForm] = useState<any>({
     to_teacher_username: '', subject: '', body: '',
   });
+  const [teacherForm, setTeacherForm] = useState<any>({
+    full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active'
+  });
+  const [classForm, setClassForm] = useState<any>({
+    class_name: '', department: '', academic_year: '2026-27'
+  });
+  const [scheduleForm, setScheduleForm] = useState<any>({
+    title: '', program: 'ICS Physics', session: '2026-27', part: 1, class_section: '', exam_type: 'Mid-Term',
+    exams: [{ subject: '', date: '', time: '' }]
+  });
   const [schemeFilter, setSchemeFilter] = useState({ program: '', part: '', subject: '' });
 
   const showToast = (msg: string, ok = true) => {
@@ -113,7 +127,11 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: sc }, { data: tc }, { data: tp }, { data: st }, { data: cp }, { data: tt }, { data: an }, { data: ms }, { data: gr }, { data: at }] = await Promise.all([
+    const [
+      { data: sc }, { data: tc }, { data: tp }, { data: st }, { data: cp }, 
+      { data: tt }, { data: an }, { data: ms }, { data: gr }, { data: at }, 
+      { data: exS }, { data: cls }
+    ] = await Promise.all([
       supabase.from('scheme_of_study').select('*').order('created_at', { ascending: false }),
       supabase.from('teachers').select('*').order('full_name'),
       supabase.from('teacher_profiles').select('*').order('full_name'),
@@ -124,10 +142,13 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('teacher_messages').select('*').order('created_at', { ascending: false }),
       supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('attendance').select('student_roll,status,date').order('date', { ascending: false }).limit(500),
+      supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
+      supabase.from('classes').select('*').order('class_name'),
     ]);
     setSchemes(sc || []); setTeachers(tc || []); setTeacherProfs(tp || []);
     setStudents(st || []); setCourseProgress(cp || []); setTimetable(tt || []);
     setAnnouncements(an || []); setMessages(ms || []); setGrades(gr || []); setAttendance(at || []);
+    setExamSchedules(exS || []); setClasses(cls || []);
     setLoading(false);
   }, []);
 
@@ -201,6 +222,179 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const markMessageRead = async (id: number) => {
     await supabase.from('teacher_messages').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', id);
     loadAll();
+  };
+
+  const saveExamSchedule = async () => {
+    if (!scheduleForm.title || !scheduleForm.exams.length) {
+      showToast('Title and at least one exam required', false); return;
+    }
+    const invalid = scheduleForm.exams.some((e: any) => !e.subject || !e.date || !e.time);
+    if (invalid) { showToast('Complete all exam details (Subject, Date, Time)', false); return; }
+
+    setSaving(true);
+    try {
+      // 1. Save Schedule Header
+      const { data: sched, error: sErr } = await supabase.from('exam_schedule').insert([{
+        title: scheduleForm.title,
+        program: scheduleForm.program,
+        session: scheduleForm.session,
+        part: Number(scheduleForm.part),
+        class_section: scheduleForm.class_section,
+        exam_type: scheduleForm.exam_type,
+        start_date: scheduleForm.exams[0].date,
+        end_date: scheduleForm.exams[scheduleForm.exams.length - 1].date,
+        status: 'Upcoming',
+        created_by: adminData.full_name
+      }]).select().single();
+
+      if (sErr) throw sErr;
+
+      // 2. Automatically create individual Exam entries for Examiner Portal
+      const examRows = scheduleForm.exams.map((e: any) => ({
+        exam_schedule_id: sched.id,
+        title: `${scheduleForm.exam_type}: ${e.subject}`,
+        class_section: scheduleForm.class_section,
+        subject: e.subject,
+        date: e.date,
+        time: e.time,
+        exam_type: scheduleForm.exam_type,
+        total_marks: 100,
+        grading_status: 'Pending',
+        created_by: adminData.full_name
+      }));
+
+      const { error: eErr } = await supabase.from('exams').insert(examRows);
+      if (eErr) throw eErr;
+
+      showToast('Exam schedule and unit exams published');
+      setScheduleForm({ title: '', program: 'ICS Physics', session: '2026-27', part: 1, class_section: '', exam_type: 'Mid-Term', exams: [{ subject: '', date: '', time: '' }] });
+      setModal(null); loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const deleteSchedule = async (id: number) => {
+    if (!window.confirm('Delete this entire schedule and linked exams?')) return;
+    await supabase.from('exams').delete().eq('exam_schedule_id', id);
+    await supabase.from('exam_schedule').delete().eq('id', id);
+    showToast('Schedule deleted'); loadAll();
+  };
+
+  const saveTeacher = async () => {
+    if (!teacherForm.full_name || !teacherForm.employee_id) {
+      showToast('Name and Employee ID are required', false); return;
+    }
+    setSaving(true);
+    try {
+      const payload = { ...teacherForm, monthly_salary: Number(teacherForm.monthly_salary) };
+      const { error } = selectedTeacher ? 
+        await supabase.from('teachers').update(payload).eq('id', selectedTeacher.id) :
+        await supabase.from('teachers').insert([payload]);
+      
+      if (error) throw error;
+      showToast(selectedTeacher ? 'Teacher updated' : 'Teacher added');
+      setTeacherForm({ full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active' });
+      setModal(null); setSelectedTeacher(null); loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const deleteTeacher = async (id: number) => {
+    if (!window.confirm('Delete this teacher? This will affect salary and assignments.')) return;
+    await supabase.from('teachers').delete().eq('id', id);
+    showToast('Teacher deleted'); loadAll();
+  };
+
+  const saveClass = async () => {
+    if (!classForm.class_name) { showToast('Class name required', false); return; }
+    setSaving(true);
+    try {
+      const { error } = selectedTeacher ? // reuse select state for edit? No let's use a temp one or null
+        await supabase.from('classes').update(classForm).eq('id', classForm.id) :
+        await supabase.from('classes').insert([classForm]);
+      
+      if (error) throw error;
+      showToast('Class saved');
+      setClassForm({ class_name: '', department: '', academic_year: '2026-27' });
+      setModal(null); loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const deleteClass = async (id: number) => {
+    if (!window.confirm('Remove this class?')) return;
+    await supabase.from('classes').delete().eq('id', id);
+    showToast('Class deleted'); loadAll();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const rows = text.split('\n').map(r => r.split(',').map(c => c.trim()));
+      const header = rows[0];
+      const data = rows.slice(1).filter(r => r.some(c => c !== ''));
+
+      // Validate header
+      const required = ['Exam Name', 'Class', 'Date', 'Time', 'Subject'];
+      const missing = required.filter(h => !header.includes(h));
+      if (missing.length) { showToast(`Missing header columns: ${missing.join(', ')}`, false); return; }
+
+      // Map data
+      const exams = data.map(r => {
+        const obj: any = {};
+        header.forEach((h, i) => { obj[h] = r[i]; });
+        return obj;
+      });
+
+      // Simple validation
+      const invalid = exams.some(ex => !ex['Exam Name'] || !ex['Class'] || !ex['Date'] || !ex['Time'] || !ex['Subject']);
+      if (invalid) { showToast('Missing fields in some rows. Please check CSV.', false); return; }
+
+      // Create schedules
+      setSaving(true);
+      try {
+        const groupsByTitleClass = exams.reduce((acc: any, curr: any) => {
+          const key = `${curr['Exam Name']}-${curr['Class']}`;
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(curr);
+          return acc;
+        }, {});
+
+        for (const key in groupsByTitleClass) {
+          const group = groupsByTitleClass[key];
+          const { data: sched, error: sErr } = await supabase.from('exam_schedule').insert([{
+            title: group[0]['Exam Name'],
+            class_section: group[0]['Class'],
+            start_date: group[0]['Date'],
+            end_date: group[group.length - 1]['Date'],
+            status: 'Upcoming',
+            created_by: adminData.full_name
+          }]).select().single();
+          if (sErr) throw sErr;
+
+          const examRows = group.map((e: any) => ({
+            exam_schedule_id: sched.id,
+            title: `${e['Exam Name']}: ${e['Subject']}`,
+            class_section: e['Class'],
+            subject: e['Subject'],
+            date: e['Date'],
+            time: e['Time'],
+            exam_type: 'Board/Internal',
+            total_marks: 100,
+            grading_status: 'Pending',
+            created_by: adminData.full_name
+          }));
+          await supabase.from('exams').insert(examRows);
+        }
+        showToast('Schedule uploaded successfully');
+        loadAll();
+      } catch (err: any) { showToast(err.message, false); }
+      finally { setSaving(false); }
+    };
+    reader.readAsText(file);
   };
 
   const totalSchemes   = schemes.length;
@@ -673,6 +867,78 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
+            {/* ══════════ CLASS MANAGEMENT ══════════ */}
+            {tab === 'classes' && (
+              <motion.div key="classes" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg font-black text-slate-800">Class Management</h2>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setClassForm({ class_name: '', department: '', academic_year: '2026-27' }); setModal('class'); }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
+                    <Plus size={15} /> Add New Class
+                  </motion.button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {classes.map((c) => (
+                    <div key={c.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:border-emerald-200 transition-all">
+                      <div className="flex justify-between items-start">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 mb-3">
+                          <Users size={20} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setClassForm(c); setModal('class'); }} className="text-slate-300 hover:text-emerald-500"><Plus size={14} /></button>
+                          <button onClick={() => deleteClass(c.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                      <h3 className="font-black text-slate-900">{c.class_name}</h3>
+                      <p className="text-xs text-slate-400">{c.department} · {c.academic_year}</p>
+                    </div>
+                  ))}
+                </div>
+                {!classes.length && <p className="text-center py-12 text-slate-400 text-sm">No classes created yet</p>}
+              </motion.div>
+            )}
+
+            {/* ══════════ TEACHER MANAGEMENT ══════════ */}
+            {tab === 'teachers' && (
+              <motion.div key="teachers" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg font-black text-slate-800">Teacher Management</h2>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setTeacherForm({ full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active' }); setSelectedTeacher(null); setModal('teacher'); }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
+                    <Plus size={15} /> Add New Teacher
+                  </motion.button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {teachers.map((t) => (
+                    <div key={t.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:border-emerald-200 transition-all">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-black text-white flex-shrink-0"
+                          style={{ background: `hsl(${(t.full_name?.charCodeAt(0) || 50) * 37 % 360},60%,55%)` }}>
+                          {t.full_name?.charAt(0)}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-black text-slate-900 leading-tight">{t.full_name}</h3>
+                          <p className="text-xs text-slate-400">{t.employee_id} · {t.subject_dept}</p>
+                        </div>
+                        <div className="flex gap-2">
+                           <button onClick={() => { setTeacherForm(t); setSelectedTeacher(t); setModal('teacher'); }} className="text-slate-300 hover:text-emerald-500">
+                             <Plus size={14} />
+                           </button>
+                           <button onClick={() => deleteTeacher(t.id)} className="text-slate-300 hover:text-rose-500">
+                             <Trash2 size={14} />
+                           </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="bg-slate-50 p-2 rounded-lg"><p className="text-slate-400">Salary</p><p className="font-black text-slate-700">Rs {t.monthly_salary}</p></div>
+                        <div className="bg-slate-50 p-2 rounded-lg"><p className="text-slate-400">Status</p><p className="font-black text-emerald-600">{t.status}</p></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
             {/* ══════════ STUDENT ACADEMICS ══════════ */}
             {tab === 'students' && (
               <motion.div key="students" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -920,6 +1186,72 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
+            {/* ══════════ EXAM SCHEDULES ══════════ */}
+            {tab === 'exams' && (
+              <motion.div key="exams" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="flex justify-between items-center bg-white p-5 rounded-3xl border border-slate-100 mb-6 shadow-sm">
+                  <div>
+                    <h2 className="text-lg font-black text-slate-800">Exam Coordination</h2>
+                    <p className="text-xs text-slate-400">Manage institutional exam dates and automatic extraction</p>
+                  </div>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => setModal('schedule')}
+                    className="flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-black text-white shadow-lg shadow-emerald-500/20"
+                    style={{ background: GRADIENT }}>
+                    <Plus size={16} /> New Schedule
+                  </motion.button>
+                  <label className="flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-black text-emerald-600 bg-emerald-50 border border-emerald-200 cursor-pointer hover:bg-emerald-100 transition-all">
+                    <Upload size={16} /> Import CSV
+                    <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {examSchedules.map((s) => (
+                    <div key={s.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden group">
+                      <div className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                              <Calendar size={22} />
+                            </div>
+                            <div>
+                              <h3 className="font-black text-slate-900 text-base">{s.title}</h3>
+                              <p className="text-xs text-slate-400">{s.program} · {s.class_section || 'All Sections'} · {s.session}</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                             <Badge c={s.status === 'Upcoming' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'} label={s.status} />
+                             <button onClick={() => deleteSchedule(s.id)} className="text-slate-300 hover:text-rose-500 transition-colors p-1 opacity-0 group-hover:opacity-100">
+                               <Trash2 size={16} />
+                             </button>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Extracted Exams</p>
+                          <div className="space-y-2">
+                             {grades.filter(g => false).length === 0 && ( // Placeholder for exams link
+                               <div className="flex items-center gap-4 text-xs font-bold text-slate-600">
+                                 <span className="flex items-center gap-1.5"><Clock size={12} className="text-slate-400" /> {s.start_date} → {s.end_date}</span>
+                                 <span className="flex items-center gap-1.5"><BookOpen size={12} className="text-slate-400" /> {s.exam_type}</span>
+                               </div>
+                             )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {examSchedules.length === 0 && (
+                    <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                      <Calendar size={48} className="mx-auto text-slate-100 mb-4" />
+                      <p className="text-slate-400 font-bold">No exam schedules published.</p>
+                      <button onClick={() => setModal('schedule')} className="text-sm font-black mt-2 hover:underline" style={{ color: ACCENT }}>Start by uploading a schedule →</button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
             {/* ══════════ MESSAGES ══════════ */}
             {tab === 'messages' && (
               <motion.div key="messages" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -971,6 +1303,97 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
       {/* ══════════════ MODALS ══════════════ */}
       <AnimatePresence>
+        {modal === 'schedule' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-2xl z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="h-1" style={{ background: GRADIENT }} />
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f0fdf4' }}><Calendar size={16} style={{ color: ACCENT }} /></div>
+                  <h3 className="font-black text-slate-900">Upload Exam Schedule</h3>
+                </div>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-5 overflow-y-auto">
+                <div className="flex gap-2 mb-2">
+                  <button onClick={() => {
+                    const csv = "Subject,Date,Time\nMath,2026-05-10,09:00\nPhysics,2026-05-12,09:00";
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = 'schedule_template.csv'; a.click();
+                  }} className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 flex items-center gap-1.5">
+                    <Save size={10} /> Download Template
+                  </button>
+                  <label className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 flex items-center gap-1.5 cursor-pointer hover:bg-emerald-100 transition-colors">
+                    <Plus size={10} /> Import CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const text = await file.text();
+                      const lines = text.split('\n').filter(l => l.trim());
+                      const headers = lines[0].split(',');
+                      const data = lines.slice(1).map(l => {
+                        const vals = l.split(',');
+                        return { subject: vals[0], date: vals[1], time: vals[2] };
+                      });
+                      setScheduleForm((p: any) => ({ ...p, exams: data }));
+                      showToast(`Imported ${data.length} exams`);
+                    }} />
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FM label="Schedule Name" req><TI placeholder="e.g. Mid-Term 2026" value={scheduleForm.title} onChange={e => setScheduleForm((p: any) => ({ ...p, title: e.target.value }))} /></FM>
+                  <FM label="Exam Type"><TS value={scheduleForm.exam_type} onChange={e => setScheduleForm((p: any) => ({ ...p, exam_type: e.target.value }))}>{['Mid-Term','Final','Mock','Test Series'].map(t => <option key={t}>{t}</option>)}</TS></FM>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <FM label="Program" req><TS value={scheduleForm.program} onChange={e => setScheduleForm((p: any) => ({ ...p, program: e.target.value }))}>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></FM>
+                  <FM label="Part"><TS value={scheduleForm.part} onChange={e => setScheduleForm((p: any) => ({ ...p, part: Number(e.target.value) }))}><option value={1}>Pt 1</option><option value={2}>Pt 2</option></TS></FM>
+                  <FM label="Section"><TI placeholder="e.g. A" value={scheduleForm.class_section} onChange={e => setScheduleForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
+                  <FM label="Session"><TI placeholder="2026-27" value={scheduleForm.session} onChange={e => setScheduleForm((p: any) => ({ ...p, session: e.target.value }))} /></FM>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Extracted Exams List</h4>
+                    <button onClick={() => setScheduleForm((p: any) => ({ ...p, exams: [...p.exams, { subject: '', date: '', time: '' }] }))}
+                      className="text-[10px] font-black text-emerald-600 hover:underline flex items-center gap-1">
+                      <Plus size={10} /> Add Row
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {scheduleForm.exams.map((ex: any, idx: number) => (
+                      <div key={idx} className="flex gap-2 items-end">
+                        <div className="flex-1 min-w-0"><FM label="Subject"><TI placeholder="Math" value={ex.subject} onChange={e => {
+                          const newExams = [...scheduleForm.exams]; newExams[idx].subject = e.target.value;
+                          setScheduleForm((p: any) => ({ ...p, exams: newExams }));
+                        }} /></FM></div>
+                        <div className="w-32"><FM label="Date"><TI type="date" value={ex.date} onChange={e => {
+                          const newExams = [...scheduleForm.exams]; newExams[idx].date = e.target.value;
+                          setScheduleForm((p: any) => ({ ...p, exams: newExams }));
+                        }} /></FM></div>
+                        <div className="w-24"><FM label="Time"><TI type="time" value={ex.time} onChange={e => {
+                          const newExams = [...scheduleForm.exams]; newExams[idx].time = e.target.value;
+                          setScheduleForm((p: any) => ({ ...p, exams: newExams }));
+                        }} /></FM></div>
+                        <button onClick={() => setScheduleForm((p: any) => ({ ...p, exams: p.exams.filter((_: any, i: number) => i !== idx) }))}
+                          className="p-2.5 text-slate-300 hover:text-rose-500 mb-0.5"><Trash2 size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 flex-shrink-0">
+                <button onClick={() => setModal(null)} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button onClick={saveExamSchedule} disabled={saving} className="px-8 py-2.5 rounded-xl text-sm font-black text-white shadow-lg shadow-emerald-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                  {saving ? 'Publishing...' : 'Publish Schedule'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {modal === 'scheme' && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
@@ -1032,7 +1455,12 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 <FM label="Title" req><TI placeholder="Announcement title…" value={announceForm.title} onChange={e => setAnnounceForm((p: any) => ({ ...p, title: e.target.value }))} /></FM>
                 <FM label="Message" req><TA rows={4} placeholder="Announcement content…" value={announceForm.body} onChange={e => setAnnounceForm((p: any) => ({ ...p, body: e.target.value }))} /></FM>
                 <div className="grid grid-cols-2 gap-4">
-                  <FM label="Target"><TS value={announceForm.target_type} onChange={e => setAnnounceForm((p: any) => ({ ...p, target_type: e.target.value }))}><option value="all">All</option><option value="teachers">Teachers Only</option><option value="class">Specific Class</option><option value="program">Specific Program</option></TS></FM>
+                  <FM label="Target Class" req>
+                    <TS value={announceForm.target_type} onChange={e => setAnnounceForm((p: any) => ({ ...p, target_type: e.target.value }))}>
+                      <option value="all">Broadcast to All</option>
+                      {classes.map(c => <option key={c.id} value={c.class_name}>{c.class_name}</option>)}
+                    </TS>
+                  </FM>
                   <FM label="Priority"><TS value={announceForm.priority} onChange={e => setAnnounceForm((p: any) => ({ ...p, priority: e.target.value }))}><option>Normal</option><option>High</option><option>Low</option></TS></FM>
                 </div>
                 <FM label="Expiry Date (optional)"><TI type="date" value={announceForm.expires_at} onChange={e => setAnnounceForm((p: any) => ({ ...p, expires_at: e.target.value }))} /></FM>
@@ -1044,6 +1472,67 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   {saving ? 'Publishing…' : <><Send size={14} /> Publish</>}
                 </motion.button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {modal === 'teacher' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl overflow-hidden mt-10">
+               <div className="h-1" style={{ background: GRADIENT }} />
+               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                 <h3 className="font-black text-slate-900">{selectedTeacher ? 'Edit Teacher' : 'Add New Teacher'}</h3>
+                 <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+               </div>
+               <div className="p-6 space-y-4">
+                 <div className="grid grid-cols-2 gap-4">
+                   <FM label="Full Name" req><TI value={teacherForm.full_name} onChange={e => setTeacherForm({...teacherForm, full_name: e.target.value.toUpperCase()})} /></FM>
+                   <FM label="Employee ID" req><TI value={teacherForm.employee_id} onChange={e => setTeacherForm({...teacherForm, employee_id: e.target.value})} /></FM>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                   <FM label="Subject"><TI value={teacherForm.subject_dept} onChange={e => setTeacherForm({...teacherForm, subject_dept: e.target.value})} /></FM>
+                   <FM label="Monthly Salary"><TI type="number" value={teacherForm.monthly_salary} onChange={e => setTeacherForm({...teacherForm, monthly_salary: e.target.value})} /></FM>
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                   <FM label="Phone No"><TI value={teacherForm.phone_no} onChange={e => setTeacherForm({...teacherForm, phone_no: e.target.value})} /></FM>
+                   <FM label="Email"><TI value={teacherForm.email} onChange={e => setTeacherForm({...teacherForm, email: e.target.value})} /></FM>
+                 </div>
+                 <FM label="Status">
+                   <TS value={teacherForm.status} onChange={e => setTeacherForm({...teacherForm, status: e.target.value})}>
+                     <option value="Active">Active</option>
+                     <option value="Inactive">Inactive</option>
+                   </TS>
+                 </FM>
+               </div>
+               <div className="p-6 border-t border-slate-100 flex gap-3">
+                 <button onClick={() => setModal(null)} className="flex-1 py-2.5 rounded-xl font-bold text-slate-500 bg-slate-50">Cancel</button>
+                 <button onClick={saveTeacher} className="flex-1 py-2.5 rounded-xl font-black text-white" style={{ background: GRADIENT }}>{saving ? 'Saving...' : 'Save Teacher'}</button>
+               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {modal === 'class' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl overflow-hidden mt-10">
+               <div className="h-1" style={{ background: GRADIENT }} />
+               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                 <h3 className="font-black text-slate-900">Manage Class</h3>
+                 <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+               </div>
+               <div className="p-6 space-y-4">
+                 <FM label="Class Name" req><TI value={classForm.class_name} onChange={e => setClassForm({...classForm, class_name: e.target.value.toUpperCase()})} placeholder="e.g. 1st Year Section A" /></FM>
+                 <FM label="Department"><TI value={classForm.department} onChange={e => setClassForm({...classForm, department: e.target.value.toUpperCase()})} placeholder="e.g. Science" /></FM>
+                 <FM label="Academic Year"><TI value={classForm.academic_year} onChange={e => setClassForm({...classForm, academic_year: e.target.value})} placeholder="e.g. 2026-28" /></FM>
+               </div>
+               <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                 <button onClick={() => setModal(null)} className="flex-1 py-2.5 rounded-xl font-bold text-slate-500 bg-white border">Cancel</button>
+                 <button onClick={saveClass} className="flex-1 py-2.5 rounded-xl font-black text-white shadow-md shadow-emerald-500/20" style={{ background: GRADIENT }}>{saving ? '...' : 'Save Class'}</button>
+               </div>
             </motion.div>
           </div>
         )}

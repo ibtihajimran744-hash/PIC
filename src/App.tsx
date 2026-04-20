@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { AdminPortal }       from './components/AdminPortal';
-import { AccountantPortal }  from './components/AccountantPortal';
+import { ReceptionistPortal } from './components/ReceptionistPortal';
 import { VPPortal }          from './components/VPPortal';
 import { CoordinatorPortal } from './components/CoordinatorPortal';
 import { ExaminerPortal }    from './components/ExaminerPortal';
@@ -191,12 +191,12 @@ const ROLE_PORTAL: Record<string, string> = {
   'VP':                'vp',
   'Principal':         'admin',
   'Coordinator':       'coordinator',
-  'Accountant':        'accountant',
+  'Accountant':        'admin',
   'Admission Officer': 'admin',
   'Teacher':           'admin',
   'Examiner':          'examiner',
   'Academics':         'academics',
-  'Receptionist':      'admin',
+  'Receptionist':      'receptionist',
   'Registrar':         'admin',
 };
 
@@ -309,17 +309,16 @@ export default function App() {
     );
   }
 
-  if (portalType === 'accountant') {
-    return (
-      <AccountantPortal
-        onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
-      />
-    );
-  }
-
   // Director, Principal, Accountant, Admission Officer,
   // Registrar, Receptionist → AdminPortal
+  if (portalType === 'receptionist') {
+  return (
+    <ReceptionistPortal
+      onLogout={handleLogout}
+      receptionistData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+    />
+  );
+}
   return (
     <AdminPortal
       onLogout={handleLogout}
