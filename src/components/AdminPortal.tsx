@@ -676,108 +676,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const refresh   = () => setRefreshKey(k => k + 1);
 
    const handlePrint = (tx: any) => {
-  const student  = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
-  const stuFees  = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
+  const student = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
+  const stuFees = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
   const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
   const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
   const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
   const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
-  const dateStr      = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const dateStr = new Date().toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' });
 
-  const fmt = (n: number) => `PKR${(n ?? 0).toLocaleString()}`;
-  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-') : '-';
+  const fmt     = (n: number) => `PKR${(n ?? 0).toLocaleString('en-PK')}`;
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' }).replace(/\//g, '-') : '-';
 
   const feeRows = stuFees.map(f => {
     const history: any[] = f.payment_history ?? [];
-    const last = history[history.length - 1];
-    return `
+    const payments = history.length > 0 ? history : [null];
+    return payments.map((p: any, pi: number) => `
       <tr>
-        <td>${f.fees_group ?? '-'}<br/><span style="color:#555;font-size:9pt">(${f.fees_code ?? '-'})</span></td>
-        <td style="text-align:center">-</td>
-        <td style="text-align:center">${fmtDate(f.due_date)}</td>
-        <td style="text-align:center">${f.status ?? '-'}</td>
-        <td style="text-align:right">${fmt(f.amount)}</td>
-        <td style="text-align:center">${last?.payment_id ?? '-'}</td>
-        <td style="text-align:center">${last?.method ?? '-'}</td>
-        <td style="text-align:center">${last ? fmtDate(last.date) : '-'}</td>
+        ${pi === 0 ? `
+          <td rowspan="${payments.length}" style="vertical-align:top">${f.fees_group ?? '-'}</td>
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.fees_code ?? '-'}</td>
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${fmtDate(f.due_date)}</td>
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.status ?? '-'}</td>
+          <td rowspan="${payments.length}" style="vertical-align:top;text-align:right">${fmt(f.amount)}</td>
+        ` : ''}
+        <td style="text-align:center">${p?.payment_id ?? '-'}</td>
+        <td style="text-align:center">${p?.method ?? '-'}</td>
+        <td style="text-align:center">${p ? fmtDate(p.date) : '-'}</td>
         <td style="text-align:right">${fmt(f.paid)}</td>
         <td style="text-align:right">${fmt(f.fine)}</td>
         <td style="text-align:right">${fmt(f.discount ?? 0)}</td>
         <td style="text-align:right"><strong>${fmt(f.balance)}</strong></td>
-      </tr>`;
+      </tr>`).join('');
   }).join('');
-
-  const copyHTML = (label: string) => `
-    <div class="copy">
-      <div class="header">
-        <div class="header-row">
-          <div class="logo">🌐</div>
-          <div class="header-text">
-            <div class="college-name">Pak Informatics Group of Colleges</div>
-            <div class="sub">Head Office, Gujranwala &nbsp;&nbsp; ph: 0300-0642973</div>
-            <div class="sub">P/C Tower, Sialkot Bypass Road Near Beacon House Palm Tree Campus GRW.</div>
-          </div>
-        </div>
-        <hr class="divider"/>
-        <div class="copy-label">${label}</div>
-      </div>
-
-      <div class="student-row">
-        <div>
-          <div><strong>${student?.full_name ?? ''}</strong> (${student?.roll_no ?? ''})</div>
-          <div>Father Name: ${student?.father_name ?? ''}</div>
-          <div>Class: ${student?.class_section ?? ''}</div>
-        </div>
-        <div class="date-right">Date: ${dateStr}</div>
-      </div>
-
-      <table class="fee-table">
-        <thead>
-          <tr>
-            <th>Fees Group</th><th>Fees Code</th><th>Due Date</th><th>Status</th>
-            <th>Amount</th><th>Payment ID</th><th>Mode</th><th>Date</th>
-            <th>Paid</th><th>Fine</th><th>Discount</th><th>Balance</th>
-          </tr>
-        </thead>
-        <tbody>${feeRows}</tbody>
-        <tfoot>
-          <tr class="grand-total">
-            <td colspan="3"><strong>Grand Total</strong></td>
-            <td></td>
-            <td style="text-align:right"><strong>${fmt(totalAmount)}</strong></td>
-            <td colspan="3"></td>
-            <td style="text-align:right"><strong>${fmt(totalPaid)}</strong></td>
-            <td style="text-align:right"><strong>${fmt(totalFine)}</strong></td>
-            <td></td>
-            <td style="text-align:right"><strong>${fmt(totalBalance)}</strong></td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <div class="notes">
-        <p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
-        <p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.
-          <span class="sig">Accountant: _______________</span>
-        </p>
-        <p class="urdu">برماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
-      </div>
-
-      <div class="payment">
-        <p><strong><u>ONLINE PAYMENT DETAILS:</u></strong></p>
-        <div class="payment-cols">
-          <div>
-            <p><strong><u>1) UBL Bank Limited</u></strong></p>
-            <p><strong><u>Account No</u></strong>: 0785335426309</p>
-            <p><strong><u>Account Title</u></strong>: Pak Informatics Educational Network Pvt.</p>
-          </div>
-          <div>
-            <p><strong><u>2) Jazz Cash Account:</u></strong></p>
-            <p><strong><u>Account No.</u></strong>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
-            <p><strong><u>Account Title:</u></strong> Informatics Group of Colleges GRW</p>
-          </div>
-        </div>
-      </div>
-    </div>`;
 
   const html = `<!DOCTYPE html>
 <html>
@@ -785,39 +715,126 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   <meta charset="utf-8"/>
   <title>Fee Voucher</title>
   <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;padding:12px}
-    .copy{max-width:720px;margin:0 auto 12px}
-    .header{margin-bottom:10px}
-    .header-row{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-    .logo{font-size:36px;width:54px;height:54px;display:flex;align-items:center;justify-content:center;border:2px solid #333;border-radius:4px;flex-shrink:0}
-    .college-name{font-size:19pt;font-weight:bold;line-height:1.1}
-    .sub{font-size:9.5pt;margin-top:2px}
-    hr.divider{border:none;border-top:1.5px solid #000;margin:6px 0}
-    .copy-label{text-align:center;font-weight:bold;font-size:11pt;margin-bottom:8px}
-    .student-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;font-size:10pt;line-height:1.7}
-    .date-right{white-space:nowrap;font-size:10pt}
-    .fee-table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:9pt}
-    .fee-table th{border:1px solid #000;padding:4px 5px;text-align:left;font-weight:bold}
-    .fee-table td{border:1px solid #000;padding:5px;vertical-align:top}
-    .grand-total td{background:#f9f9f9;border:1px solid #000;padding:5px}
-    .notes{font-size:9.5pt;line-height:1.8;margin-bottom:10px}
-    .notes p{margin-bottom:2px}
-    .sig{float:right}
-    .urdu{font-family:'Noto Nastaliq Urdu',serif;direction:rtl;font-size:10pt;margin-top:3px;clear:both}
-    .payment{font-size:9.5pt}
-    .payment-cols{display:flex;gap:30px;margin-top:6px}
-    .payment-cols>div{flex:1}
-    .payment-cols p{margin-bottom:3px}
-    .tear{text-align:center;margin:8px 0;font-size:11pt;border-top:1px dashed #666;padding-top:8px;letter-spacing:1px}
-    @media print{body{padding:4px}.copy{page-break-inside:avoid}}
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 9pt; color: #000; background: #fff; padding: 18px 22px; }
+
+    /* ── Header ── */
+    .header { display:flex; align-items:center; gap:14px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 4px; }
+    .logo-box { width:62px; height:62px; border:2px solid #555; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0; }
+    .header-text { flex:1; }
+    .college-name { font-size:20pt; font-weight:bold; line-height:1.1; }
+    .header-sub { font-size:9pt; margin-top:2px; }
+    .header-address { font-size:8.5pt; margin-top:1px; color:#333; }
+    .copy-label { text-align:center; font-weight:bold; font-size:10.5pt; margin: 6px 0 8px; letter-spacing:0.5px; }
+
+    /* ── Student info row ── */
+    .student-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 10px; }
+    .student-info { font-size:9.5pt; line-height:1.8; }
+    .student-info strong { font-size:10pt; }
+    .date-label { font-size:9.5pt; font-weight:bold; white-space:nowrap; }
+
+    /* ── Fee table ── */
+    .fee-table { width:100%; border-collapse:collapse; margin-bottom:10px; font-size:8.5pt; }
+    .fee-table th { border:1px solid #000; padding:4px 5px; text-align:left; font-weight:bold; background:#f0f0f0; white-space:nowrap; font-size:8pt; }
+    .fee-table td { border:1px solid #000; padding:4px 5px; vertical-align:middle; }
+    .fee-table tfoot td { border:1px solid #000; padding:5px; font-weight:bold; background:#f5f5f5; }
+
+    /* ── Notes ── */
+    .notes { font-size:8.5pt; line-height:1.9; margin-bottom:10px; }
+    .notes p { margin-bottom:1px; }
+    .urdu { font-family:'Noto Nastaliq Urdu', serif; direction:rtl; font-size:9.5pt; margin-top:4px; }
+
+    /* ── Payment details ── */
+    .payment-title { font-size:9pt; font-weight:bold; text-decoration:underline; margin-bottom:6px; }
+    .payment-cols { display:flex; gap:40px; font-size:8.5pt; }
+    .payment-cols > div { flex:1; }
+    .payment-cols p { margin-bottom:3px; }
+
+    @media print { body { padding: 6px 10px; } }
   </style>
 </head>
 <body>
-  ${copyHTML('College Copy')}
-  <div class="tear">✂ &nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp; ✂</div>
-  ${copyHTML('Student Copy')}
-  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}</script>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo-box">🌐</div>
+    <div class="header-text">
+      <div class="college-name">Pak Informatics Group of Colleges</div>
+      <div class="header-sub">Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
+      <div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
+    </div>
+  </div>
+
+  <!-- COPY LABEL -->
+  <div class="copy-label">Student Copy</div>
+
+  <!-- STUDENT INFO -->
+  <div class="student-row">
+    <div class="student-info">
+      <strong>${student?.full_name ?? '—'}</strong> (${student?.roll_no ?? '—'})<br/>
+      Father Name: ${student?.father_name ?? '—'}<br/>
+      Class: ${student?.class_section ?? '—'}
+    </div>
+    <div class="date-label">Date: ${dateStr}</div>
+  </div>
+
+  <!-- FEE TABLE -->
+  <table class="fee-table">
+    <thead>
+      <tr>
+        <th>Fees Group</th>
+        <th style="text-align:center">Fees Code</th>
+        <th style="text-align:center">Due Date</th>
+        <th style="text-align:center">Status</th>
+        <th style="text-align:right">Amount</th>
+        <th style="text-align:center">Payment ID</th>
+        <th style="text-align:center">Mode</th>
+        <th style="text-align:center">Date</th>
+        <th style="text-align:right">Paid</th>
+        <th style="text-align:right">Fine</th>
+        <th style="text-align:right">Discount</th>
+        <th style="text-align:right">Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee records found</td></tr>'}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" style="text-align:right">Grand Total</td>
+        <td style="text-align:right">${fmt(totalAmount)}</td>
+        <td colspan="3"></td>
+        <td style="text-align:right">${fmt(totalPaid)}</td>
+        <td style="text-align:right">${fmt(totalFine)}</td>
+        <td></td>
+        <td style="text-align:right">${fmt(totalBalance)}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- NOTES -->
+  <div class="notes">
+    <p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
+    <p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
+    <p class="urdu">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
+  </div>
+
+  <!-- ONLINE PAYMENT -->
+  <div class="payment-title">ONLINE PAYMENT DETAILS:</div>
+  <div class="payment-cols">
+    <div>
+      <p><strong><u>1) UBL Bank Limited</u></strong></p>
+      <p><u>Account No</u>: 0785335426309</p>
+      <p><u>Account Title</u>: Pak Informatics Educational Network Pvt.</p>
+    </div>
+    <div>
+      <p><strong><u>2) Jazz Cash Account:</u></strong></p>
+      <p><u>Account No.</u>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
+      <p><u>Account Title:</u> Informatics Group of Colleges GRW</p>
+    </div>
+  </div>
+
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
 </body>
 </html>`;
 
@@ -829,114 +846,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   iframe.contentWindow!.document.close();
   setTimeout(() => document.body.removeChild(iframe), 6000);
 };
-
-const handlePrintReport = (data: any) => {
-  const { type, feeRev, otherInc, totalExp, discounts, net, txs, others, receivable } = data;
-  const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
-  const LOGO_B64 = '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';
-
-  const txRowsHTML = (txs || []).map((t: any) => `
-    <tr>
-      <td>Roll #${t.student_roll_link}</td>
-      <td>${t.transaction_type}</td>
-      <td>${t.payment_method}</td>
-      <td>Rs ${(t.amount_paid || 0).toLocaleString('en-PK')}</td>
-      <td>${new Date(t.payment_date).toLocaleDateString()}</td>
-    </tr>`).join('');
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<style>
-  body { font-family: Calibri, sans-serif; padding: 30px; color: #333; }
-  .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
-  .logo { width: 60px; height: 60px; }
-  h1 { margin: 10px 0 5px; font-size: 24pt; }
-  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
-  .stat-box { border: 1px solid #eee; padding: 15px; border-radius: 10px; background: #fafafa; }
-  .stat-label { font-size: 9pt; text-transform: uppercase; color: #888; font-weight: bold; }
-  .stat-value { font-size: 16pt; font-weight: bold; margin-top: 5px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
-  th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
-  th { background: #f4f4f4; }
-  .section-title { font-size: 12pt; font-weight: bold; margin: 20px 0 10px; border-left: 4px solid #0F766E; padding-left: 10px; }
-</style>
-</head>
-<body>
-<div class="header">
-  <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
-  <h1>Pak Informatics Group of Colleges</h1>
-  <p>${type} Financial Report - ${dateStr}</p>
-</div>
-
-<div class="summary-grid">
-  <div class="stat-box"><p class="stat-label">Fee Revenue</p><p class="stat-value">${PKR(feeRev)}</p></div>
-  <div class="stat-box"><p class="stat-label">Other Income</p><p class="stat-value">${PKR(otherInc)}</p></div>
-  <div class="stat-box"><p class="stat-label">Total Income</p><p class="stat-value" style="color:#059669">${PKR(feeRev + otherInc)}</p></div>
-  <div class="stat-box"><p class="stat-label">Receivables</p><p class="stat-value" style="color:#D97706">${PKR(receivable)}</p></div>
-  <div class="stat-box"><p class="stat-label">Expenses</p><p class="stat-value">${PKR(totalExp)}</p></div>
-  <div class="stat-box"><p class="stat-label">Discounts</p><p class="stat-value">${PKR(discounts)}</p></div>
-  <div class="stat-box"><p class="stat-label">Net Profit</p><p class="stat-value" style="color:${net >= 0 ? '#059669' : '#e11d48'}">${PKR(net)}</p></div>
-</div>
-
-<div class="section-title">Transactions (Fee Collection)</div>
-<table>
-  <thead><tr><th>Student</th><th>Type</th><th>Method</th><th>Amount</th><th>Date</th></tr></thead>
-  <tbody>${txRowsHTML || '<tr><td colspan="5" align="center">No transactions</td></tr>'}</tbody>
-</table>
-
-<div class="section-title">Other Financials (Income/Expenses)</div>
-<table>
-  <thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
-  <tbody>${(others || []).map((r: any) => `<tr><td>${r.description}</td><td>${r.category}</td><td>${PKR(r.amount)}</td><td>${r.income_date || r.expense_date}</td></tr>`).join('') || '<tr><td colspan="4" align="center">No other financials</td></tr>'}</tbody>
-</table>
-
-<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
-</body>
-</html>`;
-
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
-  document.body.appendChild(iframe);
-  iframe.contentWindow!.document.open();
-  iframe.contentWindow!.document.write(html);
-  iframe.contentWindow!.document.close();
-  setTimeout(() => document.body.removeChild(iframe), 6000);
-};
-
-  const handlePrintList = (title: string, columns: string[], rows: any[][], summary?: string) => {
-    const LOGO_B64 = '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';
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title}</title><style>
-      body { font-family: Calibri, sans-serif; padding: 25px; color: #333; }
-      .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 15px; }
-      .logo { width: 50px; height: 50px; }
-      h1 { margin: 8px 0 3px; font-size: 20pt; }
-      .summary { font-size: 11pt; font-weight: bold; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 8px; }
-      table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-      th { background: #f4f4f4; text-transform: uppercase; font-size: 8pt; font-weight: bold; }
-    </style></head><body>
-      <div class="header">
-        <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
-        <h1>Pak Informatics Group of Colleges</h1>
-        <p style="font-size:12pt;font-weight:bold">${title}</p>
-        <p style="font-size:10pt;color:#777">Printed on ${new Date().toLocaleString('en-PK')}</p>
-      </div>
-      ${summary ? `<div class="summary">${summary}</div>` : ''}
-      <table>
-        <thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r => `<tr>${r.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table>
-      <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
-    </body></html>`;
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
-    document.body.appendChild(iframe);
-    iframe.contentWindow!.document.open();
-    iframe.contentWindow!.document.write(html);
-    iframe.contentWindow!.document.close();
-    setTimeout(() => document.body.removeChild(iframe), 6000);
-  };
 
   // ── Load: Principal ────────────────────────────────────────────────────
   const loadPrincipal = useCallback(async () => {
