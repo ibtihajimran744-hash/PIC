@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { AdminPortal }       from './components/AdminPortal';
+import { AccountantPortal }  from './components/AccountantPortal';
 import { VPPortal }          from './components/VPPortal';
 import { CoordinatorPortal } from './components/CoordinatorPortal';
 import { ExaminerPortal }    from './components/ExaminerPortal';
@@ -190,7 +191,7 @@ const ROLE_PORTAL: Record<string, string> = {
   'VP':                'vp',
   'Principal':         'admin',
   'Coordinator':       'coordinator',
-  'Accountant':        'admin',
+  'Accountant':        'accountant',
   'Admission Officer': 'admin',
   'Teacher':           'admin',
   'Examiner':          'examiner',
@@ -302,6 +303,15 @@ export default function App() {
   if (portalType === 'academics') {
     return (
       <AcademicsPortal
+        onLogout={handleLogout}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+      />
+    );
+  }
+
+  if (portalType === 'accountant') {
+    return (
+      <AccountantPortal
         onLogout={handleLogout}
         adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
       />

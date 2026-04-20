@@ -297,6 +297,22 @@ export interface Expense {
   amount: number;
   description: string;
   date: string;
+  name?: string;
+  slip_no?: string;
+  expense_date?: string;
+  recorded_by?: string;
+}
+
+export interface Income {
+  id: number;
+  category: string;
+  amount: number;
+  description: string;
+  date: string;
+  name?: string;
+  slip_no?: string;
+  income_date?: string;
+  recorded_by?: string;
 }
 
 export interface Payroll {

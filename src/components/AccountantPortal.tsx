@@ -120,6 +120,8 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   // ── Dashboard stats
   const [stats, setStats] = useState({ totalCollected: 0, pendingFees: 0, totalBalance: 0, netBalance: 0 });
+  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   // ── Fee Collection
   const [feeStudents, setFeeStudents]           = useState<Student[]>([]);
@@ -170,7 +172,41 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [splitPreview, setSplitPreview]             = useState<Record<string, number>>({});
 
   // ── Load on mount / tab change ────────────────────────────────────────────
-  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => {
+    fetchStats();
+    loadRecentTransactions();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel('portal-updates')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'fee_groups' }, (payload: any) => {
+        fetchStats();
+        // If we are currently viewing a student's fees, and this change affects them, reload their fees
+        if (selectedFeeStudent && payload.new && (payload.new as any).student_roll === selectedFeeStudent.roll_no) {
+          openStudentFees(selectedFeeStudent);
+        }
+      })
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'fee_transactions' }, () => {
+        loadRecentTransactions();
+        fetchStats();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedFeeStudent]);
+
+  const loadRecentTransactions = async () => {
+    setLoadingTransactions(true);
+    const { data } = await supabase
+      .from('fee_transactions')
+      .select('*, fee_groups(fees_group)')
+      .order('payment_date', { ascending: false })
+      .limit(10);
+    setRecentTransactions(data || []);
+    setLoadingTransactions(false);
+  };
 
   useEffect(() => {
     if (activeTab === 'fees')       { loadFeeStudents(); }
@@ -214,32 +250,106 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     setLoadingFeeRecords(false);
   };
 
+  const [collectMethod, setCollectMethod] = useState('Cash');
+  const [collectReceipt, setCollectReceipt] = useState('');
+  const [collectDiscount, setCollectDiscount] = useState('');
+
   const openCollectModal = (record: StudentFeeRecord) => {
     setSelectedFeeRecord(record);
     setCollectAmount(String(record.balance || 0));
+    setCollectMethod('Cash');
+    setCollectReceipt('');
+    setCollectDiscount('0');
     setShowCollectModal(true);
   };
 
   const handleCollectFee = async () => {
     if (!selectedFeeRecord) return;
     const amount = Number(collectAmount);
-    if (!amount || amount <= 0) { toast.error('Enter a valid amount'); return; }
-    if (amount > selectedFeeRecord.balance) { toast.error(`Max collectible: ${PKR(selectedFeeRecord.balance)}`); return; }
+    const disc   = Number(collectDiscount || 0);
+
+    if ((!amount || amount <= 0) && (!disc || disc <= 0)) { toast.error('Enter a valid amount or discount'); return; }
+    if (amount + disc > selectedFeeRecord.balance) { toast.error(`Total exceeds balance of ${PKR(selectedFeeRecord.balance)}`); return; }
+    
     setCollectingFee(true);
-    const newPaid    = (selectedFeeRecord.paid || 0) + amount;
-    const newStatus  = newPaid >= selectedFeeRecord.amount ? 'Paid' : 'Partial';
-    const { error } = await supabase
-      .from('fee_groups')
-      .update({ paid: newPaid, status: newStatus })
-      .eq('id', selectedFeeRecord.id);
-    setCollectingFee(false);
-    if (error) { toast.error('Failed to collect fee'); return; }
-    toast.success(`${PKR(amount)} collected!`);
-    setShowCollectModal(false);
-    setCollectAmount('');
-    setSelectedFeeRecord(null);
-    openStudentFees(selectedFeeStudent!);
-    fetchStats();
+    try {
+      const newPaid     = (selectedFeeRecord.paid || 0) + amount;
+      const newDiscount = (selectedFeeRecord.discount || 0) + disc;
+      const newBalance  = (selectedFeeRecord.balance || 0) - amount - disc;
+      const newStatus   = newBalance <= 0 ? 'Paid' : 'Partial';
+
+      const { error: updateError } = await supabase
+        .from('fee_groups')
+        .update({ 
+          paid: newPaid, 
+          discount: newDiscount,
+          status: newStatus 
+        })
+        .eq('id', selectedFeeRecord.id);
+
+      if (updateError) throw updateError;
+
+      // Record Payment Transaction
+      if (amount > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(selectedFeeRecord.student_roll),
+          amount_paid: amount,
+          payment_method: collectMethod,
+          receipt_serial: collectReceipt || null,
+          collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(),
+          transaction_type: 'Payment',
+          fee_group_id: selectedFeeRecord.id,
+          confirmed_by: adminData.full_name,
+        }]);
+
+        // 🔔 Notification for Student
+        await supabase.from('notifications').insert([{
+          target_user_id: selectedFeeRecord.student_roll,
+          title: '💰 Fee Payment Received',
+          message: `Your payment of ${PKR(amount)} for ${selectedFeeRecord.fees_group} has been successfully recorded.`,
+          type: 'fee_payment',
+          target_role: 'STUDENT'
+        }]);
+      }
+
+      // Record Discount Transaction
+      if (disc > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(selectedFeeRecord.student_roll),
+          amount_paid: disc,
+          payment_method: 'Discount',
+          receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`,
+          collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(),
+          transaction_type: 'Discount',
+          fee_group_id: selectedFeeRecord.id,
+          confirmed_by: adminData.full_name,
+        }]);
+
+        // 🔔 Notification for Student (Discount)
+        await supabase.from('notifications').insert([{
+          target_user_id: selectedFeeRecord.student_roll,
+          title: '🏷️ Fee Discount Applied',
+          message: `A discount of ${PKR(disc)} has been applied to your ${selectedFeeRecord.fees_group}.`,
+          type: 'fee_payment',
+          target_role: 'STUDENT'
+        }]);
+      }
+
+      toast.success('Collection successful!');
+      setShowCollectModal(false);
+      setCollectAmount('');
+      setCollectDiscount('');
+      setSelectedFeeRecord(null);
+      if (selectedFeeStudent) openStudentFees(selectedFeeStudent);
+      fetchStats();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || 'Failed to collect fee');
+    } finally {
+      setCollectingFee(false);
+    }
   };
 
   // ── Fee Group Templates ───────────────────────────────────────────────────
@@ -475,12 +585,39 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                       <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="font-black text-slate-900">Recent Transactions</h3>
-                        <button className="text-xs font-bold text-emerald-600 hover:underline">View All</button>
+                        <button onClick={() => setActiveTab('history')} className="text-xs font-bold text-emerald-600 hover:underline">View All</button>
                       </div>
-                      <div className="p-6 text-center text-slate-400">
-                        <Receipt size={32} className="mx-auto mb-3 opacity-30" />
-                        <p className="font-bold text-sm">Transaction history coming soon</p>
-                        <p className="text-xs mt-1">Collect fees from the Fee Collection tab to populate this.</p>
+                      <div className="p-0">
+                        {loadingTransactions ? (
+                          <div className="p-12 flex justify-center"><Loader2 size={24} className="animate-spin text-emerald-500" /></div>
+                        ) : recentTransactions.length === 0 ? (
+                          <div className="p-12 text-center text-slate-400">
+                            <Receipt size={32} className="mx-auto mb-3 opacity-30" />
+                            <p className="font-bold text-sm">No transactions yet</p>
+                            <p className="text-xs mt-1">Fee payments will appear here.</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {recentTransactions.map(tx => (
+                              <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                <div className="flex items-center gap-3">
+                                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", 
+                                    tx.transaction_type === 'Payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600')}>
+                                    {tx.transaction_type === 'Payment' ? <ArrowDownRight size={18} /> : <Info size={18} />}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-900">{tx.fee_groups?.fees_group || 'Fee Payment'}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Roll: {tx.student_roll_link} · {new Date(tx.payment_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-black text-slate-900">{PKR(tx.amount_paid)}</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase">{tx.payment_method}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-6">
@@ -692,8 +829,58 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 </div>
               )}
 
+              {/* ══ TRANSACTION HISTORY ══ */}
+              {activeTab === 'history' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-900">Transaction History</h2>
+                    <p className="text-sm text-slate-500 mt-1">Complete record of every financial transaction.</p>
+                  </div>
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    {recentTransactions.length === 0 ? (
+                      <div className="p-16 text-center text-slate-400">
+                        <History size={48} className="mx-auto mb-4 opacity-20" />
+                        <p className="font-bold">No history available yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase shrink-0">Date</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Roll #</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Description</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Type</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">Method</th>
+                              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {recentTransactions.map(tx => (
+                              <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4 text-xs font-bold text-slate-500">{new Date(tx.payment_date).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 text-xs font-black text-slate-900">{tx.student_roll_link}</td>
+                                <td className="px-6 py-4 text-xs font-bold text-slate-700">{tx.fee_groups?.fees_group || 'Fee Payment'}</td>
+                                <td className="px-6 py-4">
+                                  <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest", 
+                                    tx.transaction_type === 'Payment' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700')}>
+                                    {tx.transaction_type}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-xs font-bold text-slate-500">{tx.payment_method}</td>
+                                <td className="px-6 py-4 text-sm font-black text-slate-900 text-right">{PKR(tx.amount_paid)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* ══ OTHER TABS ══ */}
-              {activeTab !== 'dashboard' && activeTab !== 'fees' && activeTab !== 'feegroups' && (
+              {activeTab !== 'dashboard' && activeTab !== 'fees' && activeTab !== 'feegroups' && activeTab !== 'history' && (
                 <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
                   <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 mb-4">
                     {(() => { const T = TABS.find(t => t.id === activeTab); return T ? <T.icon size={32} /> : null; })()}
@@ -718,23 +905,43 @@ export const AccountantPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 <h3 className="text-lg font-black text-slate-900">Collect Fee</h3>
                 <button onClick={() => setShowCollectModal(false)} className="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100"><X size={18} /></button>
               </div>
-              <div className="p-6 space-y-5">
+              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
                 <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                   <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Fee Group</p>
                   <p className="font-black text-slate-900 text-sm">{selectedFeeRecord.fees_group}</p>
                   <div className="flex gap-4 mt-2 text-xs font-bold">
-                    <span className="text-slate-500">Total: <span className="text-slate-900">{PKR(selectedFeeRecord.amount)}</span></span>
-                    <span className="text-slate-500">Paid: <span className="text-emerald-600">{PKR(selectedFeeRecord.paid || 0)}</span></span>
                     <span className="text-slate-500">Left: <span className="text-rose-600">{PKR(selectedFeeRecord.balance || 0)}</span></span>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase">Amount to Collect (Rs)</label>
-                  <input type="number" value={collectAmount} onChange={e => setCollectAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-2xl font-black text-[#2D3494] outline-none focus:ring-2 focus:ring-emerald-400 text-center" />
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Receive Amount (Rs)</label>
+                    <input type="number" value={collectAmount} onChange={e => setCollectAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xl font-black text-[#2D3494] outline-none focus:ring-2 focus:ring-emerald-400" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Discount (Rs)</label>
+                    <input type="number" value={collectDiscount} onChange={e => setCollectDiscount(e.target.value)} placeholder="0" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm font-bold text-emerald-600 outline-none focus:ring-2 focus:ring-emerald-400" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Method</label>
+                      <select value={collectMethod} onChange={e => setCollectMethod(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-xs font-bold outline-none">
+                        {['Cash', 'Bank Transfer', 'JazzCash', 'EasyPaisa', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Receipt No.</label>
+                      <input value={collectReceipt} onChange={e => setCollectReceipt(e.target.value)} placeholder="Optional" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-xs font-bold outline-none" />
+                    </div>
+                  </div>
                 </div>
+
                 <div className="grid grid-cols-4 gap-2">
                   {[25, 50, 75, 100].map(pct => (
-                    <button key={pct} onClick={() => setCollectAmount(String(Math.round((selectedFeeRecord.balance || 0) * pct / 100)))} className="py-2 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded-xl text-xs font-black transition-all">{pct}%</button>
+                    <button key={pct} onClick={() => setCollectAmount(String(Math.round((selectedFeeRecord.balance || 0) * pct / 100)))} className="py-2 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 rounded-xl text-[10px] font-black transition-all">{pct}%</button>
                   ))}
                 </div>
               </div>

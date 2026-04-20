@@ -633,6 +633,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [expenses,     setExpenses]     = useState<any[]>([]);
   const [income,       setIncome]       = useState<any[]>([]);
   const [nextRoll,     setNextRoll]     = useState(2527290);
+  const [fcSearch,   setFcSearch]   = useState('');
+  const [fcSelStu,   setFcSelStu]   = useState<any>(null);
+  const [fcGroups,   setFcGroups]   = useState<any[]>([]);
+  const [fcLoading,  setFcLoading]  = useState(false);
+  const [fcSelGroup, setFcSelGroup] = useState<any>(null);
+  const [fcAmount,   setFcAmount]   = useState('');
+  const [fcReason,   setFcReason]   = useState('');
+  const [fcSaving,   setFcSaving]   = useState(false);
   const [discSaving,   setDiscSaving]   = useState<string | null>(null);
   const [saving,       setSaving]       = useState(false);
   const [preview,      setPreview]      = useState<any>(null);
@@ -643,6 +651,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [deleteId,        setDeleteId]        = useState<string | null>(null);
   const [finType, setFinType]         = useState<'Income' | 'Expense'>('Expense');
   const [finCategory, setFinCategory] = useState('');
+  const [finName, setFinName]         = useState('');
+  const [finDescription, setFinDescription] = useState('');
+  const [finSlipNo, setFinSlipNo]     = useState('');
   const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
   const [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 10));
@@ -664,194 +675,234 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
 
-  const handlePrint = (tx: any) => {
-    const student  = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
-    const stuFees  = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
-    const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
-    const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
-    const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
-    const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
-    const dateStr      = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
-    const LOGO_B64     = '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';
+   const handlePrint = (tx: any) => {
+  const student  = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
+  const stuFees  = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
+  const totalAmount  = stuFees.reduce((s, g) => s + (g.amount  || 0), 0);
+  const totalPaid    = stuFees.reduce((s, g) => s + (g.paid    || 0), 0);
+  const totalFine    = stuFees.reduce((s, g) => s + (g.fine    || 0), 0);
+  const totalBalance = stuFees.reduce((s, g) => s + (g.balance || 0), 0);
+  const dateStr      = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    const feeRowsHTML = (stuFees: any[]) => stuFees.map(g => `
+  const fmt = (n: number) => `PKR${(n ?? 0).toLocaleString()}`;
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-') : '-';
+
+  const feeRows = stuFees.map(f => {
+    const history: any[] = f.payment_history ?? [];
+    const last = history[history.length - 1];
+    return `
       <tr>
-        <td>${g.fees_group}</td>
-        <td>${g.due_date || '—'}</td>
-        <td>${g.status}</td>
-        <td>Rs ${(g.amount || 0).toLocaleString('en-PK')}</td>
-        <td>Rs ${(g.paid || 0).toLocaleString('en-PK')}</td>
-        <td>${g.fine ? 'Rs ' + Number(g.fine).toLocaleString('en-PK') : '—'}</td>
-        <td>Rs ${(g.balance || 0).toLocaleString('en-PK')}</td>
-      </tr>`).join('') + `
-      <tr class="grand-total">
-        <td colspan="3"><strong>GRAND TOTAL</strong></td>
-        <td><strong>Rs ${totalAmount.toLocaleString('en-PK')}</strong></td>
-        <td><strong>Rs ${totalPaid.toLocaleString('en-PK')}</strong></td>
-        <td><strong>${totalFine ? 'Rs ' + totalFine.toLocaleString('en-PK') : '—'}</strong></td>
-        <td><strong>Rs ${totalBalance.toLocaleString('en-PK')}</strong></td>
+        <td>${f.fees_group ?? '-'}<br/><span style="color:#555;font-size:9pt">(${f.fees_code ?? '-'})</span></td>
+        <td style="text-align:center">-</td>
+        <td style="text-align:center">${fmtDate(f.due_date)}</td>
+        <td style="text-align:center">${f.status ?? '-'}</td>
+        <td style="text-align:right">${fmt(f.amount)}</td>
+        <td style="text-align:center">${last?.payment_id ?? '-'}</td>
+        <td style="text-align:center">${last?.method ?? '-'}</td>
+        <td style="text-align:center">${last ? fmtDate(last.date) : '-'}</td>
+        <td style="text-align:right">${fmt(f.paid)}</td>
+        <td style="text-align:right">${fmt(f.fine)}</td>
+        <td style="text-align:right">${fmt(f.discount ?? 0)}</td>
+        <td style="text-align:right"><strong>${fmt(f.balance)}</strong></td>
       </tr>`;
+  }).join('');
 
-    const copyHTML = (label: string) => `
-      <div class="copy">
-        <div class="header">
-          <div class="header-inner">
-            <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" alt="PIC Logo"/>
-            <h1>Pak Informatics Group of Colleges</h1>
+  const copyHTML = (label: string) => `
+    <div class="copy">
+      <div class="header">
+        <div class="header-row">
+          <div class="logo">🌐</div>
+          <div class="header-text">
+            <div class="college-name">Pak Informatics Group of Colleges</div>
+            <div class="sub">Head Office, Gujranwala &nbsp;&nbsp; ph: 0300-0642973</div>
+            <div class="sub">P/C Tower, Sialkot Bypass Road Near Beacon House Palm Tree Campus GRW.</div>
           </div>
-          <p class="address">Original Campus, Gujranwala | Ph: 0300-0642973</p>
-          <p class="address">PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</p>
-          <p class="copy-label">[${label}]</p>
         </div>
-        <table class="info-table">
-          <tr>
-            <td>Student Name (ID): <strong>${student?.full_name || '—'}</strong> (#${tx.student_roll_link})</td>
-            <td>Date: <strong>${dateStr}</strong></td>
-          </tr>
-          <tr>
-            <td>Father Name: <strong>${student?.father_name || '—'}</strong></td>
-            <td>Class: <strong>${student?.class_section || '—'}</strong></td>
-          </tr>
-        </table>
-        <table class="fee-table">
-          <thead>
-            <tr>
-              <th>Fees Group</th><th>Due Date</th><th>Status</th>
-              <th>Amount</th><th>Paid</th><th>Fine</th><th>Balance</th>
-            </tr>
-          </thead>
-          <tbody>${feeRowsHTML(stuFees)}</tbody>
-        </table>
-        <div class="notes">
-          <p>NOTE 1: The Fee once deposited is not refundable and transferable.</p>
-          <p>NOTE 2: After due date, a fine of Rs. 100 per day will be charged.
-            <span class="accountant-sig">Accountant: _______________</span>
-          </p>
-          <p>ONLINE PAYMENT: UBL A/C 078533426309 | JazzCash: 03000642780 (Till: 980244377)</p>
-        </div>
-      </div>`;
+        <hr class="divider"/>
+        <div class="copy-label">${label}</div>
+      </div>
 
-    const html = `<!DOCTYPE html>
+      <div class="student-row">
+        <div>
+          <div><strong>${student?.full_name ?? ''}</strong> (${student?.roll_no ?? ''})</div>
+          <div>Father Name: ${student?.father_name ?? ''}</div>
+          <div>Class: ${student?.class_section ?? ''}</div>
+        </div>
+        <div class="date-right">Date: ${dateStr}</div>
+      </div>
+
+      <table class="fee-table">
+        <thead>
+          <tr>
+            <th>Fees Group</th><th>Fees Code</th><th>Due Date</th><th>Status</th>
+            <th>Amount</th><th>Payment ID</th><th>Mode</th><th>Date</th>
+            <th>Paid</th><th>Fine</th><th>Discount</th><th>Balance</th>
+          </tr>
+        </thead>
+        <tbody>${feeRows}</tbody>
+        <tfoot>
+          <tr class="grand-total">
+            <td colspan="3"><strong>Grand Total</strong></td>
+            <td></td>
+            <td style="text-align:right"><strong>${fmt(totalAmount)}</strong></td>
+            <td colspan="3"></td>
+            <td style="text-align:right"><strong>${fmt(totalPaid)}</strong></td>
+            <td style="text-align:right"><strong>${fmt(totalFine)}</strong></td>
+            <td></td>
+            <td style="text-align:right"><strong>${fmt(totalBalance)}</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="notes">
+        <p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
+        <p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.
+          <span class="sig">Accountant: _______________</span>
+        </p>
+        <p class="urdu">برماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
+      </div>
+
+      <div class="payment">
+        <p><strong><u>ONLINE PAYMENT DETAILS:</u></strong></p>
+        <div class="payment-cols">
+          <div>
+            <p><strong><u>1) UBL Bank Limited</u></strong></p>
+            <p><strong><u>Account No</u></strong>: 0785335426309</p>
+            <p><strong><u>Account Title</u></strong>: Pak Informatics Educational Network Pvt.</p>
+          </div>
+          <div>
+            <p><strong><u>2) Jazz Cash Account:</u></strong></p>
+            <p><strong><u>Account No.</u></strong>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
+            <p><strong><u>Account Title:</u></strong> Informatics Group of Colleges GRW</p>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
   <title>Fee Voucher</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Calibri, 'Segoe UI', sans-serif; font-size: 11pt; color: #000; background: #fff; padding: 20px; }
-    .copy { max-width: 700px; margin: 0 auto 12px; }
-    .header { text-align: center; margin-bottom: 14px; }
-    .header-inner { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 6px; }
-    .logo { width: 58px; height: 58px; object-fit: contain; }
-    h1 { font-size: 22pt; font-weight: bold; color: #000; }
-    .address { font-size: 10pt; margin: 2px 0; }
-    .copy-label { font-weight: bold; font-size: 12pt; margin-top: 10px; }
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    .info-table td { border: 1px solid #000; padding: 6px 8px; width: 50%; font-size: 10.5pt; vertical-align: top; }
-    .fee-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    .fee-table th { border: 1px solid #000; padding: 6px 7px; text-align: left; font-size: 10.5pt; font-weight: bold; background: #fff; }
-    .fee-table td { border: 1px solid #000; padding: 8px 7px; font-size: 10.5pt; vertical-align: top; }
-    .grand-total td { font-weight: bold; }
-    .notes { font-size: 10pt; line-height: 1.8; margin-top: 8px; }
-    .notes p { margin: 2px 0; }
-    .accountant-sig { float: right; }
-    .tear-line { text-align: center; margin: 10px 0; font-size: 11pt; border-top: 1px dashed #555; padding-top: 8px; letter-spacing: 1px; }
-    @media print {
-      body { padding: 5px; }
-      .copy { page-break-inside: avoid; }
-    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;padding:12px}
+    .copy{max-width:720px;margin:0 auto 12px}
+    .header{margin-bottom:10px}
+    .header-row{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+    .logo{font-size:36px;width:54px;height:54px;display:flex;align-items:center;justify-content:center;border:2px solid #333;border-radius:4px;flex-shrink:0}
+    .college-name{font-size:19pt;font-weight:bold;line-height:1.1}
+    .sub{font-size:9.5pt;margin-top:2px}
+    hr.divider{border:none;border-top:1.5px solid #000;margin:6px 0}
+    .copy-label{text-align:center;font-weight:bold;font-size:11pt;margin-bottom:8px}
+    .student-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;font-size:10pt;line-height:1.7}
+    .date-right{white-space:nowrap;font-size:10pt}
+    .fee-table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:9pt}
+    .fee-table th{border:1px solid #000;padding:4px 5px;text-align:left;font-weight:bold}
+    .fee-table td{border:1px solid #000;padding:5px;vertical-align:top}
+    .grand-total td{background:#f9f9f9;border:1px solid #000;padding:5px}
+    .notes{font-size:9.5pt;line-height:1.8;margin-bottom:10px}
+    .notes p{margin-bottom:2px}
+    .sig{float:right}
+    .urdu{font-family:'Noto Nastaliq Urdu',serif;direction:rtl;font-size:10pt;margin-top:3px;clear:both}
+    .payment{font-size:9.5pt}
+    .payment-cols{display:flex;gap:30px;margin-top:6px}
+    .payment-cols>div{flex:1}
+    .payment-cols p{margin-bottom:3px}
+    .tear{text-align:center;margin:8px 0;font-size:11pt;border-top:1px dashed #666;padding-top:8px;letter-spacing:1px}
+    @media print{body{padding:4px}.copy{page-break-inside:avoid}}
   </style>
 </head>
 <body>
-  ${copyHTML('COLLEGE COPY')}
-  <div class="tear-line">✂ &nbsp;&nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp;&nbsp; ✂</div>
-  ${copyHTML('STUDENT COPY')}
-  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+  ${copyHTML('College Copy')}
+  <div class="tear">✂ &nbsp;&nbsp; TEAR ALONG THIS LINE &nbsp;&nbsp; ✂</div>
+  ${copyHTML('Student Copy')}
+  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}</script>
 </body>
 </html>`;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
-    document.body.appendChild(iframe);
-    iframe.contentWindow!.document.open();
-    iframe.contentWindow!.document.write(html);
-    iframe.contentWindow!.document.close();
-    setTimeout(() => document.body.removeChild(iframe), 6000);
-  };
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+  document.body.appendChild(iframe);
+  iframe.contentWindow!.document.open();
+  iframe.contentWindow!.document.write(html);
+  iframe.contentWindow!.document.close();
+  setTimeout(() => document.body.removeChild(iframe), 6000);
+};
 
-  const handlePrintReport = (data: any) => {
-    const { type, feeRev, otherInc, totalExp, discounts, net, txs, others, receivable } = data;
-    const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
-    const LOGO_B64 = '/9j/4AAQSkZJRgABAQEA3ADcAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAA7ADsDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD9/KD0oJA6mmkgr1oA5n4l/Fn4X/BrwzL4z+LPxE0Xw1pMLKJtS17U4rWBCTgAvIwXk8Dmvhv4+/8ByL+wP8ACbVW0D4bQeJviFcIzJNdaBpogs42WTaymW6aMvkZZWiR0bj5gDmvlX/gvN+yr8Nv2afiN4H+Our/ABV8XfElta8SX/8AaPgHxv4we68iOfdMBZ7VDWtuHwgUA5wgzxXxP8FP+CX37dv7QrWN18MP2bvEsmmalC01lrmsWf2CxkUcH/SJisY5yAN2T+lfoGRcOZLiMGsVjazUXttFX1utXd2tvotTOUpKVkfu5+yd/AFmf2Gv2sNFhvdJ8fT+Db241L7DBpPjuJLCSa4JG2KKbe1vNIwYMI45WcBgWVcivq23uYbmNZ7eZJI2HyujAg/jX8t3xN/YR/bX/ZF1x/FPxg/Z58a6RpelagLW+1rTY5I4J1cESRw3sSun7yPeu8blwTkMMg/vD/wSg+DXwL+Gv7PXhr4i/Bj4jfEG+034geHba/03w7458WrfrpMKKCYLaGJUhgCmTDbFBPAPAAHl8SZJlmWU418LW5oydls1ftdP7tCqblLofWtFAYEdaK+TKI25r4d/ay/4KQy/DL44eLv+EO8WXWm6J8IvDEc3iKzk06K8j8W315dQwwWNku5SjxS7Y3uS+1Gn8vy3JZo/t6+edbOWS1XMqxMYxtzlsccfWvypu/hXD448G6b8ZJfB3i3T7LVviIda8ZWvijw/wD2bG3iKyttTSQtbGJDJp51We3SFZTI7bGJPAdp9vh8LB1q/AEE3L0WrNsPQqYjERpQ3k0vvNz9hf9lnW9W+K+tfti/t66Xp/i/iLWsSPGkPiqSI6XoLLF532OCN8x+bDHgsThIhkAmQkj6Y8f/FT9mWDxlr3xp8U/tIr4v1LwjdCOLwtYalKtppLGEtDvs7Z904JBZndZQQy7UBAJk+LnwD8MaloPgf9mzxjr0Vr4bXSLzVNYsrRTMdcv4Ig7faosgvbht0pLMA7qiHO7FflP/wV/DGz/Bn9rzQPiP8EvBFx4Z8ZSadbeJ18cxQmIuhhMMMVvCy7IkRACVw2GYc4wK9zI1iM+xkKOKqctWcXJRVlGMU1aK7JbaJu+uppjKdOMpSor3E7J9/N+u9jovjL/wWv/a+0a5l1fwH8YY/FHhvVJJB4qhu/CMVvDo00uYzYW0UpEjRoi7gZ1Bcs2eCMfUH/BMf/goL8Ivix8Fde8QfCX4daLpPxY8L6V9v1jwrcXzafob2jXUS6hq0KIHFtiBTNJDGOTCoVS0m5vzm+Lf7VHiX9unwRHc+L/C3w4DxV4fsfPstc0/SltdU1aa1RJJEO3EbNNveUlwcmJlB6A/aP8AwS6/4JmftafsuftffC354W1Xwt4m0nVLvxNdXN9tuEsSg8iC4gX5ElZnjkAUnjeMqmr7LOMrymjk7pV4qnWjqldPma1Wqsn5aJp+ZxRlPmvF+R+nX7H3xc1z43/s9+HfiN4m1XTr7UL61/0u80mMrbyyKSCVGSAR0YKzKHDBWYAMfUq+Wv2Evh0fgx8dHi18I/D3xMuNY8MWd/BqGg6DP4mutR/sH7Te6g0tswuRvgbeu4JuZfLMZViuK+pa/MyyOWKO4hkhmXKyKVYeoNfm1Y/s6+Fv2a/jJ8af2fdPi1ixuvihb6dr3wy0m2upJtKP8AY0U8kllALiZ5luSpE074WAiSNVYSfK36TnJOT6V5n8Zf2erD4v8Ajbwv441nX7xoPCMlxdW/h2FYY4dSuyg+zvLP5ZmQQyASKEYLvCsysUXHJjsLHHYKph57TTj96OjCYmeDxUK8N4tNfJ3PzF/aC8c/HW5+Py/GP4Z6vqDeKdKa38V6LBpqu8Ot+HL2G2s9YsjFK4ST7PNbCVo0U4jZm4619yfDzwf8Ffj18OfiBH8VPCE3hvwbpmuroPw+1S00+S+k8HaIkMIghtJ4o/JaSZY2keRFVd0yqqxqsSHC8e6D8IvifQWqfBf4U/A3xr4k0bwR8OPEfxH1jXNW0a21DR7mQeG/AfiJLeO7gkjtTKY/s8JkZXOxYzKwBYvIVHW/s9fst/ss3/jzQf2ivhN4k0TVrPwFHcNe+ENW0c6n4s8Vm4tp47ya8uGimuoYpbWCJWhKq7OMZVY0A5fYZfhMLhJy55wacU09Wn3SXT1/4OFadWSbk/d7I8C/4JCf8E9Ph/Dj/wAjbi8R61488F3F54X8A+LrjSbfw5qOnXDN/aBd2tGm+XaY1SNmYORzsJ6jP7bfGn4lfDn4KeA5/G3jTxRb6Xa+HdPn1KGCTWILIXiQx7PJHnOiMC0sSAMyqJHiyRkV89fAf4Q/sz/sueHrn4z/ALP/AIU0rSNS8UWE3irSPC0WoC9uLH7Xq81rcXPmeVG0ZuI3bymAc/OZMfIBX1LRQAUUUUAP/9k=';
+const handlePrintReport = (data: any) => {
+  const { type, feeRev, otherInc, totalExp, discounts, net, txs, others, receivable } = data;
+  const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
+  const LOGO_B64 = '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';
 
-    const txRowsHTML = txs.map((t: any) => `
-      <tr>
-        <td>Roll #${t.student_roll_link}</td>
-        <td>${t.transaction_type}</td>
-        <td>${t.payment_method}</td>
-        <td>Rs ${(t.amount_paid || 0).toLocaleString('en-PK')}</td>
-        <td>${new Date(t.payment_date).toLocaleDateString()}</td>
-      </tr>`).join('');
+  const txRowsHTML = (txs || []).map((t: any) => `
+    <tr>
+      <td>Roll #${t.student_roll_link}</td>
+      <td>${t.transaction_type}</td>
+      <td>${t.payment_method}</td>
+      <td>Rs ${(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+      <td>${new Date(t.payment_date).toLocaleDateString()}</td>
+    </tr>`).join('');
 
-    const html = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html>
 <head>
-  <style>
-    body { font-family: Calibri, sans-serif; padding: 30px; color: #333; }
-    .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
-    .logo { width: 60px; height: 60px; }
-    h1 { margin: 10px 0 5px; font-size: 24pt; }
-    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
-    .stat-box { border: 1px solid #eee; padding: 15px; border-radius: 10px; background: #fafafa; }
-    .stat-label { font-size: 9pt; text-transform: uppercase; color: #888; font-weight: bold; }
-    .stat-value { font-size: 16pt; font-weight: bold; margin-top: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
-    th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
-    th { background: #f4f4f4; }
-    .section-title { font-size: 12pt; font-weight: bold; margin: 20px 0 10px; border-left: 4px solid #0F766E; padding-left: 10px; }
-  </style>
+<style>
+  body { font-family: Calibri, sans-serif; padding: 30px; color: #333; }
+  .header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+  .logo { width: 60px; height: 60px; }
+  h1 { margin: 10px 0 5px; font-size: 24pt; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
+  .stat-box { border: 1px solid #eee; padding: 15px; border-radius: 10px; background: #fafafa; }
+  .stat-label { font-size: 9pt; text-transform: uppercase; color: #888; font-weight: bold; }
+  .stat-value { font-size: 16pt; font-weight: bold; margin-top: 5px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
+  th, td { border: 1px solid #eee; padding: 8px; text-align: left; }
+  th { background: #f4f4f4; }
+  .section-title { font-size: 12pt; font-weight: bold; margin: 20px 0 10px; border-left: 4px solid #0F766E; padding-left: 10px; }
+</style>
 </head>
 <body>
-  <div class="header">
-    <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
-    <h1>Pak Informatics Group of Colleges</h1>
-    <p>${type} Financial Report - ${dateStr}</p>
-  </div>
-  
-  <div class="summary-grid">
-    <div class="stat-box"><p class="stat-label">Fee Revenue</p><p class="stat-value">${PKR(feeRev)}</p></div>
-    <div class="stat-box"><p class="stat-label">Other Income</p><p class="stat-value">${PKR(otherInc)}</p></div>
-    <div class="stat-box"><p class="stat-label">Total Income</p><p class="stat-value" style="color:#059669">${PKR(feeRev + otherInc)}</p></div>
-    <div class="stat-box"><p class="stat-label">Receivables</p><p class="stat-value" style="color:#D97706">${PKR(receivable)}</p></div>
-    <div class="stat-box"><p class="stat-label">Expenses</p><p class="stat-value">${PKR(totalExp)}</p></div>
-    <div class="stat-box"><p class="stat-label">Discounts</p><p class="stat-value">${PKR(discounts)}</p></div>
-    <div class="stat-box"><p class="stat-label">Net Profit</p><p class="stat-value" style="color:${net >= 0 ? '#059669' : '#e11d48'}">${PKR(net)}</p></div>
-  </div>
+<div class="header">
+  <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" />
+  <h1>Pak Informatics Group of Colleges</h1>
+  <p>${type} Financial Report - ${dateStr}</p>
+</div>
 
-  <div class="section-title">Transactions (Fee Collection)</div>
-  <table>
-    <thead><tr><th>Student</th><th>Type</th><th>Method</th><th>Amount</th><th>Date</th></tr></thead>
-    <tbody>${txRowsHTML || '<tr><td colspan="5" align="center">No transactions</td></tr>'}</tbody>
-  </table>
+<div class="summary-grid">
+  <div class="stat-box"><p class="stat-label">Fee Revenue</p><p class="stat-value">${PKR(feeRev)}</p></div>
+  <div class="stat-box"><p class="stat-label">Other Income</p><p class="stat-value">${PKR(otherInc)}</p></div>
+  <div class="stat-box"><p class="stat-label">Total Income</p><p class="stat-value" style="color:#059669">${PKR(feeRev + otherInc)}</p></div>
+  <div class="stat-box"><p class="stat-label">Receivables</p><p class="stat-value" style="color:#D97706">${PKR(receivable)}</p></div>
+  <div class="stat-box"><p class="stat-label">Expenses</p><p class="stat-value">${PKR(totalExp)}</p></div>
+  <div class="stat-box"><p class="stat-label">Discounts</p><p class="stat-value">${PKR(discounts)}</p></div>
+  <div class="stat-box"><p class="stat-label">Net Profit</p><p class="stat-value" style="color:${net >= 0 ? '#059669' : '#e11d48'}">${PKR(net)}</p></div>
+</div>
 
-  <div class="section-title">Other Financials (Income/Expenses)</div>
-  <table>
-    <thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
-    <tbody>${others.map((r: any) => `<tr><td>${r.description}</td><td>${r.category}</td><td>${PKR(r.amount)}</td><td>${r.income_date || r.expense_date}</td></tr>`).join('') || '<tr><td colspan="4" align="center">No other financials</td></tr>'}</tbody>
-  </table>
+<div class="section-title">Transactions (Fee Collection)</div>
+<table>
+  <thead><tr><th>Student</th><th>Type</th><th>Method</th><th>Amount</th><th>Date</th></tr></thead>
+  <tbody>${txRowsHTML || '<tr><td colspan="5" align="center">No transactions</td></tr>'}</tbody>
+</table>
 
-  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+<div class="section-title">Other Financials (Income/Expenses)</div>
+<table>
+  <thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
+  <tbody>${(others || []).map((r: any) => `<tr><td>${r.description}</td><td>${r.category}</td><td>${PKR(r.amount)}</td><td>${r.income_date || r.expense_date}</td></tr>`).join('') || '<tr><td colspan="4" align="center">No other financials</td></tr>'}</tbody>
+</table>
+
+<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
 </body>
 </html>`;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
-    document.body.appendChild(iframe);
-    iframe.contentWindow!.document.open();
-    iframe.contentWindow!.document.write(html);
-    iframe.contentWindow!.document.close();
-    setTimeout(() => document.body.removeChild(iframe), 6000);
-  };
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+  document.body.appendChild(iframe);
+  iframe.contentWindow!.document.open();
+  iframe.contentWindow!.document.write(html);
+  iframe.contentWindow!.document.close();
+  setTimeout(() => document.body.removeChild(iframe), 6000);
+};
 
   const handlePrintList = (title: string, columns: string[], rows: any[][], summary?: string) => {
     const LOGO_B64 = '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';
@@ -992,6 +1043,74 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     setStuFeeGroups(fees.data || []);
     setStuFeeLoading(false);
   };
+  const loadFcGroups = async (roll: any) => {
+  setFcLoading(true);
+  const { data } = await supabase
+    .from('fee_groups')
+    .select('*')
+    .eq('student_roll', roll)
+    .neq('status', 'Paid')
+    .order('due_date');
+  setFcGroups(data || []);
+  setFcLoading(false);
+};
+
+const applyFeeCut = async () => {
+  const amt = Number(fcAmount);
+  if (!fcSelStu)    { showErr('Select a student'); return; }
+  if (!fcSelGroup)  { showErr('Select a fee group'); return; }
+  if (!amt || amt <= 0) { showErr('Enter a valid cut amount'); return; }
+  if (amt > fcSelGroup.balance) { showErr(`Cannot exceed balance of ${PKR(fcSelGroup.balance)}`); return; }
+  if (!fcReason.trim()) { showErr('Reason is required'); return; }
+
+  setFcSaving(true);
+  try {
+    // 1. Insert fee_cuts record
+    const { error: cutErr } = await supabase.from('fee_cuts').insert([{
+      student_roll:  fcSelStu.roll_no,
+      fee_group_id:  fcSelGroup.id,
+      cut_amount:    amt,
+      reason:        fcReason.trim(),
+      cut_by:        adminData.username,
+    }]);
+    if (cutErr) throw cutErr;
+
+    // 2. Update discount on fee_groups (balance is generated, never write to it)
+    const newDiscount = (fcSelGroup.discount || 0) + amt;
+    const newBalance = fcSelGroup.balance - amt;
+    const newStatus = newBalance <= 0 ? 'Paid' : 'Partial';
+    
+    const { error: updErr } = await supabase
+      .from('fee_groups')
+      .update({ 
+        discount: newDiscount,
+        status: newStatus 
+      })
+      .eq('id', fcSelGroup.id);
+    if (updErr) throw updErr;
+
+    // 3. Notify student
+    await supabase.from('notifications').insert([{
+      target_user_id: fcSelStu.roll_no,
+      title: '✂️ Fee Cut Applied',
+      message: `A fee cut of ${PKR(amt)} has been applied to your ${fcSelGroup.fees_group}. Reason: ${fcReason.trim()}`,
+      type: 'fee_cut',
+      target_role: 'STUDENT',
+    }]);
+
+    showToast(`✅ Fee cut of ${PKR(amt)} applied`);
+    setFcAmount('');
+    setFcReason('');
+    setFcSelGroup(null);
+    // Reload groups for same student
+    await loadFcGroups(fcSelStu.roll_no);
+    refresh();
+  } catch (e: any) {
+    showErr(e.message || 'Failed to apply cut');
+  } finally {
+    setFcSaving(false);
+  }
+};
 
   // ── Accountant actions ─────────────────────────────────────────────────
   const saveAdmission = async () => {
@@ -1134,7 +1253,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
       if (groups && groups.length > 0) {
         const group = groups[0];
         const newDiscount = (group.discount || 0) + d.discount_amount;
-        await supabase.from('fee_groups').update({ discount: newDiscount }).eq('id', group.id);
+        const newBalance = (group.balance || group.amount - group.paid - (group.discount || 0)) - d.discount_amount;
+        const newStatus = newBalance <= 0 ? 'Paid' : 'Partial';
+        
+        await supabase.from('fee_groups').update({ 
+          discount: newDiscount,
+          status: newStatus 
+        }).eq('id', group.id);
         
         // Also record as a transaction so it can be printed
         await supabase.from('fee_transactions').insert([{
@@ -1184,27 +1309,50 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
       const newBalance  = (collectModal.balance || 0) - amt - disc;
       const newStatus   = newBalance <= 0 ? 'Paid' : 'Partial';
 
-      await supabase.from('fee_groups').update({ 
+      const { error: updateError } = await supabase.from('fee_groups').update({ 
         paid: newPaid, 
         discount: newDiscount,
-        balance: newBalance,
         status: newStatus 
       }).eq('id', collectModal.id);
 
+      if (updateError) throw updateError;
+
       // Record Payment Transaction
       if (amt > 0) {
-        await supabase.from('fee_transactions').insert([{
+        const { error: txError } = await supabase.from('fee_transactions').insert([{
           student_roll_link: String(collectModal.student_roll),
           amount_paid: amt, payment_method: feePayForm.method,
           receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
           payment_date: new Date().toISOString(), transaction_type: 'Payment',
           fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
         }]);
+        if (txError) console.error("Tx Error:", txError);
+
+        // 🔔 Notification for Student
+        await supabase.from('notifications').insert([{
+          target_user_id: collectModal.student_roll,
+          title: '💰 Fee Payment Received',
+          message: `Your payment of ${PKR(amt)} for ${collectModal.fees_group} has been successfully recorded.`,
+          type: 'fee_payment',
+          target_role: 'STUDENT'
+        }]);
+
+        // 💰 Auto-log to income table
+        const stu = students.find(s => String(s.roll_no) === String(collectModal.student_roll));
+        await supabase.from('income').insert([{
+          income_date: new Date().toISOString().slice(0, 10),
+          category: 'Fee Collection',
+          name: stu?.full_name || `Roll #${collectModal.student_roll}`,
+          description: `${collectModal.fees_group} — ${feePayForm.method}`,
+          slip_no: feePayForm.receipt || null,
+          amount: amt,
+          recorded_by: adminData.full_name,
+        }]);
       }
 
       // Record Discount Transaction
       if (disc > 0) {
-        await supabase.from('fee_transactions').insert([{
+        const { error: discError } = await supabase.from('fee_transactions').insert([{
           student_roll_link: String(collectModal.student_roll),
           amount_paid: disc, payment_method: 'Discount',
           receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`, 
@@ -1212,11 +1360,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
           payment_date: new Date().toISOString(), transaction_type: 'Discount',
           fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
         }]);
+        if (discError) console.error("Disc Error:", discError);
+
+        // 🔔 Notification for Student (Discount)
+        await supabase.from('notifications').insert([{
+          target_user_id: collectModal.student_roll,
+          title: '🏷️ Fee Discount Applied',
+          message: `A discount of ${PKR(disc)} has been applied to your ${collectModal.fees_group}.`,
+          type: 'fee_payment',
+          target_role: 'STUDENT'
+        }]);
       }
 
       showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
       setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); refresh();
-    } catch (e: any) { showErr(e.message || 'Failed'); }
+    } catch (e: any) { 
+      console.error(e);
+      showErr(e.message || 'Failed to collect fee'); 
+    }
     finally { setSaving(false); }
   };
 
@@ -1229,7 +1390,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     try {
       const table = finType === 'Income' ? 'income' : 'expenses';
       const payload = {
-        description: finCategory.trim(),
+        name: finName.trim(),
+        description: finDescription.trim(),
+        slip_no: finSlipNo.trim(),
         [finType === 'Income' ? 'income_date' : 'expense_date']: finDate,
         amount: amt,
         category: finCategory.trim(),
@@ -1243,6 +1406,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
       setTab('reports');
       setFeePayForm(p => ({ ...p, amount: '' }));
       setFinCategory('');
+      setFinName('');
+      setFinDescription('');
+      setFinSlipNo('');
       refresh();
     } catch (e: any) { showErr(e.message || 'Failed to save'); }
     finally { setSaving(false); }
@@ -1295,6 +1461,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
     { id: 'admissions',    label: 'Admissions',    icon: FileText },
     { id: 'new-admission', label: 'New Admission', icon: UserPlus },
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
+    { id: 'fee-cuts',      label: 'Fee Cuts',       icon: Minus },
     { id: 'students',      label: 'Students',      icon: Users },
     { id: 'reports',       label: 'Reports',       icon: BarChart3 },
   ];
@@ -2412,6 +2579,133 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 </div>
               </motion.div>
             )}
+          {/* ════ ACCOUNTANT FEE CUTS ════ */}
+            {isAccountant && tab === 'fee-cuts' && (
+              <motion.div key="fee-cuts" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+                  <Minus size={16} className="text-amber-600 flex-shrink-0" />
+                  <p className="text-sm font-bold text-amber-900">Apply a fee cut (discount) directly to a student's unpaid fee group. This updates the balance immediately.</p>
+                </div>
+
+                {/* Student search */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100">
+                    <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Step 1 — Select Student</p>
+                  </div>
+                  <div className="p-5">
+                    {fcSelStu ? (
+                      <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-sm" style={{ background: `hsl(${(fcSelStu.roll_no * 37) % 360},55%,48%)` }}>{fcSelStu.full_name?.charAt(0)}</div>
+                          <div>
+                            <p className="font-black text-blue-900">{fcSelStu.full_name}</p>
+                            <p className="text-[10px] text-blue-500 font-bold uppercase">{fcSelStu.roll_no} · {fcSelStu.class_section}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => { setFcSelStu(null); setFcGroups([]); setFcSelGroup(null); setFcSearch(''); }} className="text-blue-400 hover:text-blue-700"><X size={16} /></button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                        <input
+                          value={fcSearch}
+                          onChange={e => setFcSearch(e.target.value)}
+                          placeholder="Search by name or roll no…"
+                          className="w-full border border-slate-200 rounded-xl py-3 pl-10 pr-4 text-sm outline-none focus:border-amber-400 transition-all"
+                        />
+                        {fcSearch.length > 1 && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-48 overflow-y-auto z-10">
+                            {students
+                              .filter(s => s.full_name?.toLowerCase().includes(fcSearch.toLowerCase()) || String(s.roll_no).includes(fcSearch))
+                              .slice(0, 10)
+                              .map(s => (
+                                <button key={s.roll_no} onClick={() => { setFcSelStu(s); setFcSearch(''); setFcSelGroup(null); loadFcGroups(s.roll_no); }}
+                                  className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none">
+                                  <span className="font-black text-slate-900">{s.full_name}</span>
+                                  <span className="text-[10px] text-slate-400 font-normal ml-2">{s.roll_no} · {s.class_section}</span>
+                                </button>
+                              ))}
+                            {!students.filter(s => s.full_name?.toLowerCase().includes(fcSearch.toLowerCase()) || String(s.roll_no).includes(fcSearch)).length && (
+                              <p className="px-4 py-3 text-sm text-slate-400">No results</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Fee group selection */}
+                {fcSelStu && (
+                  <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-100">
+                      <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Step 2 — Select Fee Group</p>
+                    </div>
+                    <div className="p-5">
+                      {fcLoading ? (
+                        <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 size={16} className="animate-spin" /><span className="text-sm">Loading fee groups…</span></div>
+                      ) : fcGroups.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic py-2">No unpaid fee groups found for this student.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {fcGroups.map(g => (
+                            <button key={g.id} onClick={() => setFcSelGroup(fcSelGroup?.id === g.id ? null : g)}
+                              className={cn('w-full text-left px-4 py-3 rounded-2xl border transition-all flex items-center justify-between', fcSelGroup?.id === g.id ? 'bg-amber-50 border-amber-400' : 'bg-slate-50 border-slate-200 hover:border-slate-300')}>
+                              <div>
+                                <p className="font-black text-slate-900 text-sm">{g.fees_group}</p>
+                                <div className="flex gap-3 mt-0.5 text-[11px] text-slate-400">
+                                  <span>Amount: <strong>{PKR(g.amount)}</strong></span>
+                                  <span>Paid: <strong className="text-emerald-600">{PKR(g.paid)}</strong></span>
+                                  {g.discount > 0 && <span>Disc: <strong className="text-amber-600">-{PKR(g.discount)}</strong></span>}
+                                </div>
+                              </div>
+                              <div className="text-right flex-shrink-0 ml-3">
+                                <p className="font-black text-rose-600">{PKR(g.balance)}</p>
+                                <p className="text-[9px] text-slate-400 uppercase font-bold">{g.status}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cut amount + reason */}
+                {fcSelGroup && (
+                  <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-100">
+                      <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Step 3 — Enter Cut Details</p>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        {[fcSelGroup.balance, Math.round(fcSelGroup.balance / 2), Math.round(fcSelGroup.balance / 4)].filter((v, i, a) => v > 0 && a.indexOf(v) === i).map(amt => (
+                          <button key={amt} onClick={() => setFcAmount(String(amt))} className="py-2.5 rounded-xl text-xs font-black bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all">{PKR(amt)}</button>
+                        ))}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Cut Amount (PKR) <span className="text-rose-500 normal-case font-bold">max {PKR(fcSelGroup.balance)}</span></label>
+                        <input type="number" value={fcAmount} onChange={e => setFcAmount(e.target.value)} placeholder="0" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/10 transition-all" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Reason <span className="text-rose-500">*</span></label>
+                        <input value={fcReason} onChange={e => setFcReason(e.target.value)} placeholder="e.g. Special concession, sibling discount, scholarship…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-400 transition-all" />
+                      </div>
+                      {Number(fcAmount) > 0 && (
+                        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
+                          <p className="text-xs font-black text-amber-700">After cut: balance will be <strong>{PKR(fcSelGroup.balance - Number(fcAmount))}</strong></p>
+                        </div>
+                      )}
+                      <motion.button whileTap={{ scale: 0.97 }} onClick={applyFeeCut} disabled={fcSaving}
+                        className="w-full py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                        style={{ background: 'linear-gradient(135deg,#D97706,#f59e0b)' }}>
+                        {fcSaving ? <><Loader2 size={14} className="animate-spin" /> Applying…</> : <><Minus size={14} /> Apply Fee Cut</>}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
 
             {/* ════ ACCOUNTANT STUDENTS — Profile view only, no fee collection ════ */}
             {isAccountant && tab === 'students' && (
@@ -2648,10 +2942,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                 const fromFmt = new Date(reportFrom).toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' });
                 const toFmt   = new Date(reportTo).toLocaleDateString('en-PK',   { day:'2-digit', month:'2-digit', year:'numeric' });
 
-                const rows = reportTx.map((t, i) => {
+                const feeRows = reportTx.map((t, i) => {
                   const stu = students.find(s => String(s.roll_no) === String(t.student_roll_link));
                   return `<tr>
-                    <td>${i + 1}</td>
+                    <td>${t.receipt_serial || (13000 + i) + '/1'}</td>
                     <td>${t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'}</td>
                     <td>${t.student_roll_link || '—'}</td>
                     <td>${stu?.full_name || '—'}</td>
@@ -2659,71 +2953,146 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     <td>${t.transaction_type || 'Fee Payment'}</td>
                     <td>${t.collected_by || '—'}</td>
                     <td>${t.payment_method || '—'}</td>
-                    <td>${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
-                    <td>0.00</td>
-                    <td>0.00</td>
-                    <td>${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                    <td style="text-align:right">${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
+                    <td style="text-align:right">0.00</td>
+                    <td style="text-align:right">0.00</td>
+                    <td style="text-align:right">${Number(t.amount_paid || 0).toLocaleString('en-PK')}</td>
                   </tr>`;
                 }).join('');
 
+                const rangeExpenses = expenses.filter(e => e.expense_date >= reportFrom && e.expense_date <= reportTo);
+                const rangeIncome   = income.filter(i => i.income_date >= reportFrom && i.income_date <= reportTo);
+
+                const expenseRows = rangeExpenses.map(e => `<tr>
+                  <td>${e.expense_date}</td>
+                  <td>${e.category || '—'}</td>
+                  <td>${e.name || '—'}</td>
+                  <td>${e.slip_no || '—'}</td>
+                  <td style="text-align:right">PKR${Number(e.amount).toLocaleString('en-PK')}</td>
+                </tr>`).join('');
+
+                const incomeRows = rangeIncome.map(e => `<tr>
+                  <td>${e.income_date}</td>
+                  <td>${e.category || '—'}</td>
+                  <td>${e.name || '—'}</td>
+                  <td>${e.slip_no || '—'}</td>
+                  <td style="text-align:right">PKR${Number(e.amount).toLocaleString('en-PK')}</td>
+                </tr>`).join('');
+
+                const expTotal = rangeExpenses.reduce((s,e) => s + e.amount, 0);
+                const incTotal = rangeIncome.reduce((s,e) => s + e.amount, 0);
+
                 const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><title>Fees Collection Report</title>
+<html><head><meta charset="utf-8"/><title>Financial Reports</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: Calibri, Arial, sans-serif; font-size: 9pt; color: #000; padding: 20px; }
-  .header { text-align: center; margin-bottom: 16px; }
-  .header-top { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; }
-  .logo { width: 52px; height: 52px; object-fit: contain; }
-  .college-name { font-size: 18pt; font-weight: bold; }
-  .address { font-size: 9pt; color: #333; margin: 2px 0; }
-  .report-title { font-size: 13pt; font-weight: bold; margin-top: 10px; }
-  .report-sub { font-size: 9pt; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  th { background: #f2f2f2; border: 1px solid #999; padding: 5px 4px; font-size: 8.5pt; font-weight: bold; text-align: left; white-space: nowrap; }
-  td { border: 1px solid #bbb; padding: 4px; font-size: 8pt; vertical-align: top; }
-  .grand-row td { font-weight: bold; background: #f9f9f9; border-top: 2px solid #666; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #000; padding: 20px; }
+  
+  /* ── Fees Collection Report ── */
+  .fees-header { text-align:center; margin-bottom: 14px; }
+  .fees-header .title { font-size: 13pt; font-weight: bold; }
+  .fees-header .sub { font-size: 9pt; }
+  .fees-table { width:100%; border-collapse:collapse; margin-bottom: 30px; font-size: 8pt; }
+  .fees-table th { border:1px solid #000; padding:4px 5px; font-weight:bold; text-align:left; font-size:8pt; white-space:nowrap; }
+  .fees-table td { border:1px solid #000; padding:3px 5px; vertical-align:top; }
+  .fees-table .grand td { font-weight:bold; background:#f5f5f5; }
+
+  /* ── Expense & Income Reports ── */
+  .report-section { margin-bottom: 30px; }
+  .report-section h2 { font-size: 13pt; font-weight: bold; text-align:center; margin-bottom: 10px; }
+  .split-table { width:100%; border-collapse:collapse; font-size: 9pt; }
+  .split-table th { border:1px solid #000; padding:5px 8px; font-weight:bold; text-align:left; }
+  .split-table td { border:1px solid #000; padding:4px 8px; vertical-align:top; }
+  .split-table .grand td { font-weight:bold; background:#f5f5f5; text-align:right; }
+  
+  .page-break { page-break-before: always; }
   @media print { body { padding: 8px; } }
 </style>
 </head><body>
-  <div class="header">
-    <div class="header-top">
-      <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" alt="Logo"/>
-      <div class="college-name">Pak Informatics Group of Colleges</div>
-    </div>
-    <div class="address">Original Campus, Gujranwala | Ph: 0300-0642973</div>
-    <div class="address">PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
-    <div class="report-title">Fees Collection Report</div>
-    <div class="report-sub">(Search Type: ${fromFmt} To ${toFmt})</div>
-  </div>
-  <table>
+
+<!-- ══ PAGE 1: FEES COLLECTION REPORT ══ -->
+<div class="fees-header">
+  <div class="title">Fees Collection Report</div>
+  <div class="sub">(Search Type: ${fromFmt} To ${toFmt})</div>
+</div>
+<table class="fees-table">
+  <thead>
+    <tr>
+      <th>Payment ID</th>
+      <th>Date</th>
+      <th>Admission No</th>
+      <th>Name</th>
+      <th>Class</th>
+      <th>Fee Type</th>
+      <th>Collect By</th>
+      <th>Mode</th>
+      <th>Paid (PKR)</th>
+      <th>Discount (PKR)</th>
+      <th>Fine (PKR)</th>
+      <th>Total (PKR)</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No transactions in this date range</td></tr>'}
+    <tr class="grand">
+      <td colspan="8" style="text-align:right">Grand Total</td>
+      <td style="text-align:right">${grandPaid.toLocaleString('en-PK')}</td>
+      <td style="text-align:right">${grandDisc.toLocaleString('en-PK')}</td>
+      <td style="text-align:right">${grandFine.toLocaleString('en-PK')}</td>
+      <td style="text-align:right">${grandTotal.toLocaleString('en-PK')}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ══ PAGE 2: EXPENSE REPORT ══ -->
+<div class="page-break"></div>
+<div class="report-section">
+  <h2>Expense Report</h2>
+  <table class="split-table">
     <thead>
       <tr>
-        <th>#</th>
         <th>Date</th>
-        <th>Admission No</th>
+        <th>Expense Head</th>
         <th>Name</th>
-        <th>Class</th>
-        <th>Fee Type</th>
-        <th>Collect By</th>
-        <th>Mode</th>
-        <th>Paid (PKR)</th>
-        <th>Discount (PKR)</th>
-        <th>Fine (PKR)</th>
-        <th>Total (PKR)</th>
+        <th>Invoice Number</th>
+        <th>Amount (PKR)</th>
       </tr>
     </thead>
     <tbody>
-      ${rows || '<tr><td colspan="12" style="text-align:center;padding:12px">No transactions in this date range</td></tr>'}
-      <tr class="grand-row">
-        <td colspan="8" style="text-align:right"><strong>Grand Total</strong></td>
-        <td><strong>${grandPaid.toLocaleString('en-PK')}</strong></td>
-        <td><strong>${grandDisc.toLocaleString('en-PK')}</strong></td>
-        <td><strong>${grandFine.toLocaleString('en-PK')}</strong></td>
-        <td><strong>${grandTotal.toLocaleString('en-PK')}</strong></td>
+      ${expenseRows || '<tr><td colspan="5" style="text-align:center;padding:10px">No expenses in this date range</td></tr>'}
+      <tr class="grand">
+        <td colspan="4">Grand Total</td>
+        <td>PKR${expTotal.toLocaleString('en-PK')}</td>
       </tr>
     </tbody>
   </table>
-  <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
+</div>
+
+<!-- ══ PAGE 3: INCOME REPORT ══ -->
+<div class="page-break"></div>
+<div class="report-section">
+  <h2>Income Report</h2>
+  <table class="split-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Income Head</th>
+        <th>Name / Source</th>
+        <th>Reference No</th>
+        <th>Amount (PKR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${incomeRows || '<tr><td colspan="5" style="text-align:center;padding:10px">No income in this date range</td></tr>'}
+      <tr class="grand">
+        <td colspan="4">Grand Total</td>
+        <td>PKR${incTotal.toLocaleString('en-PK')}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
 </body></html>`;
 
                 const iframe = document.createElement('iframe');
@@ -2812,7 +3181,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                     </div>
                     <div className="flex gap-3 text-sm font-bold text-slate-600">
                       <span className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl">{reportTx.length} transactions</span>
-                      <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl">{PKR(grandPaid)} collected</span>
+                      <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl">{PKR(grandPaid)} fee collected</span>
+                      {(() => {
+                        const rangeInc = income.filter(i => i.income_date >= reportFrom && i.income_date <= reportTo).reduce((s, i) => s + i.amount, 0);
+                        return <span className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2.5 rounded-xl">Total College Income: {PKR(grandPaid + rangeInc)}</span>;
+                      })()}
                     </div>
                   </div>
 
@@ -2876,8 +3249,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                         <h3 className="font-black text-slate-900">💸 Expenses</h3>
                         <button 
                           onClick={() => {
-                            const rows = expenses.map(e => [e.expense_date, e.description, e.category, PKR(e.amount), e.recorded_by || '—']);
-                            handlePrintList('Expenditure Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Expenditure: ${PKR(expenses.reduce((s,e)=>s+e.amount,0))}`);
+                            const rows = expenses.map(e => [e.expense_date, e.name || '—', e.description || '—', e.category, e.slip_no || '—', PKR(e.amount), e.recorded_by || '—']);
+                            handlePrintList('Expenditure Report', ['Date','Name','Description','Category','Slip No','Amount','Recorded By'], rows, `Total Expenditure: ${PKR(expenses.reduce((s,e)=>s+e.amount,0))}`);
                           }}
                           className="text-slate-400 hover:text-blue-600 transition-colors" title="Print Expenses"
                         >
@@ -2887,9 +3260,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       <p className="font-black text-rose-600">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</p>
                     </div>
                     {expenses.slice(0, 8).map((e, i) => (
-                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
-                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.expense_date}</p></div>
-                        <span className="font-black text-rose-600">{PKR(e.amount)}</span>
+                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="px-5 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{e.description || e.category}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {e.name && <span>{e.name} · </span>}
+                              {e.category} · {e.expense_date}
+                              {e.slip_no && <span> · Slip: {e.slip_no}</span>}
+                            </p>
+                          </div>
+                          <span className="font-black text-rose-600">{PKR(e.amount)}</span>
+                        </div>
                       </motion.div>
                     ))}
                     {!expenses.length && <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>}
@@ -2900,8 +3282,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                         <h3 className="font-black text-slate-900">💵 Other Income</h3>
                         <button 
                           onClick={() => {
-                            const rows = income.map(e => [e.income_date, e.description, e.category, PKR(e.amount), e.recorded_by || '—']);
-                            handlePrintList('Other Income Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Other Income: ${PKR(income.reduce((s,e)=>s+e.amount,0))}`);
+                            const rows = income.map(e => [e.income_date, e.name || '—', e.description || '—', e.category, e.slip_no || '—', PKR(e.amount), e.recorded_by || '—']);
+                            handlePrintList('Other Income Report', ['Date','Name','Description','Category','Slip No','Amount','Recorded By'], rows, `Total Other Income: ${PKR(income.reduce((s,e)=>s+e.amount,0))}`);
                           }}
                           className="text-slate-400 hover:text-blue-600 transition-colors" title="Print Income"
                         >
@@ -2911,9 +3293,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       <p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p>
                     </div>
                     {income.slice(0, 8).map((e, i) => (
-                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
-                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
-                        <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
+                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="px-5 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{e.description || e.category}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {e.name && <span>{e.name} · </span>}
+                              {e.category} · {e.income_date}
+                              {e.slip_no && <span> · Slip: {e.slip_no}</span>}
+                            </p>
+                          </div>
+                          <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
+                        </div>
                       </motion.div>
                     ))}
                     {!income.length && <p className="p-6 text-center text-slate-400 text-sm">No income recorded</p>}
@@ -2937,9 +3328,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                    <button key={t} onClick={() => setFinType(t)} className={cn('flex-1 py-3 rounded-2xl text-sm font-black transition-all border', finType === t ? 'text-white border-transparent' : 'bg-slate-50 text-slate-500 border-slate-100')} style={finType === t ? { background: t === 'Income' ? 'linear-gradient(135deg,#059669,#10b981)' : 'linear-gradient(135deg,#e11d48,#fb7185)' } : {}}>{t}</button>
                  ))}
                </div>
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category</label>
+                   <TI placeholder="e.g. Utility, Salary" value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)} />
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Slip No / Reference</label>
+                   <TI placeholder="e.g. SLP-1002" value={finSlipNo} onChange={(e: any) => setFinSlipNo(e.target.value)} />
+                 </div>
+               </div>
                <div>
-                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Description</label>
-                 <TI placeholder={finType === 'Income' ? "e.g. Donation, Library Fund" : "e.g. Electricity Bill, Stationery"} value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)} />
+                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Name / Payee / Source</label>
+                 <TI placeholder="e.g. John Doe, K-Electric" value={finName} onChange={(e: any) => setFinName(e.target.value)} />
+               </div>
+               <div>
+                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Specific Description</label>
+                 <TI placeholder="Detailed notes about this record..." value={finDescription} onChange={(e: any) => setFinDescription(e.target.value)} />
                </div>
                <div className="grid grid-cols-2 gap-4">
                  <div>
@@ -3106,17 +3511,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
                       <button key={t} onClick={() => setFinType(t)} className={cn('flex-1 py-2 rounded-xl text-xs font-black transition-all', finType === t ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400')}>{t}</button>
                     ))}
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Description</label>
-                    <input value={finCategory} onChange={e => setFinCategory(e.target.value)} placeholder="e.g. Utility Bills, Stationary…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category</label>
+                      <input value={finCategory} onChange={e => setFinCategory(e.target.value)} placeholder="e.g. Utility" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Slip No</label>
+                      <input value={finSlipNo} onChange={e => setFinSlipNo(e.target.value)} placeholder="e.g. 1024" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount (PKR)</label>
-                    <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-black outline-none focus:border-blue-500" />
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Name / Payee / Source</label>
+                    <input value={finName} onChange={e => setFinName(e.target.value)} placeholder="e.g. John Doe, K-Electric" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Date</label>
-                    <input type="date" value={finDate} onChange={e => setFinDate(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Description</label>
+                    <input value={finDescription} onChange={e => setFinDescription(e.target.value)} placeholder="Specific details..." className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Amount (PKR)</label>
+                      <input type="number" value={feePayForm.amount} onChange={e => setFeePayForm(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-black outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Date</label>
+                      <input type="date" value={finDate} onChange={e => setFinDate(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-500" />
+                    </div>
                   </div>
                   <div className="flex gap-3 pt-2">
                     <button onClick={() => setShowFinModal(false)} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-50">Cancel</button>
