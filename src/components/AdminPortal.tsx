@@ -2100,7 +2100,14 @@ const applyFeeCut = async () => {
                     <motion.button 
                       initial={{ scale: 0.9, opacity: 0 }} 
                       animate={{ scale: 1, opacity: 1 }}
-                      onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
+                      onClick={() => {
+        const selected = transactions.filter(t => selectedTxIds.includes(t.id));
+        const uniqueRolls = [...new Set(selected.map(t => t.student_roll_link))];
+        uniqueRolls.forEach(roll => {
+          const fakeTx = { student_roll_link: roll };
+          setTimeout(() => handlePrint(fakeTx), 0);
+        });
+      }}
                       className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
                     >
                       <Printer size={15} /> Print Selected ({selectedTxIds.length})
