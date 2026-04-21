@@ -6,7 +6,7 @@ import {
   Shield, UserPlus, Loader2, Home, UserCog, Trash2,
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
-  Plus, Lock, Unlock, User, Printer, Minus
+  Plus, Lock, Unlock, User, Printer, Minus, Layers
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -670,6 +670,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
 
+  const [distProgram, setDistProgram] = useState('');
+  const [distPart,    setDistPart]    = useState(1);
+  const [distCount,   setDistCount]   = useState(2);
+  const [distGender,  setDistGender]  = useState<'Any' | 'Male' | 'Female'>('Any');
+
 
   const [admForm, setAdmForm] = useState<any>({ ...EMPTY_FORM });
   const pct = Number(admForm.matric_percentage) || 0;
@@ -681,11 +686,63 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
 
+  const distributeSections = async () => {
+    if (!distProgram) { showErr('Select a program'); return; }
+    setSaving(true);
+    try {
+      const { data: stus, error: fetchErr } = await supabase.from('students')
+        .select('*')
+        .eq('program', distProgram)
+        .eq('part', distPart);
+      
+      if (fetchErr) throw fetchErr;
+      if (!stus || stus.length === 0) { showErr('No students found for this class'); return; }
+
+      const filtered = distGender === 'Any' ? stus : stus.filter((s: any) => s.gender === distGender);
+      if (filtered.length === 0) { showErr(`No ${distGender} students found`); return; }
+
+      // Standardize suffix based on current PIC naming conventions
+      // A-B, B-B, C-B for Boys
+      // A-G, B-G, C-G for Girls
+
+      // Sort students by Matric Percentage or Roll No for balanced/stable distribution
+      filtered.sort((a: any, b: any) => (Number(b.matric_percentage) || 0) - (Number(a.matric_percentage) || 0));
+
+      const updates = [];
+      for (let i = 0; i < filtered.length; i++) {
+        // Correct naming logic
+        const baseLetter = String.fromCharCode(65 + (i % distCount));
+        const genderCode = distGender === 'Female' ? 'G' : distGender === 'Male' ? 'B' : (filtered[i].gender === 'Female' ? 'G' : 'B');
+        const secName = `${baseLetter}-${genderCode}`;
+        
+        const clsCode = CLASS_MAP[distProgram]?.[distPart]?.[secName] || `${distProgram}-${distPart}-${secName}`;
+        
+        updates.push(supabase.from('students').update({ class_section: secName, class_code: clsCode }).eq('id', filtered[i].id));
+      }
+
+      const results = await Promise.all(updates);
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) throw errors[0].error;
+
+      showToast(`✅ Distributed ${filtered.length} students into ${distCount} sections`);
+      refresh();
+    } catch (e: any) {
+      console.error(e);
+      showErr(e.message || 'Distribution failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handlePrint = (tx: any) => {
-
-  const student = students.find(s => String(s.roll_no) === String(tx.student_roll_link));
-
-  const stuFees = feeGroups.filter(g => String(g.student_roll) === String(tx.student_roll_link));
+    const txs = Array.isArray(tx) ? tx : [tx];
+    if (txs.length === 0) { showErr('No fee selected'); return; }
+    
+    // Use the first transaction to find the student
+    const firstTx = txs[0];
+    const student = students.find(s => String(s.roll_no) === String(firstTx.student_roll_link));
+    
+    const stuFees = feeGroups.filter(g => String(g.student_roll) === String(firstTx.student_roll_link));
 
   const totalAmount = stuFees.reduce((s, g) => s + (g.amount || 0), 0);
   const totalPaid   = stuFees.reduce((s, g) => s + (g.paid || 0), 0);
@@ -1612,6 +1669,7 @@ const handlePrintReport = (data: any) => {
     { id: 'transactions',  label: 'Transactions',  icon: Receipt },
     { id: 'salaries',      label: 'Salaries',      icon: UserCheck },
     { id: 'admissions',    label: 'Admissions',    icon: FileText },
+    { id: 'sections',      label: 'Sections',      icon: Layers },
     { id: 'new-admission', label: 'New Admission', icon: UserPlus },
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
     { id: 'students',      label: 'Students',      icon: Users },
@@ -1634,6 +1692,7 @@ const handlePrintReport = (data: any) => {
     students: 'Student Records', academics: 'Academic Overview',
     leaves: 'Leave Requests', admissions: 'Admissions',
     'new-admission': 'New Admission Form', 'fee-ledger': 'Fee Ledger',
+    'sections': 'Section Manager',
     'fee-groups': 'Fee Groups', transactions: 'Transactions',
     discounts: 'Discount Requests', reports: 'Financial Reports',
     salaries: 'Teacher Salaries',
@@ -2340,16 +2399,15 @@ const handlePrintReport = (data: any) => {
                 </div>
                 <div className="flex items-center justify-between mb-2 px-2">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction History</p>
-                  {selectedTxIds.length > 0 && (
-                    <motion.button 
-                      initial={{ scale: 0.9, opacity: 0 }} 
-                      animate={{ scale: 1, opacity: 1 }}
-                      onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
-                      className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
-                    >
-                      <Printer size={15} /> Print Selected ({selectedTxIds.length})
-                    </motion.button>
-                  )}
+                  <motion.button 
+                    id="printVoucherBtn"
+                    initial={{ scale: 0.9, opacity: 0 }} 
+                    animate={{ scale: 1, opacity: 1 }}
+                    onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
+                    className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
+                  >
+                    <Printer size={15} /> Print Selected ({selectedTxIds.length})
+                  </motion.button>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
@@ -2373,12 +2431,13 @@ const handlePrintReport = (data: any) => {
                     <td className="px-4 py-2.5">
                       <input 
                         type="checkbox" 
+                        className="transaction-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        data-id={t.id}
                         checked={selectedTxIds.includes(t.id)}
                         onChange={(e) => {
                           if (e.target.checked) setSelectedTxIds(p => [...p, t.id]);
                           else setSelectedTxIds(p => p.filter(id => id !== t.id));
                         }}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </td>
                             <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' }) : '—'}</td>
@@ -2408,7 +2467,55 @@ const handlePrintReport = (data: any) => {
               </motion.div>
             )}
 
-            {/* ════ ACCOUNTANT ADMISSIONS ════ */}
+            {/* ════ ACCOUNTANT SECTIONS ════ */}
+            {isAccountant && tab === 'sections' && (
+              <motion.div key="sec-mgr" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-2xl mx-auto space-y-6">
+                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl overflow-hidden relative">
+                  <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><Layers size={120} /></div>
+                  <div className="relative z-10 text-center mb-8">
+                    <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm"><Layers size={28} /></div>
+                    <h2 className="text-2xl font-black text-slate-900">Auto-Section Distribution</h2>
+                    <p className="text-sm text-slate-500 font-medium">Distribute students into sections based on program & part</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                    <F label="Program"><TS value={distProgram} onChange={e => setDistProgram(e.target.value)}><option value="">Select program...</option>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></F>
+                    <F label="Part / Year"><TS value={distPart} onChange={e => setDistPart(Number(e.target.value))}><option value={1}>Part 1 (First Year)</option><option value={2}>Part 2 (Second Year)</option></TS></F>
+                    <F label="No. of Sections"><TI type="number" min={1} max={10} value={distCount} onChange={(e: any) => setDistCount(Number(e.target.value))} /></F>
+                    <F label="Target Gender Group"><TS value={distGender} onChange={(e: any) => setDistGender(e.target.value)}><option value="Any">General Distribution</option><option value="Male">Boys Sections Only</option><option value="Female">Girls Sections Only</option></TS></F>
+                  </div>
+
+                  <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 mb-8">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-white rounded-xl shadow-sm"><Search size={16} className="text-blue-500" /></div>
+                      <div>
+                        <p className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Preview</p>
+                        <p className="text-[11px] text-blue-700/80 font-bold leading-relaxed">
+                          Students in <span className="text-blue-900 font-black">{distProgram || '—'}</span> (Part {distPart}) 
+                          {distGender !== 'Any' && <span> [{distGender}s only]</span>} will be divided into 
+                          <span className="text-blue-900 font-black"> {distCount} groups</span> (A, B, C...).
+                          Students will be sorted by merit (Matric %) for balanced academic strength across sections.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <motion.button 
+                    whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+                    disabled={saving || !distProgram} onClick={distributeSections}
+                    className="w-full py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-xl shadow-blue-500/20"
+                    style={{ background: GRADIENT }}>
+                    {saving ? <><Loader2 size={16} className="animate-spin" /> Distributing Students...</> : <><RefreshCw size={16} /> Run Distribution</>}
+                  </motion.button>
+                </div>
+
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center border border-slate-200 text-slate-400"><BookOpen size={18} /></div>
+                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed"><strong>Note:</strong> This tool will overwrite existing section assignments for the selected students. Use it with caution during initial class setup.</p>
+                </div>
+              </motion.div>
+            )}
+
             {isAccountant && tab === 'admissions' && (
               <motion.div key="acc-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
