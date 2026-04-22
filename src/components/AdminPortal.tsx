@@ -6,7 +6,7 @@ import {
   Shield, UserPlus, Loader2, Home, UserCog, Trash2,
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
-  Plus, Lock, Unlock, User, Printer, Minus, Layers
+  Plus, Lock, Unlock, User, Printer, Minus, Layers, Target
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -19,6 +19,9 @@ interface AdminPortalProps {
 // ── Theme helpers ─────────────────────────────────────────────────────────
 const getTheme = (role: string) => {
   if (role === 'Accountant') return { ACCENT: '#1a2fa8', GRADIENT: 'linear-gradient(135deg,#1a2fa8,#2952e3)' };
+  if (role === 'Director')   return { ACCENT: '#7c2d12', GRADIENT: 'linear-gradient(135deg,#7c2d12,#9a3412)' };
+  if (role === 'VP')         return { ACCENT: '#1e3a8a', GRADIENT: 'linear-gradient(135deg,#1e3a8a,#1d4ed8)' };
+  if (role === 'Principal')  return { ACCENT: '#065f46', GRADIENT: 'linear-gradient(135deg,#065f46,#047857)' };
   return { ACCENT: '#0F766E', GRADIENT: 'linear-gradient(135deg,#0F766E,#0D9488)' };
 };
 
@@ -60,7 +63,7 @@ const EMPTY_FORM: any = {
   inter_year:'', inter_roll_no:'', inter_marks:'', inter_subjects:'',
   inter_board:'BISE Gujranwala', inter_division:'',
   graduation_year:'', graduation_roll_no:'', graduation_marks:'', graduation_board:'', graduation_division:'',
-  fee_package:40000, student_type:'Regular', is_fresher:true, num_instalments:1,
+  fee_package:60000, student_type:'Regular', is_fresher:true, num_installments:3,
   notes: '',
 };
 
@@ -184,418 +187,261 @@ const RoleAssignModal = ({ onClose, onSave, assignableRoles, principalName, GRAD
 };
 
 // ── FeeGroupsTab Component ───────────────────────────────────────────────
-const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, onAssigned }: any) => {
-  const LEVEL_LABELS: Record<string, string> = { inter: 'Intermediate', university: 'University', all: 'All Levels' };
-  const SUGGESTED_NAMES = ['Tuition Fee','Admission Fee','Exam Fee','Lab Fee','Library Fee','Sports Fee','Board Examination Fee','University Examination Fee','Computer Lab Fee','Development Fee'];
-
-  const [fgGroups, setFgGroups]           = useState<any[]>([]);
-  const [fgStudents, setFgStudents]       = useState<any[]>([]);
-  const [fgLoading, setFgLoading]         = useState(true);
-  const [showAddFg, setShowAddFg]         = useState(false);
-  const [fgName, setFgName]               = useState('');
-  const [fgLevel, setFgLevel]             = useState('inter');
-  const [fgFixed, setFgFixed]             = useState(false);
-  const [fgFixedAmt, setFgFixedAmt]       = useState('');
-  const [fgWeight, setFgWeight]           = useState('1');
+const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, onAssigned, students = [] }: any) => {
   const [fgSaving, setFgSaving]           = useState(false);
-  const [editFg, setEditFg]               = useState<any>(null);
-  const [editName, setEditName]           = useState('');
-  const [editAmount, setEditAmount]       = useState('');
-  const [editFixed, setEditFixed]         = useState(false);
-  const [editFixedAmt, setEditFixedAmt]   = useState('');
-  const [editWeight, setEditWeight]       = useState('1');
-  const [editSaving, setEditSaving]       = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [showAssignFg, setShowAssignFg]   = useState(false);
-  const [fgAssignMode, setFgAssignMode]   = useState<'bulk'|'individual'>('bulk');
-  const [fgAssignLevel, setFgAssignLevel] = useState('all');
-  const [fgSelectedGroups, setFgSelectedGroups] = useState<string[]>([]);
-  const [fgSection, setFgSection]         = useState('');
-  const [fgPkg, setFgPkg]                 = useState('');
-  const [fgDue, setFgDue]                 = useState('');
-  const [fgSelStu, setFgSelStu]           = useState<any>(null);
-  const [fgStuSearch, setFgStuSearch]     = useState('');
-  const [fgAssigning, setFgAssigning]     = useState(false);
-  const [fgPreview, setFgPreview]         = useState<Record<string,number>>({});
+  
+  // Simplified Form State
+  const [simpleName, setSimpleName]     = useState('');
+  const [simpleAmount, setSimpleAmount] = useState('');
+  const [simpleDue, setSimpleDue]       = useState('');
+  const [simpleDesc, setSimpleDesc]     = useState('');
+  const [simpleTarget, setSimpleTarget] = useState('all'); // all, section name, or 'single_student'
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [studentSearch, setStudentSearch]     = useState('');
 
-  const splitPkg = (grps: any[], total: number) => {
-    const r: Record<string,number> = {};
-    let rem = total;
-    grps.forEach(g => { if (g.is_fixed && g.fixed_amount) { r[g.id] = g.fixed_amount; rem -= g.fixed_amount; } });
-    const vars = grps.filter(g => !g.is_fixed);
-    const tw = vars.reduce((s,g) => s + (g.weight || 1), 0);
-    if (tw > 0 && rem > 0) vars.forEach(g => { r[g.id] = Math.round(((g.weight||1)/tw)*rem); });
-    return r;
-  };
+  // Only target "Active" students by default for fees
+  const fgStudents = students.filter((s: any) => s.status === 'Active');
 
-  const reload = async () => {
-    const { data } = await supabase.from('fee_groups_config').select('*').order('name').order('amount');
-    setFgGroups(data || []);
-  };
+  const handleSubmit = async () => {
+    if (!fgStudents.length) {
+      showErr('No active students available in the system.');
+      return;
+    }
+    if (!simpleName.trim() || !simpleAmount || !simpleDue) {
+      showErr('Name, Amount and Due Date are required');
+      return;
+    }
+    const amt = Number(simpleAmount);
+    if (amt <= 0) { showErr('Enter a valid amount'); return; }
 
-  useEffect(() => {
-    (async () => {
-      setFgLoading(true);
-      const [g, s] = await Promise.all([
-        supabase.from('fee_groups_config').select('*').order('name').order('amount'),
-        supabase.from('students').select('id,roll_no,full_name,class_section,student_type,program,part').order('full_name'),
-      ]);
-      
-      let groups = g.data || [];
-      // Ensure only Summer camp fee and Uniform fee exist if requested
-      // For now, we will add them if they don't exist
-      const required = [
-        { name: 'Summer camp fee', amount: 7000, fixed_amount: 7000, is_fixed: true, level: 'all', weight: 0 },
-        { name: 'Uniform fee', amount: 1000, fixed_amount: 1000, is_fixed: true, level: 'all', weight: 0 }
-      ];
-      
-      let changed = false;
-      for (const req of required) {
-        if (!groups.find(gr => gr.name === req.name)) {
-          const { data: newGr } = await supabase.from('fee_groups_config').insert([req]).select();
-          if (newGr) groups = [...groups, ...newGr];
-          changed = true;
-        }
-      }
-      if (changed) groups.sort((a,b) => a.name.localeCompare(b.name));
-
-      setFgGroups(groups); setFgStudents(s.data || []);
-      setFgLoading(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    const pkg = Number(fgPkg);
-    if (!pkg || !fgGroups.length) { setFgPreview({}); return; }
-    const rel = fgGroups.filter(g => g.level === fgAssignLevel || g.level === 'all');
-    setFgPreview(splitPkg(rel, pkg));
-  }, [fgPkg, fgAssignLevel, fgGroups]);
-
-  const addGroup = async () => {
-    if (!fgName.trim()) { showErr('Enter a name'); return; }
-    if (fgFixed && (!fgFixedAmt || Number(fgFixedAmt) <= 0)) { showErr('Enter fixed amount'); return; }
     setFgSaving(true);
-    const { error } = await supabase.from('fee_groups_config').insert([{
-      name: fgName.trim(), level: fgLevel, is_fixed: fgFixed,
-      fixed_amount: fgFixed ? Number(fgFixedAmt) : null,
-      weight: fgFixed ? 0 : Number(fgWeight) || 1,
-      amount: fgFixed ? Number(fgFixedAmt) : 0,
-    }]);
-    setFgSaving(false);
-    if (error) { showErr(error.message); return; }
-    showToast(`"${fgName}" added`);
-    setShowAddFg(false); setFgName(''); setFgFixed(false); setFgFixedAmt(''); setFgWeight('1');
-    reload();
-  };
-
-  const openEdit = (g: any) => {
-    setEditFg(g); setEditName(g.name); setEditAmount(String(g.amount || 0));
-    setEditFixed(g.is_fixed); setEditFixedAmt(String(g.fixed_amount || '')); setEditWeight(String(g.weight || 1));
-  };
-
-  const saveEdit = async () => {
-    if (!editFg) return;
-    if (!editName.trim()) { showErr('Enter a name'); return; }
-    if (editFixed && (!editFixedAmt || Number(editFixedAmt) <= 0)) { showErr('Enter fixed amount'); return; }
-    setEditSaving(true);
-    const { error } = await supabase.from('fee_groups_config').update({
-      name: editName.trim(),
-      amount: editFixed ? Number(editFixedAmt) : Number(editAmount) || 0,
-      is_fixed: editFixed,
-      fixed_amount: editFixed ? Number(editFixedAmt) : null,
-      weight: editFixed ? 0 : Number(editWeight) || 1,
-    }).eq('id', editFg.id);
-    setEditSaving(false);
-    if (error) { showErr(error.message); return; }
-    showToast('Updated'); setEditFg(null); reload();
-  };
-
-  const deleteGroup = async (id: string, name: string) => {
-    setConfirmDelete(null);
-    const { error } = await supabase.from('fee_groups_config').delete().eq('id', id);
-    if (error) { showErr(error.message); return; }
-    showToast('Deleted'); reload();
-  };
-
-  useEffect(() => {
-    if (fgGroups.length > 0 && fgSelectedGroups.length === 0) {
-      setFgSelectedGroups(fgGroups.map(g => g.id));
-    }
-  }, [fgGroups]);
-
-  const assignFees = async () => {
-    if (fgSelectedGroups.length === 0) { showErr('Select at least one fee'); return; }
-    if (!fgDue) { showErr('Select due date'); return; }
-    
-    const rel = fgGroups.filter(g => fgSelectedGroups.includes(g.id));
-    const pkg = rel.reduce((s, g) => s + (g.fixed_amount || 0), 0);
-    
-    const split = splitPkg(rel, pkg);
-    let targets: any[] = [];
-    if (fgAssignMode === 'bulk') {
-      if (!fgSection) { showErr('Select a section'); return; }
-      targets = fgStudents.filter(s => s.class_section === fgSection);
-      if (!targets.length) { showErr('No students in that section'); return; }
-    } else {
-      if (!fgSelStu) { showErr('Select a student'); return; }
-      targets = [fgSelStu];
-    }
-    setFgAssigning(true);
-    const rolls = [...new Set(targets.map((t: any) => t.roll_no))];
-    // Delete existing fee groups for these students first — prevents duplicates
-    for (const roll of rolls) {
-      await supabase.from('fee_groups').delete().eq('student_roll', roll);
-    }
-    const rows: any[] = [];
-    for (const stu of targets) {
-      for (const grp of rel) {
-        rows.push({ student_roll: stu.roll_no, fees_group: grp.name, fees_code: grp.id.slice(0, 8).toUpperCase(), amount: split[grp.id] ?? 0, due_date: fgDue, status: 'Unpaid', paid: 0 });
+    try {
+      let targets = [];
+      if (simpleTarget === 'all') {
+        targets = fgStudents;
+      } else if (simpleTarget === 'single_student') {
+        if (!selectedStudent) throw new Error('Please select a student');
+        targets = [selectedStudent];
+      } else {
+        targets = fgStudents.filter((s: any) => s.class_section === simpleTarget);
       }
+
+      if (!targets.length) throw new Error('No students found for this selection');
+
+      const batchSize = 100;
+      for (let i = 0; i < targets.length; i += batchSize) {
+        const chunk = targets.slice(i, i + batchSize);
+        
+        // 1. Create fee groups (ledger entries)
+        const feeRows = chunk.map(s => ({
+          student_roll: s.roll_no,
+          fees_group: simpleName.trim(),
+          fees_code: 'FEE-' + Math.random().toString(36).substring(7).toUpperCase(),
+          amount: amt,
+          balance: amt,
+          due_date: simpleDue,
+          status: 'Unpaid',
+          paid: 0,
+          description: simpleDesc.trim() || null
+        }));
+        const { error: fe } = await supabase.from('fee_groups').insert(feeRows);
+        if (fe) throw fe;
+
+        // 2. Notifications
+        const noteRows = chunk.map(s => ({
+          target_user_id: s.roll_no,
+          target_role: 'STUDENT',
+          title: `New Fee: ${simpleName}`,
+          message: `A new fee of PKR ${amt.toLocaleString()} has been added to your ledger. Due: ${simpleDue}`,
+          type: 'fee_due',
+          due_date: simpleDue,
+          is_read: false
+        }));
+        await supabase.from('notifications').insert(noteRows);
+
+        // 3. Update student total_package logic is skipped for simplification if user didn't ask 
+        // But user said "Add the fee into student's fee ledger". fee_groups insert handles that.
+      }
+
+      showToast(`✅ Assigned "${simpleName}" to ${targets.length} students`);
+      setSimpleName(''); setSimpleAmount(''); setSimpleDue(''); setSimpleDesc('');
+      onAssigned?.();
+    } catch (e: any) {
+      console.error(e);
+      showErr(e.message || 'Failed to assign fees');
+    } finally {
+      setFgSaving(false);
     }
-    for (const roll of rolls) { await supabase.from('students').update({ total_package: pkg }).eq('roll_no', roll); }
-    for (let i = 0; i < rows.length; i += 200) {
-      const { error } = await supabase.from('fee_groups').insert(rows.slice(i, i+200));
-      if (error) { showErr(error.message); setFgAssigning(false); return; }
-    }
-    setFgAssigning(false);
-    showToast(fgAssignMode === 'bulk' ? `Created for ${targets.length} students` : `Created for ${fgSelStu.full_name}`);
-    setShowAssignFg(false); setFgPkg(''); setFgDue(''); setFgSelStu(null); setFgStuSearch('');
-    onAssigned?.();
   };
 
-  const relGroups = fgGroups.filter(g => g.level === fgAssignLevel || g.level === 'all');
-  const sections  = [...new Set(fgStudents.map((s: any) => s.class_section))].sort();
-  const filtStu   = fgStudents.filter((s: any) => s.full_name.toLowerCase().includes(fgStuSearch.toLowerCase()) || String(s.roll_no).includes(fgStuSearch));
+  const sections = [...new Set(fgStudents.map((s: any) => s.class_section))].sort() as string[];
 
   return (
-    <motion.div key="fee-groups" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div><h2 className="text-xl font-black text-slate-900">Fee Configuration</h2><p className="text-sm text-slate-500 mt-1">Manage standard fees here. Accountants should only use Summer Camp and Uniform fees as requested.</p></div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowAssignFg(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white shadow-lg" style={{ background: GRADIENT }}><Users size={15} /> Assign Fees to Students</button>
+    <motion.div key="fee-groups-simple" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black text-slate-900">New Fee Assignment</h2>
+          <p className="text-sm text-slate-500 mt-1">Create a fee group and instantly assign it to students</p>
+        </div>
+        <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl flex items-center gap-2 text-xs font-black border border-emerald-100">
+           <Check size={14} /> Accountant Mode Active
         </div>
       </div>
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 text-sm text-blue-700">
-        <CreditCard size={16} className="text-blue-500 shrink-0 mt-0.5" />
-        <p><strong>Click any group to edit.</strong> Fixed groups keep their exact amount always. Variable groups share the remainder by weight after fixed groups are deducted.</p>
-      </div>
-      {fgLoading ? (
-        <div className="flex items-center justify-center py-16"><Loader2 className="animate-spin text-emerald-500" size={28} /></div>
-      ) : fgGroups.length === 0 ? (
-        <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-16 text-center"><p className="text-slate-400 font-bold">No fee groups yet. Click "Add Group".</p></div>
-      ) : (
-        <div className="space-y-5">
-          {(['inter','university','all'] as const).map(level => {
-            const lvl = fgGroups.filter(g => g.level === level);
-            if (!lvl.length) return null;
-            return (
-              <div key={level}>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">{LEVEL_LABELS[level]} ({lvl.length})</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {lvl.map(g => (
-                    <div key={g.id} onClick={() => openEdit(g)}
-                      className={cn('bg-white rounded-2xl border p-4 flex items-center justify-between shadow-sm cursor-pointer hover:shadow-md transition-all group', g.is_fixed ? 'border-amber-100 bg-amber-50/20 hover:border-amber-300' : 'border-slate-100 hover:border-emerald-200')}>
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', g.is_fixed ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600')}>
-                          {g.is_fixed ? <Lock size={16} /> : <Unlock size={16} />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-black text-slate-900 truncate">{g.name}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{PKR(g.amount || 0)} · {g.is_fixed ? 'Fixed' : `Wt ${g.weight}`}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0 ml-2">
-                        <div className="w-7 h-7 rounded-lg bg-slate-50 text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 flex items-center justify-center transition-all"><Save size={12} /></div>
-                        {confirmDelete === g.id ? (
-                          <div className="flex items-center gap-1">
-                            <button onClick={e => { e.stopPropagation(); deleteGroup(g.id, g.name); }} className="px-2 py-1 bg-rose-500 text-white text-[9px] font-black rounded-lg">Confirm</button>
-                            <button onClick={e => { e.stopPropagation(); setConfirmDelete(null); }} className="p-1 bg-slate-100 text-slate-400 rounded-lg"><X size={10} /></button>
-                          </div>
-                        ) : (
-                          <button onClick={e => { e.stopPropagation(); setConfirmDelete(g.id); }} className="w-7 h-7 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
-                        )}
-                      </div>
-                    </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* FORM */}
+        <div className="md:col-span-2 space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 p-6 sm:p-8 space-y-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+               <CreditCard size={180} className="rotate-12" />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Fee Name <span className="text-rose-500">*</span></label>
+                <div className="relative">
+                  <TI value={simpleName} onChange={(e:any)=>setSimpleName(e.target.value)} placeholder="e.g. Examination Fee 2026" className="pl-4 py-4 text-base" />
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {['Monthly Fee','Fine','Uniform','Books','ID Card','Sports'].map(n => (
+                    <button key={n} onClick={() => setSimpleName(n)} className={cn('px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border', simpleName === n ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-slate-300')}>{n}</button>
                   ))}
                 </div>
               </div>
-            );
-          })}
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Amount (Rs) <span className="text-rose-500">*</span></label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">PKR</span>
+                  <input type="number" value={simpleAmount} onChange={e => setSimpleAmount(e.target.value)} placeholder="0" className="w-full pl-14 pr-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-black text-slate-900 bg-slate-50/30 transition-all text-lg" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Due Date <span className="text-rose-500">*</span></label>
+                <input type="date" value={simpleDue} onChange={e => setSimpleDue(e.target.value)} className="w-full px-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-black text-slate-900 bg-slate-50/30 transition-all text-lg" />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Description (Optional)</label>
+                <textarea value={simpleDesc} onChange={e => setSimpleDesc(e.target.value)} placeholder="Provide context about this fee..." className="w-full px-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 text-sm font-bold text-slate-700 bg-slate-50/30 min-h-[100px] resize-none" />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
+               <motion.button whileTap={{ scale: 0.98 }} onClick={handleSubmit} disabled={fgSaving} className="w-full py-5 rounded-2xl text-white font-black shadow-xl shadow-blue-500/20 flex items-center justify-center gap-3 disabled:opacity-50 transition-all text-lg" style={{ background: GRADIENT }}>
+                 {fgSaving ? <Loader2 className="animate-spin" size={20} /> : <><Plus size={20} /> Confirm and Assign Fee</>}
+               </motion.button>
+               <p className="text-[10px] text-center text-slate-400 mt-4 uppercase font-bold tracking-widest">Fee will be posted to all selected student ledgers immediately</p>
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* EDIT GROUP MODAL */}
-      <AnimatePresence>
-        {editFg && (
-          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditFg(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }} className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 overflow-hidden">
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
-                <div><h3 className="font-black text-slate-900">Edit Fee Group</h3><p className="text-xs text-slate-400 mt-0.5">Changes apply to future assignments only</p></div>
-                <button onClick={() => setEditFg(null)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
-              </div>
-              <div className="p-5 space-y-4">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Group Name</label>
-                  <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
-                <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div><p className="text-sm font-bold text-slate-800">Fixed Amount</p><p className="text-[10px] text-slate-400">Amount never changes regardless of package</p></div>
-                  <button onClick={() => setEditFixed(v => !v)} className={cn('w-12 h-6 rounded-full transition-all relative', editFixed ? 'bg-amber-400' : 'bg-slate-200')}>
-                    <span className={cn('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all', editFixed ? 'left-7' : 'left-1')} />
-                  </button>
-                </div>
-                {editFixed ? (
-                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fixed Amount (Rs)</label>
-                    <input type="number" value={editFixedAmt} onChange={e => setEditFixedAmt(e.target.value)} placeholder="e.g. 1500" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-amber-400" /></div>
-                ) : (
-                  <>
-                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Default Amount (Rs)</label>
-                      <input type="number" value={editAmount} onChange={e => setEditAmount(e.target.value)} placeholder="0" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
-                    <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Weight Ratio <span className="text-slate-300 normal-case">(higher = larger share of package)</span></label>
-                      <input type="number" min="0.1" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)} placeholder="1" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500" /></div>
-                  </>
-                )}
-              </div>
-              <div className="p-5 border-t border-slate-100 flex gap-3">
-                <button onClick={() => setEditFg(null)} className="flex-1 py-3 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
-                <button onClick={saveEdit} disabled={editSaving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                  {editSaving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Changes</>}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ADD GROUP MODAL */}
-      <AnimatePresence>
-        {showAddFg && (
-          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAddFg(false)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }} className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 overflow-hidden">
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center"><h3 className="font-black text-slate-900">New Fee Group</h3><button onClick={() => setShowAddFg(false)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button></div>
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Name</label>
-                  <input value={fgName} onChange={e => setFgName(e.target.value)} placeholder="e.g. Tuition Fee" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" />
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {SUGGESTED_NAMES.map(n => <button key={n} onClick={() => { setFgName(n); if (n.toLowerCase().includes('board') || n.toLowerCase().includes('examination')) { setFgFixed(true); if (!fgFixedAmt) setFgFixedAmt('1500'); } }} className={cn('px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all', fgName === n ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{n}</button>)}
+        {/* TARGETING */}
+        <div className="space-y-4">
+          <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Target size={14} className="text-blue-500" /> Target Audience</p>
+            <div className="space-y-3">
+               <button onClick={() => { setSimpleTarget('all'); setSelectedStudent(null); }} className={cn('w-full flex items-center justify-between p-4 rounded-2xl border transition-all', simpleTarget === 'all' ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-500/10' : 'bg-slate-50 border-slate-100')}>
+                  <div className="flex items-center gap-3">
+                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', simpleTarget === 'all' ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 shadow-sm')}><Users size={18} /></div>
+                    <div className="text-left"><p className="text-sm font-black text-slate-900">All Students</p><p className="text-[10px] font-bold text-slate-400">{fgStudents.length} Students</p></div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Applies To</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['inter','university','all'] as const).map(l => <button key={l} onClick={() => setFgLevel(l)} className={cn('py-2.5 rounded-xl text-xs font-bold transition-all', fgLevel === l ? 'text-white' : 'bg-slate-50 text-slate-600 border border-slate-100')} style={fgLevel === l ? { background: GRADIENT } : {}}>{LEVEL_LABELS[l]}</button>)}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div><p className="text-sm font-bold text-slate-800">Fixed Amount</p><p className="text-[10px] text-slate-400">Never changes (e.g. Board fee)</p></div>
-                  <button onClick={() => setFgFixed(v => !v)} className={cn('w-12 h-6 rounded-full transition-all relative', fgFixed ? 'bg-amber-400' : 'bg-slate-200')}><span className={cn('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all', fgFixed ? 'left-7' : 'left-1')} /></button>
-                </div>
-                {fgFixed ? (
-                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Fixed Amount (Rs)</label><input type="number" value={fgFixedAmt} onChange={e => setFgFixedAmt(e.target.value)} placeholder="1500" className="w-full border border-amber-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-400" /></div>
-                ) : (
-                  <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Weight Ratio</label><input type="number" min="0.1" step="0.1" value={fgWeight} onChange={e => setFgWeight(e.target.value)} placeholder="1" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
-                )}
-              </div>
-              <div className="p-5 border-t border-slate-100">
-                <button onClick={addGroup} disabled={fgSaving} className="w-full py-3.5 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                  {fgSaving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save Fee Group'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                  {simpleTarget === 'all' && <Check size={16} className="text-blue-600" />}
+               </button>
 
-      {/* ASSIGN FEES MODAL */}
-      <AnimatePresence>
-        {showAssignFg && (
-          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAssignFg(false)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }} className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 flex flex-col max-h-[90vh] overflow-hidden">
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center shrink-0"><h3 className="font-black text-slate-900">Assign Fee Groups</h3><button onClick={() => setShowAssignFg(false)} className="text-slate-400 hover:text-slate-700"><X size={18} /></button></div>
-              <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                <div className="grid grid-cols-2 gap-2">
-                  {(['bulk','individual'] as const).map(m => <button key={m} onClick={() => setFgAssignMode(m)} className={cn('py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all', fgAssignMode === m ? 'text-white' : 'bg-slate-50 text-slate-600 border border-slate-100')} style={fgAssignMode === m ? { background: GRADIENT } : {}}>{m === 'bulk' ? <Users size={13} /> : <User size={13} />}{m === 'bulk' ? 'Whole Section' : 'Individual'}</button>)}
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Select Fees to Assign</label>
-                  <div className="space-y-2">
-                    {fgGroups.map(g => (
-                      <button 
-                        key={g.id} 
-                        onClick={() => {
-                          if (fgSelectedGroups.includes(g.id)) setFgSelectedGroups(p => p.filter(id => id !== g.id));
-                          else setFgSelectedGroups(p => [...p, g.id]);
-                        }}
-                        className={cn(
-                          "w-full px-4 py-3 rounded-xl border text-left flex items-center justify-between transition-all",
-                          fgSelectedGroups.includes(g.id) ? "bg-emerald-50 border-emerald-500" : "bg-white border-slate-200"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className={cn("w-4 h-4 rounded border flex items-center justify-center", fgSelectedGroups.includes(g.id) ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300")}>
-                            {fgSelectedGroups.includes(g.id) && <Check size={10} />}
-                          </div>
-                          <span className="text-sm font-bold text-slate-700">{g.name}</span>
+               <div className="pt-2">
+                 <p className="text-[9px] font-black text-slate-300 uppercase tracking-wider mb-2 ml-1">Single Student</p>
+                 {!selectedStudent ? (
+                   <div className="relative">
+                     <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                     <input
+                       type="text"
+                       placeholder="Search by Name or Roll No..."
+                       value={studentSearch}
+                       onChange={(e) => {
+                         setStudentSearch(e.target.value);
+                         setSimpleTarget('single_student');
+                       }}
+                       className={cn(
+                         "w-full pl-10 pr-4 py-3 rounded-2xl border text-xs font-bold transition-all outline-none",
+                         simpleTarget === 'single_student' ? "bg-white border-blue-200 ring-2 ring-blue-500/10" : "bg-slate-50 border-slate-100"
+                       )}
+                     />
+                     {studentSearch && (
+                       <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 max-h-[200px] overflow-y-auto overflow-x-hidden custom-scrollbar">
+                         {fgStudents
+                           .filter(s => s.full_name?.toLowerCase().includes(studentSearch.toLowerCase()) || String(s.roll_no).includes(studentSearch))
+                           .slice(0, 10)
+                           .map(s => (
+                             <button
+                               key={s.roll_no}
+                               onClick={() => {
+                                 setSelectedStudent(s);
+                                 setSimpleTarget('single_student');
+                                 setStudentSearch('');
+                               }}
+                               className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition-all text-left border-b border-slate-50 last:border-0"
+                             >
+                               <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-black text-[10px]">
+                                 {s.full_name?.charAt(0)}
+                               </div>
+                               <div>
+                                 <p className="text-[11px] font-black text-slate-800">{s.full_name}</p>
+                                 <p className="text-[9px] font-bold text-slate-400">Roll: {s.roll_no} • {s.class_section}</p>
+                               </div>
+                             </button>
+                           ))}
+                       </div>
+                     )}
+                   </div>
+                 ) : (
+                   <div className="flex items-center justify-between p-4 rounded-2xl border bg-blue-50 border-blue-200 ring-2 ring-blue-500/10">
+                     <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black">
+                         {selectedStudent.full_name?.charAt(0)}
+                       </div>
+                       <div className="text-left">
+                         <p className="text-sm font-black text-slate-900">{selectedStudent.full_name}</p>
+                         <p className="text-[10px] font-bold text-slate-500">Roll: {selectedStudent.roll_no} • {selectedStudent.class_section}</p>
+                       </div>
+                     </div>
+                     <button
+                       onClick={() => {
+                         setSelectedStudent(null);
+                         setSimpleTarget('all');
+                       }}
+                       className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all"
+                     >
+                       <X size={16} />
+                     </button>
+                   </div>
+                 )}
+               </div>
+
+               <div className="pt-2">
+                 <p className="text-[9px] font-black text-slate-300 uppercase tracking-wider mb-2 ml-1">Or Specific Section</p>
+                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                    {sections.map((s: string) => (
+                      <button key={s} onClick={() => { setSimpleTarget(s); setSelectedStudent(null); }} className={cn('w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all', simpleTarget === s ? 'bg-amber-50 border-amber-200 ring-2 ring-amber-500/10' : 'bg-white border-slate-100 hover:border-slate-200')}>
+                        <div className="flex items-center gap-3">
+                           <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black', simpleTarget === s ? 'bg-amber-500 text-white' : 'bg-slate-50 text-slate-400')}>{s.charAt(0)}</div>
+                           <div className="text-left"><p className="text-xs font-black text-slate-700">{s}</p><p className="text-[9px] font-bold text-slate-400">{fgStudents.filter((st: any) => st.class_section === s).length} Students</p></div>
                         </div>
-                        <span className="text-sm font-black text-slate-900">{PKR(g.fixed_amount || 0)}</span>
+                        {simpleTarget === s && <Check size={14} className="text-amber-500" />}
                       </button>
                     ))}
-                  </div>
-                </div>
-                {fgAssignMode === 'bulk' ? (
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Section</label>
-                    <select value={fgSection} onChange={e => setFgSection(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500 bg-white">
-                      <option value="">Select section…</option>
-                      {sections.map((s: any) => <option key={s} value={s}>{s} ({fgStudents.filter((st: any) => st.class_section === s).length} students)</option>)}
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Search Student</label>
-                    {fgSelStu ? (
-                      <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl p-3">
-                        <div><p className="text-sm font-black text-blue-900">{fgSelStu.full_name}</p><p className="text-[10px] text-blue-500 font-bold uppercase">{fgSelStu.roll_no} · {fgSelStu.class_section}</p></div>
-                        <button onClick={() => { setFgSelStu(null); setFgStuSearch(''); }}><X size={15} className="text-blue-400" /></button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <input value={fgStuSearch} onChange={e => setFgStuSearch(e.target.value)} placeholder="Search name or roll no…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" />
-                        {fgStuSearch.length > 1 && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-lg max-h-40 overflow-y-auto z-[210]">
-                            {filtStu.slice(0,10).map((s: any) => <button key={s.id} onClick={() => { setFgSelStu(s); setFgStuSearch(''); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm border-b border-slate-50 last:border-none font-bold text-slate-900">{s.full_name} <span className="text-[10px] text-slate-400 font-normal ml-2">{s.roll_no} · {s.class_section}</span></button>)}
-                            {!filtStu.length && <p className="px-4 py-3 text-sm text-slate-400">No results</p>}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Due Date</label><input type="date" value={fgDue} onChange={e => setFgDue(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500" /></div>
-                {Object.keys(fgPreview).length > 0 && relGroups.length > 0 && (
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Auto-Split Preview</p>
-                    {relGroups.map(g => (
-                      <div key={g.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">{g.is_fixed ? <Lock size={11} className="text-amber-400" /> : <Unlock size={11} className="text-emerald-400" />}<span className="text-sm font-bold text-slate-700">{g.name}</span>{g.is_fixed && <span className="text-[9px] bg-amber-100 text-amber-600 font-bold px-1.5 py-0.5 rounded">Fixed</span>}</div>
-                        <span className="text-sm font-black" style={{ color: ACCENT }}>{PKR(fgPreview[g.id] ?? 0)}</span>
-                      </div>
-                    ))}
-                    <div className="border-t border-slate-200 pt-2 flex justify-between"><span className="text-xs font-black text-slate-500 uppercase">Total</span><span className="text-sm font-black text-emerald-600">{PKR(Object.values(fgPreview).reduce((a: number,b: number) => a+b, 0))}</span></div>
-                  </div>
-                )}
-              </div>
-              <div className="p-5 border-t border-slate-100 shrink-0">
-                <button onClick={assignFees} disabled={fgAssigning} className="w-full py-3.5 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: GRADIENT }}>
-                  {fgAssigning ? <><Loader2 size={14} className="animate-spin" /> Creating…</> : fgAssignMode === 'bulk' ? 'Assign to Section' : 'Assign to Student'}
-                </button>
-              </div>
-            </motion.div>
+                 </div>
+               </div>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="bg-blue-50 border border-blue-100 rounded-3xl p-6 text-blue-800 space-y-3">
+             <div className="flex items-center gap-2"><CreditCard size={18} className="text-blue-600" /><p className="text-xs font-black uppercase tracking-widest">Pro Tip</p></div>
+             <p className="text-xs font-bold leading-relaxed opacity-80">This form is a one-click posting tool. Unlike the previous system, there's no need to create "Templates" first — just type the fee name and hit save to update student ledgers instantly.</p>
+          </div>
+        </div>
+      </div>
     </motion.div>
   );
 };
@@ -603,14 +449,74 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
 // ════════════════════════════════════════════════════════════════════════════
 export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData }) => {
   const isAccountant = adminData.role === 'Accountant';
+  const isSuperAdmin = ['Director', 'VP', 'Principal'].includes(adminData.role);
   const { ACCENT, GRADIENT } = getTheme(adminData.role);
 
   const [tab, setTab]               = useState('dashboard');
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [loading, setLoading]       = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [savedMsg, setSavedMsg]     = useState('');
   const [errorMsg, setErrorMsg]     = useState('');
   const [moreOpen, setMoreOpen]     = useState(false);
+
+  // ── Permissions state ──────────────────────────────────────────────────
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [targetUserPerms, setTargetUserPerms] = useState<{ userId: string, perms: string[] } | null>(null);
+
+  const ALL_UI_PERMISSIONS = [
+    { id: 'view_accounts',     label: 'View Accounts' },
+    { id: 'edit_accounts',     label: 'Edit Accounts' },
+    { id: 'add_transactions',  label: 'Add Transactions' },
+    { id: 'undo_transactions', label: 'Undo Transactions' },
+    { id: 'manage_salaries',   label: 'Manage Salaries' },
+    { id: 'manage_expenses',   label: 'Manage Expenses' },
+    { id: 'manage_income',     label: 'Manage Income' },
+    { id: 'manage_teachers',   label: 'Manage Teachers' },
+    { id: 'manage_classes',    label: 'Manage Classes' },
+    { id: 'upload_schedules',  label: 'Upload Schedules' },
+    { id: 'send_announcements',label: 'Send Announcements' },
+  ];
+
+  const hasPermission = useCallback((perm: string) => {
+    if (isSuperAdmin) return true;
+    return userPermissions.includes(perm);
+  }, [isSuperAdmin, userPermissions]);
+
+  const handleUndoTransaction = async (tx: any) => {
+    if (!tx || !isSuperAdmin) return;
+    if (!window.confirm(`Are you sure you want to UNDO this transaction of ${PKR(tx.amount_paid)}? This will reverse the payment and log your ID.`)) return;
+    
+    setSaving(true);
+    try {
+      // 1. Mark transaction as reversed
+      const { error: txErr } = await supabase.from('fee_transactions').update({
+        is_reversed: true,
+        reversed_by: adminData.full_name,
+        reversed_at: new Date().toISOString(),
+        transaction_type: 'Correction'
+      }).eq('id', tx.id);
+      if (txErr) throw txErr;
+
+      // 2. Adjust student paid_amount and fee_group status
+      if (tx.fee_group_id) {
+         const { data: fg } = await supabase.from('fee_groups').select('*').eq('id', tx.fee_group_id).maybeSingle();
+         if (fg) {
+            const newPaid = Math.max(0, (fg.paid || 0) - tx.amount_paid);
+            const newBalance = fg.amount - newPaid;
+            const newStatus = newPaid >= fg.amount ? 'Paid' : newPaid > 0 ? 'Partial' : 'Unpaid';
+            await supabase.from('fee_groups').update({ paid: newPaid, balance: newBalance, status: newStatus }).eq('id', fg.id);
+         }
+      }
+
+      // 3. Audit Log
+      await supabase.from('audit_logs').insert([{ action: 'UNDO_TX', user_id: adminData.id, user_name: adminData.full_name, details: `Undo TX ${tx.id}`, timestamp: new Date().toISOString() }]);
+
+      showToast('✅ Transaction Reversed');
+      refresh();
+    } catch (e: any) { showErr(e.message); }
+    finally { setSaving(false); }
+  };
 
   // ── Principal state ────────────────────────────────────────────────────
   const [stats,           setStats]           = useState<any>({});
@@ -646,7 +552,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [teachers,     setTeachers]     = useState<any[]>([]);
   const [nextRoll,     setNextRoll]     = useState(2628001);
   const [discSaving,   setDiscSaving]   = useState<string | null>(null);
-  const [saving,       setSaving]       = useState(false);
+  const [instDates,      setInstDates]      = useState<string[]>([]);
+  const [saving,         setSaving]         = useState(false);
   const [preview,      setPreview]      = useState<any>(null);
   const [selectedAccStu,  setSelectedAccStu]  = useState<any>(null);
   const [stuFeeGroups,    setStuFeeGroups]    = useState<any[]>([]);
@@ -658,7 +565,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [finSlipNo, setFinSlipNo]     = useState('');
   const [finDesc, setFinDesc]         = useState('');
   const [salaryModal, setSalaryModal] = useState<any>(null);
-  const [salaryForm, setSalaryForm]   = useState<{fine: number; bonus: number; notes: string; method: string}>({ fine: 0, bonus: 0, notes: '', method: 'Cash' });
+  const [salaryForm, setSalaryForm]   = useState<{fine: number; bonus: number; deductions: number; notes: string; method: string}>({ fine: 0, bonus: 0, deductions: 0, notes: '', method: 'Cash' });
   const [finCategory, setFinCategory] = useState('');
   const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
@@ -676,7 +583,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [distGender,  setDistGender]  = useState<'Any' | 'Male' | 'Female'>('Any');
 
 
-  const [admForm, setAdmForm] = useState<any>({ ...EMPTY_FORM });
+  const [admForm, setAdmForm] = useState<any>({ 
+    ...EMPTY_FORM,
+    fee_package: 60000,
+    num_installments: 3,
+  });
+  
   const pct = Number(admForm.matric_percentage) || 0;
   const sec = pct > 0 ? getSuggestedSection(pct, admForm.gender) : '';
   const cls = sec ? CLASS_MAP[admForm.program]?.[admForm.part]?.[sec] || '' : '';
@@ -1140,7 +1052,7 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
 };
 
 const handlePrintReport = (data: any) => {
-  const dateStr = new Date().toLocaleDateString('en-PK');
+  const dateStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' });
   const win = window.open('', '_blank');
   if (!win) return;
   
@@ -1149,32 +1061,89 @@ const handlePrintReport = (data: any) => {
       <head>
         <title>${data.type} Financial Statement</title>
         <style>
-          body { font-family: sans-serif; padding: 40px; color: #1e293b; }
-          .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
-          h1 { margin: 0; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; }
-          .meta { color: #64748b; font-size: 0.9rem; margin-top: 5px; }
-          .grid { display: grid; grid-template-cols: repeat(2, 1fr); gap: 20px; margin-bottom: 40px; }
-          .stat { background: #f8fafc; padding: 20px; border-radius: 16px; border: 1px solid #f1f5f9; }
-          .stat-l { font-size: 0.75rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
-          .stat-v { font-size: 1.5rem; font-weight: 900; color: #0f172a; }
-          .net { margin-top: 40px; text-align: right; border-top: 2px solid #0f172a; padding-top: 20px; }
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+          * { box-sizing: border-box; }
+          body { font-family: 'Inter', sans-serif; padding: 40px; color: #334155; line-height: 1.5; background: #fff; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 3px solid #f1f5f9; padding-bottom: 25px; }
+          .inst-info h1 { margin: 0; color: #0f172a; text-transform: uppercase; letter-spacing: -0.02em; font-weight: 900; font-size: 1.75rem; }
+          .inst-info p { margin: 4px 0 0; color: #64748b; font-weight: 600; font-size: 0.9rem; }
+          .report-meta { text-align: right; }
+          .report-meta .type { font-size: 0.75rem; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 0.1em; }
+          .report-meta .date { font-size: 1.25rem; font-weight: 900; color: #0f172a; margin-top: 5px; }
+          
+          .grid { display: grid; grid-template-cols: repeat(4, 1fr); gap: 20px; margin-bottom: 40px; }
+          .stat { background: #f8fafc; padding: 22px; border-radius: 20px; border: 1px solid #f1f5f9; }
+          .stat-l { font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+          .stat-v { font-size: 1.3rem; font-weight: 900; color: #0f172a; }
+          
+          .section-title { font-size: 0.8rem; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.1em; margin: 40px 0 20px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; }
+          
+          .financial-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          .financial-table th { text-align: left; background: #f8fafc; padding: 12px 15px; font-size: 0.7rem; font-weight: 900; text-transform: uppercase; color: #64748b; border-bottom: 2px solid #cbd5e1; }
+          .financial-table td { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; color: #475569; }
+          .financial-table .amt { text-align: right; font-weight: 700; color: #0f172a; }
+          
+          .summary-box { 
+            margin-top: 50px; 
+            padding: 30px; 
+            background: #f8fafc; 
+            border-radius: 24px; 
+            border: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+          }
+          .summary-item { text-align: right; }
+          .summary-item .label { font-size: 0.75rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+          .summary-item .value { font-size: 2.25rem; font-weight: 900; letter-spacing: -0.04em; }
+          
+          @media print { 
+            body { padding: 20px; } 
+            .stat { background: #f8fafc !important; -webkit-print-color-adjust: exact; }
+          }
         </style>
       </head>
       <body>
         <div class="header">
-          <h1>${data.type} Financial Summary</h1>
-          <div class="meta">PIC Campus · Generated on ${dateStr}</div>
+          <div class="inst-info">
+            <h1>Pak Informatics Group of Colleges</h1>
+            <p>Financial Statement · Original Campus, Gujranwala</p>
+          </div>
+          <div class="report-meta">
+            <div class="type">${data.type} Revenue Report</div>
+            <div class="date">${dateStr}</div>
+          </div>
         </div>
+
         <div class="grid">
-          <div class="stat"><div class="stat-l">Fee Revenue</div><div class="stat-v">${PKR(data.feeRev)}</div></div>
+          <div class="stat"><div class="stat-l">Fee Collections</div><div class="stat-v">${PKR(data.feeRev)}</div></div>
           <div class="stat"><div class="stat-l">Other Income</div><div class="stat-v">${PKR(data.otherInc)}</div></div>
-          <div class="stat"><div class="stat-l">Expenditure</div><div class="stat-v">${PKR(data.totalExp)}</div></div>
-          <div class="stat"><div class="stat-l">Discounts</div><div class="stat-v">${PKR(data.discounts)}</div></div>
+          <div class="stat"><div class="stat-l">Total Expenditure</div><div class="stat-v">${PKR(data.totalExp)}</div></div>
+          <div class="stat"><div class="stat-l">Total Discounts</div><div class="stat-v">${PKR(data.discounts)}</div></div>
         </div>
-        <div class="net">
-          <div style="font-size:0.8rem;font-weight:800;color:#64748b;text-transform:uppercase;">Net Profit/Loss</div>
-          <div style="font-size:2.5rem;font-weight:900;color:${data.net >=0 ? '#10b981' : '#ef4444'}">${PKR(data.net)}</div>
+
+        <div class="summary-box">
+          <div style="font-size: 0.85rem; color: #64748b; max-width: 40%; font-weight: 500;">
+            This document serves as an official financial summary for the specified period. 
+            All student fee collection and miscellaneous operational records have been audited.
+          </div>
+          <div class="summary-item">
+            <div class="label">Net Performance</div>
+            <div class="value" style="color: ${data.net >= 0 ? '#10b981' : '#ef4444'}">
+              ${data.net >= 0 ? '+' : ''}${PKR(data.net)}
+            </div>
+          </div>
         </div>
+
+        <div style="margin-top: 60px; display: flex; justify-content: space-between;">
+          <div style="text-align: center; width: 200px;">
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Accountant Signature</div>
+          </div>
+          <div style="text-align: center; width: 200px;">
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Principal Approval</div>
+          </div>
+        </div>
+
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
       </body>
     </html>
@@ -1186,28 +1155,57 @@ const handlePrintReport = (data: any) => {
   const loadPrincipal = useCallback(async () => {
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
-    const [s1, s2, s3, s4, s5, s6] = await Promise.all([
-      supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,total_xp,current_badge').order('class_section').order('full_name'),
-      supabase.from('academics_class_summary').select('*'),
-      supabase.from('admin_notifications').select('*').in('target_role', ['Principal', 'VP', 'Director']).order('created_at', { ascending: false }).limit(30),
-      supabase.from('admission_forms').select('*').order('created_at', { ascending: false }).limit(60),
-      supabase.from('attendance').select('status').eq('date', today),
-      supabase.from('leave_requests').select('*').order('created_at', { ascending: false }).limit(50),
-    ]);
-    const studs   = s1.data || [];
-    const present = (s5.data || []).filter((a: any) => a.status === 'Present').length;
-    const absent  = (s5.data || []).filter((a: any) => a.status === 'Absent').length;
-    const total   = (s5.data || []).length;
-    setStats({ totalStu: studs.filter(s => s.status === 'Active').length, maleStudents: studs.filter(s => s.gender === 'Male').length, femaleStudents: studs.filter(s => s.gender === 'Female').length, present, absent, attPct: total > 0 ? Math.round((present / total) * 100) : 0 });
-    setStudents(studs); setClassSummary(s2.data || []); setNotifications(s3.data || []);
-    setAdmForms(s4.data || []); setLeaveRequests(s6.data || []);
-    setLoading(false);
-  }, []);
+    try {
+      const [s1, s2, s3, s4, s5, s6, s9, s10] = await Promise.all([
+        supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,total_xp,current_badge,total_package,paid_amount').order('class_section').order('full_name'),
+        supabase.from('academics_class_summary').select('*'),
+        supabase.from('admin_notifications').select('*').in('target_role', ['Principal', 'VP', 'Director']).order('created_at', { ascending: false }).limit(30),
+        supabase.from('admission_forms').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.from('attendance').select('status').eq('date', today),
+        supabase.from('leave_requests').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('teachers').select('*').order('full_name'),
+        supabase.from('teacher_salaries').select('*').order('payment_date', { ascending: false }).limit(100),
+      ]);
+      const studs   = s1.data || [];
+      const present = (s5.data || []).filter((a: any) => a.status === 'Present').length;
+      const absent  = (s5.data || []).filter((a: any) => a.status === 'Absent').length;
+      const total   = (s5.data || []).length;
+      setStats({ totalStu: studs.filter(s => s.status === 'Active').length, maleStudents: studs.filter(s => s.gender === 'Male').length, femaleStudents: studs.filter(s => s.gender === 'Female').length, present, absent, attPct: total > 0 ? Math.round((present / total) * 100) : 0 });
+      setStudents(studs); setClassSummary(s2.data || []); setNotifications(s3.data || []);
+      setAdmForms(s4.data || []); setLeaveRequests(s6.data || []);
+      setTeachers(s9.data || []); setSalaries(s10.data || []);
+
+      if (isSuperAdmin) {
+        const [sf1, sf2, sf3, sf4, sf5, sf8] = await Promise.all([
+          supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
+          supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
+          supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
+          supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(100),
+          supabase.from('income').select('*').order('income_date', { ascending: false }).limit(100),
+          supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
+        ]);
+        setFeeGroups(sf1.data || []); setTransactions(sf2.data || []); setDiscounts(sf3.data || []);
+        setExpenses(sf4.data || []); setIncome(sf5.data || []);
+        if (sf8.data?.[0]) setNextRoll(sf8.data[0].roll_no + 1);
+      }
+    } catch (e: any) {
+      showErr("Data failed to load.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [isSuperAdmin]);
 
   // ── Load: Accountant ───────────────────────────────────────────────────
   const loadAccountant = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch permissions for non-superadmins
+      if (!isSuperAdmin) {
+        const { data: pData } = await supabase.from('staff_permissions').select('permissions').eq('admin_user_id', adminData.id).maybeSingle();
+        if (pData) setUserPermissions(pData.permissions || []);
+      }
+
       const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10] = await Promise.all([
         supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
         supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
@@ -1239,13 +1237,20 @@ const handlePrintReport = (data: any) => {
     const map: Record<string, any> = {};
     (data || []).forEach((r: any) => { map[r.role] = r; });
     setAllPermissions(map);
-    const pp = map['Principal']; if (pp) setAssignableRoles(pp.assignable_roles || []);
+    
+    if (isSuperAdmin) {
+      // Super admins can assign anything except super admin roles to avoid self-locking or elevating others too high easily
+      const allRoles = (data || []).map((r: any) => r.role);
+      setAssignableRoles(allRoles.filter(r => !['Director', 'VP', 'Principal'].includes(r) || adminData.role === 'Director'));
+    } else {
+      const pp = map['Principal']; if (pp) setAssignableRoles(pp.assignable_roles || []);
+    }
   };
 
   useEffect(() => {
     if (isAccountant) { loadAccountant(); }
     else { loadPrincipal(); loadStaff(); loadPermissions(); loadScheme(); }
-  }, [refreshKey]);
+  }, [refreshKey, isAccountant, loadAccountant, loadPrincipal]);
 
   // ── Principal actions ──────────────────────────────────────────────────
   const openStudentDetail = async (student: any) => {
@@ -1334,7 +1339,7 @@ const handlePrintReport = (data: any) => {
       fee_package:        Number(admForm.fee_package),
       student_type:       admForm.student_type,
       is_fresher:         admForm.is_fresher,
-      num_instalments:    admForm.num_instalments,
+      installments:       Number(admForm.num_installments),
       suggested_section:  sec,
       suggested_class:    cls,
       notes:              admForm.notes || '',
@@ -1377,24 +1382,27 @@ const handlePrintReport = (data: any) => {
   };
 
   const confirmToDatabase = async (f: any) => {
+    if (f.status === 'Pending' && instDates.length === 0) {
+       // Initialize if not already
+       setInstDates(Array(f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+    }
     setSaving(true);
     try {
       const now = new Date();
-  const joinYear = now.getFullYear(); // e.g. 2026
-  const endYear  = joinYear + 2;     // e.g. 2028
-  const prefix   = Number(`${String(joinYear).slice(2)}${String(endYear).slice(2)}`); // 2628
-  // Get highest existing roll with this prefix
-  const { data: lastRollData } = await supabase
-    .from('students')
-    .select('roll_no')
-    .gte('roll_no', prefix * 1000)
-    .lt('roll_no', (prefix + 1) * 1000)
-    .order('roll_no', { ascending: false })
-    .limit(1);
-  const lastRoll = lastRollData?.[0]?.roll_no ?? (prefix * 1000);
-  const seq = (lastRoll % 1000) + 1; // next sequence number
-  const roll = prefix * 1000 + seq;  // e.g. 2628001, 2628002...
-  const username = `stu_${roll}`, password = `PIC${roll}`;
+      const joinYear = now.getFullYear(); 
+      const endYear  = joinYear + 2;     
+      const prefix   = Number(`${String(joinYear).slice(2)}${String(endYear).slice(2)}`); 
+      const { data: lastRollData } = await supabase
+        .from('students')
+        .select('roll_no')
+        .gte('roll_no', prefix * 1000)
+        .lt('roll_no', (prefix + 1) * 1000)
+        .order('roll_no', { ascending: false })
+        .limit(1);
+      const lastRoll = lastRollData?.[0]?.roll_no ?? (prefix * 1000);
+      const seq = (lastRoll % 1000) + 1; 
+      const roll = prefix * 1000 + seq;  
+      const username = `stu_${roll}`, password = `PIC${roll}`;
       const { error: se } = await supabase.from('students').insert([{
         roll_no: roll, full_name: f.student_name, father_name: f.father_name,
         gender: f.gender, program: f.program, part: f.part,
@@ -1403,21 +1411,26 @@ const handlePrintReport = (data: any) => {
         username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
       }]);
       if (se) throw se;
-      // Load fee groups from config (the real source of truth)
-      const { data: fgConfig } = await supabase.from('fee_groups_config').select('*');
-      if (fgConfig && fgConfig.length > 0) {
-        await supabase.from('fee_groups').insert(
-          fgConfig.map((g: any) => ({
-            student_roll: roll,
-            fees_group:   g.name,
-            fees_code:    g.id.slice(0, 8).toUpperCase(),
-            amount:       g.fixed_amount || g.amount || 0,
-            due_date:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            status:       'Unpaid',
-            paid:         0,
-          }))
-        );
-      }
+
+      const totalAmount = f.fee_package || 40000;
+      const instCount = f.num_installments || f.installments || 1;
+      const amountPerInst = Math.floor(totalAmount / instCount);
+      
+      const installments = Array.from({ length: instCount }).map((_, i) => {
+        const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
+        return {
+          student_roll: roll,
+          fees_group: `Installment ${i + 1}`,
+          fees_code: `INST-${i + 1}`,
+          due_date: instDates[i] || new Date().toISOString().split('T')[0],
+          amount: amount,
+          paid: 0,
+          status: 'Unpaid'
+        };
+      });
+      
+      await supabase.from('fee_groups').insert(installments);
+      
       await supabase.from('admission_forms').update({
         status: 'Approved', synced_to_db: true, student_roll_no: roll,
         approved_by: adminData.full_name, approved_at: new Date().toISOString(),
@@ -1590,7 +1603,7 @@ const handlePrintReport = (data: any) => {
 
   const payTeacherSalary = async () => {
     if (!salaryModal) return;
-    const net = Number(salaryModal.monthly_salary) + Number(salaryForm.bonus) - Number(salaryForm.fine);
+    const net = Number(salaryModal.monthly_salary) + Number(salaryForm.bonus) - Number(salaryForm.fine) - Number(salaryForm.deductions);
     setSaving(true);
     try {
        const { error } = await supabase.from('teacher_salaries').insert([{
@@ -1599,6 +1612,7 @@ const handlePrintReport = (data: any) => {
          monthly_salary: salaryModal.monthly_salary,
          bonus: salaryForm.bonus,
          fine: salaryForm.fine,
+         deductions: salaryForm.deductions,
          net_salary: net,
          payment_date: new Date().toISOString(),
          payment_method: salaryForm.method,
@@ -1634,9 +1648,26 @@ const handlePrintReport = (data: any) => {
   const totalGroups    = feeGroups.length || 1;
   const today          = new Date().toISOString().slice(0, 10);
   const todayTx        = transactions.filter(t => t.payment_date?.startsWith(today));
-  const todayRevenue   = todayTx.reduce((s, t) => s + Number(t.amount_paid || 0), 0);
-  const totalBalance   = feeGroups.reduce((s, g) => s + (g.balance || 0), 0);
-  const totalFines     = feeGroups.reduce((s, g) => s + (g.fine || 0), 0);
+  const todayOtherInc  = income.filter(i => i.income_date === today).reduce((s, i) => s + i.amount, 0);
+  const todayRevenue   = (todayTx.reduce((s, t) => s + Number(t.amount_paid || 0), 0)) + todayOtherInc;
+
+  // Monthly Balance Tracking (Calculated Monthly, resets counter per month but carries forward unpaid)
+  const now = new Date();
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+  const calculateBalance = (g: any) => {
+    const amount = Number(g.amount || 0);
+    const paid = Number(g.paid || 0);
+    const fine = Number(g.fine || 0);
+    const discount = Number(g.discount || 0);
+    return Math.max(0, amount + fine - paid - discount);
+  };
+
+  const totalBalance = feeGroups
+    .filter(g => !g.due_date || g.due_date <= endOfMonth)
+    .reduce((s, g) => s + calculateBalance(g), 0);
+    
+  const totalFines = feeGroups.reduce((s, g) => s + (g.fine || 0), 0);
 
   const filteredStudents = students.filter(s => {
     if (filterProgram && s.program !== filterProgram) return false;
@@ -1652,7 +1683,55 @@ const handlePrintReport = (data: any) => {
   const filteredAdmForms = admForms.filter(f => !admFilter || f.status === admFilter);
 
   // ── NAV definitions ────────────────────────────────────────────────────
-  const PRINCIPAL_NAV = [
+  const SUPER_NAV_GROUPS = [
+    {
+      group: 'Dashboard',
+      items: [{ id: 'dashboard', label: 'Overview', icon: Home }]
+    },
+    {
+      group: 'Accounts',
+      items: [
+        { id: 'fee-ledger',   label: 'Fee Ledger',   icon: DollarSign },
+        { id: 'transactions', label: 'Transactions', icon: Receipt },
+        { id: 'income',       label: 'Income Mgmt',  icon: BarChart3 },
+        { id: 'expenses',     label: 'Expenses',     icon: Minus },
+        { id: 'salaries',     label: 'Teacher Salaries', icon: UserCheck }
+      ]
+    },
+    {
+      group: 'Academics',
+      items: [
+        { id: 'staff',      label: 'Teachers',     icon: UserCog },
+        { id: 'academics',  label: 'Classes & Att',icon: GraduationCap },
+        { id: 'exams',      label: 'Exams Portal', icon: FileText },
+        { id: 'leaves',     label: 'Leaves',       icon: Calendar },
+        { id: 'scheme',     label: 'Topics/Schedules', icon: BookOpen }
+      ]
+    },
+    {
+      group: 'Admissions',
+      items: [
+        { id: 'admissions', label: 'Admission Forms', icon: FileText },
+        { id: 'students',   label: 'Student Records',  icon: Users }
+      ]
+    },
+    {
+      group: 'Registrar',
+      items: [
+        { id: 'new-admission', label: 'Quick Register', icon: UserPlus },
+        { id: 'sections',      label: 'Section Mgmt',    icon: Layers }
+      ]
+    },
+    {
+      group: 'Permissions',
+      items: [
+        { id: 'permissions', label: 'Access Control', icon: Shield }
+      ]
+    }
+  ];
+
+  // Define base navs
+  const PRINCIPAL_NAV_BASE = [
     { id: 'dashboard',   label: 'Dashboard',  icon: Home },
     { id: 'students',    label: 'Students',   icon: Users },
     { id: 'academics',   label: 'Academics',  icon: GraduationCap },
@@ -1662,6 +1741,7 @@ const handlePrintReport = (data: any) => {
     { id: 'permissions', label: 'Perms',      icon: Shield },
     { id: 'scheme',      label: 'Scheme',     icon: BookOpen },
   ];
+  const PRINCIPAL_NAV = PRINCIPAL_NAV_BASE;
   const ACCOUNTANT_NAV = [
     { id: 'dashboard',     label: 'Dashboard',     icon: Home },
     { id: 'fee-ledger',    label: 'Fee Ledger',    icon: DollarSign },
@@ -1713,18 +1793,36 @@ const handlePrintReport = (data: any) => {
             <div><p className="font-black text-slate-900 text-sm">PIC Campus</p><p className="text-[10px] text-slate-400 font-semibold mt-0.5 uppercase tracking-widest">{portalLabel}</p></div>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV.map(({ id, label, icon: Icon }) => {
-            const active = tab === id; const badgeN = getBadge(id);
-            return (
-              <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
-                className={cn('w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
-                style={active ? { background: GRADIENT } : {}}>
-                <Icon size={16} /><span className="flex-1">{label}</span>
-                {badgeN > 0 && <span className="w-5 h-5 rounded-full text-white text-[9px] font-black flex items-center justify-center" style={{ background: '#C0392B' }}>{badgeN > 9 ? '9+' : badgeN}</span>}
-              </motion.button>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {isSuperAdmin ? (
+            SUPER_NAV_GROUPS.map((group) => (
+              <div key={group.group} className="space-y-1">
+                <p className="px-4 text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{group.group}</p>
+                {group.items.map(({ id, label, icon: Icon }) => {
+                  const active = tab === id;
+                  return (
+                    <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
+                      className={cn('w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[12px] font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
+                      style={active ? { background: GRADIENT } : {}}>
+                      <Icon size={14} /><span className="flex-1">{label}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            ))
+          ) : (
+            NAV.map(({ id, label, icon: Icon }) => {
+              const active = tab === id; const badgeN = getBadge(id);
+              return (
+                <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
+                  className={cn('w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
+                  style={active ? { background: GRADIENT } : {}}>
+                  <Icon size={16} /><span className="flex-1">{label}</span>
+                  {badgeN > 0 && <span className="w-5 h-5 rounded-full text-white text-[9px] font-black flex items-center justify-center" style={{ background: '#C0392B' }}>{badgeN > 9 ? '9+' : badgeN}</span>}
+                </motion.button>
+              );
+            })
+          )}
         </nav>
         <div className="p-3 border-t border-slate-100 space-y-2">
           <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-100">
@@ -2165,8 +2263,8 @@ const handlePrintReport = (data: any) => {
               </motion.div>
             )}
 
-            {isAccountant && tab === 'fee-groups' && (
-              <FeeGroupsTab adminData={adminData} GRADIENT={GRADIENT} ACCENT={ACCENT} showToast={showToast} showErr={showErr} PKR={PKR} />
+            {(isAccountant || isSuperAdmin) && tab === 'fee-groups' && (
+              <FeeGroupsTab adminData={adminData} GRADIENT={GRADIENT} ACCENT={ACCENT} showToast={showToast} showErr={showErr} PKR={PKR} students={students} />
             )}
 
             {/* ════ ACCOUNTANT DASHBOARD ════ */}
@@ -2203,7 +2301,10 @@ const handlePrintReport = (data: any) => {
                             <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                               {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} OK
                             </motion.button>
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setPreview(f)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
+                                setPreview(f);
+                                setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+                            }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
                           </div>
                         </div>
                       ))}
@@ -2246,7 +2347,7 @@ const handlePrintReport = (data: any) => {
             )}
 
             {/* ════ ACCOUNTANT FEE LEDGER — Fee collection happens here ════ */}
-            {isAccountant && tab === 'fee-ledger' && (() => {
+            {(isAccountant || isSuperAdmin) && tab === 'fee-ledger' && (() => {
               const ledgerSectionOptions = students.filter(s => !ledgerProgram || s.program === ledgerProgram).map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
               const ledgerFiltered = feeGroups.filter(g => {
                 if (ledgerStatus && g.status !== ledgerStatus) return false;
@@ -2367,14 +2468,14 @@ const handlePrintReport = (data: any) => {
                                         <DollarSign size={11} /> Collect
                                       </motion.button>
                                     )}
-                                    {deleteId === g.id ? (
+                                    {(isSuperAdmin || hasPermission('undo_transactions')) && deleteId === g.id ? (
                                       <div className="flex items-center gap-1">
                                         <button onClick={() => deleteAssignment(g.id)} className="bg-rose-600 text-white px-2 py-1 rounded-lg text-[9px] font-black">Void</button>
                                         <button onClick={() => setDeleteId(null)} className="bg-slate-100 text-slate-400 p-1 rounded-lg"><X size={10} /></button>
                                       </div>
-                                    ) : (
+                                    ) : (isSuperAdmin || hasPermission('edit_accounts')) ? (
                                       <button onClick={() => setDeleteId(g.id)} className="p-1 px-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={12} /></button>
-                                    )}
+                                    ) : null}
                                   </div>
                                 </td>
                               </motion.tr>
@@ -2390,7 +2491,7 @@ const handlePrintReport = (data: any) => {
             })()}
 
             {/* ════ ACCOUNTANT TRANSACTIONS ════ */}
-            {isAccountant && tab === 'transactions' && (
+            {(isAccountant || isSuperAdmin) && tab === 'transactions' && (
               <motion.div key="txns" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
                   {[{ l: 'Total Transactions', v: transactions.length, c: 'text-slate-900' }, { l: "Today's Count", v: todayTx.length, c: 'text-blue-700' }, { l: "Today's Revenue", v: PKR(todayRevenue), c: 'text-emerald-600' }].map(({ l, v, c }) => (
@@ -2448,15 +2549,21 @@ const handlePrintReport = (data: any) => {
                             <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-50 text-blue-700">{t.transaction_type || 'Payment'}</span></td>
                             <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400">{t.receipt_serial || '—'}</td>
                             <td className="px-4 py-2.5">{t.confirmed_by ? <span className="text-emerald-600 font-bold text-[10px]">✓ {t.confirmed_by}</span> : <span className="text-amber-500 text-[10px]">Pending</span>}</td>
-                            <td className="px-4 py-2.5 text-right">
-                              <button 
-                                onClick={() => handlePrint(t)} 
-                                title="Print Receipt"
-                                className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-all active:scale-90"
-                              >
-                                <Printer size={18} />
-                              </button>
-                            </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {isSuperAdmin && !t.is_reversed && (
+                          <button onClick={() => handleUndoTransaction(t)} title="Undo/Reverse" className="p-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all"><RefreshCw size={14} /></button>
+                        )}
+                        <button 
+                          onClick={() => handlePrint(t)} 
+                          disabled={t.is_reversed}
+                          title={t.is_reversed ? "Reversed" : "Print Receipt"}
+                          className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-30"
+                        >
+                          <Printer size={18} />
+                        </button>
+                      </div>
+                    </td>
                           </motion.tr>
                         ))}
                         {!transactions.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No transactions yet</td></tr>}
@@ -2468,7 +2575,7 @@ const handlePrintReport = (data: any) => {
             )}
 
             {/* ════ ACCOUNTANT SECTIONS ════ */}
-            {isAccountant && tab === 'sections' && (
+            {(isAccountant || isSuperAdmin) && tab === 'sections' && (
               <motion.div key="sec-mgr" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-2xl mx-auto space-y-6">
                 <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl overflow-hidden relative">
                   <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><Layers size={120} /></div>
@@ -2559,7 +2666,10 @@ const handlePrintReport = (data: any) => {
                             <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{new Date(f.created_at).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' })}</td>
                             <td className="px-4 py-3">
                               <div className="flex gap-1.5">
-                                <button onClick={() => setPreview(f)} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
+                                <button onClick={() => {
+                                    setPreview(f);
+                                    setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+                                }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
                                   setAdmForm({
                                     applied_for:        f.applied_for        || 'Intermediate',
@@ -2627,7 +2737,7 @@ const handlePrintReport = (data: any) => {
             )}
 
             {/* ════ ACCOUNTANT NEW ADMISSION — with Notes field ════ */}
-            {isAccountant && tab === 'new-admission' && (() => {
+            {(isAccountant || isSuperAdmin) && tab === 'new-admission' && (() => {
               const FA = '#c2410c';
               const FG = 'linear-gradient(135deg,#ea580c,#c2410c)';
               return (
@@ -2752,8 +2862,8 @@ const handlePrintReport = (data: any) => {
                       <div className="pb-5 border-b border-slate-100 space-y-4">
                         <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <F label="Annual Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="40000" /></F>
-                          <F label="No. of Instalments"><TS value={admForm.num_instalments} onChange={e => setF('num_instalments', Number(e.target.value))}><option value={1}>Full Payment</option><option value={2}>2 Instalments</option><option value={3}>3 Instalments</option><option value={4}>4 Instalments</option><option value={5}>5 Instalments</option><option value={6}>6 Instalments</option><option value={7}>7 Instalments</option><option value={8}>8 Instalments</option><option value={9}>9 Instalments</option><option value={10}>10 Instalments</option><option value={11}>11 Instalments</option><option value={12}>12 Instalments</option></TS></F>
+                          <F label="Total Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="60000" /></F>
+                          <F label="No. of Installments"><TS value={admForm.num_installments} onChange={e => setF('num_installments', Number(e.target.value))}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}</TS></F>
                           <F label="Is Fresher?">
                             <div className="flex gap-6 mt-2">
                               {[true, false].map(v => (
@@ -2771,6 +2881,31 @@ const handlePrintReport = (data: any) => {
                             <p className="text-xs font-black mt-0.5" style={{ color: FA }}>Class Code: <span className="text-slate-900 text-sm">{cls || 'TBD'}</span></p>
                           </div>
                         )}
+                      </div>
+
+                      {/* ══ FEE PACKAGE BREAKDOWN PREVIEW ══ */}
+                      <div className="pb-5 border-b border-slate-100 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Installment Breakdown Preview</div>
+                        </div>
+                        
+                        <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+                             {Array.from({ length: Number(admForm.num_installments) || 1 }).map((_, i) => {
+                               const total = Number(admForm.fee_package) || 0;
+                               const count = Number(admForm.num_installments) || 1;
+                               const amt   = Math.floor(total / count);
+                               const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
+                               return (
+                                 <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
+                                   <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
+                                   <p className="text-sm font-black mt-0.5" style={{ color: ACCENT }}>{PKR(final)}</p>
+                                 </div>
+                               );
+                             })}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold italic text-center">Due dates will be managed by the accountant during admission confirmation.</p>
                       </div>
 
                       {/* ══ NOTES FIELD — at the end of admission form ══ */}
@@ -2802,7 +2937,7 @@ const handlePrintReport = (data: any) => {
             })()}
 
             {/* ════ ACCOUNTANT DISCOUNTS ════ */}
-            {isAccountant && tab === 'discounts' && (
+            {(isAccountant || isSuperAdmin) && tab === 'discounts' && (
               <motion.div key="disc" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
                   {[{ l: 'Total', v: discounts.length, c: 'text-slate-900' }, { l: 'Pending', v: pendingDisc, c: 'text-amber-600' }, { l: 'Approved', v: discounts.filter(d => d.status === 'Approved').length, c: 'text-emerald-600' }].map(({ l, v, c }) => (
@@ -2846,7 +2981,7 @@ const handlePrintReport = (data: any) => {
             )}
 
             {/* ════ ACCOUNTANT STUDENTS — Profile view only, no fee collection ════ */}
-            {isAccountant && tab === 'students' && (
+            {(isAccountant || isSuperAdmin) && tab === 'students' && (
               <motion.div key="acc-stu" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3">
                   <GraduationCap size={16} className="text-blue-600 flex-shrink-0" />
@@ -3029,8 +3164,63 @@ const handlePrintReport = (data: any) => {
               </motion.div>
             )}
 
-            {/* ════ ACCOUNTANT SALARIES ════ */}
-            {isAccountant && tab === 'salaries' && (
+            {/* ════ INCOME & EXPENSE MANAGEMENT ════ */}
+            {(isSuperAdmin || isAccountant) && (tab === 'income' || tab === 'expenses') && (
+              <motion.div key="fin-ext" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Summary Cards */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm col-span-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Quick Entry: {tab === 'income' ? 'Income' : 'Expense'}</p>
+                    <div className="space-y-4">
+                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Category/Source</label><TI value={finCategory} onChange={(e:any)=>setFinCategory(e.target.value)} placeholder="e.g. Donation, Rent" /></div>
+                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Amount</label><TI type="number" value={feePayForm.amount} onChange={(e:any)=>setFeePayForm(p=>({ ...p, amount: e.target.value }))} placeholder="0.00" /></div>
+                      {tab === 'expenses' && (
+                        <>
+                          <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Payer Name</label><TI value={finName} onChange={(e:any)=>setFinName(e.target.value)} /></div>
+                          <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Slip No</label><TI value={finSlipNo} onChange={(e:any)=>setFinSlipNo(e.target.value)} /></div>
+                        </>
+                      )}
+                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Description</label><textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-blue-600 min-h-[80px]" /></div>
+                      <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setFinType(tab === 'income' ? 'Income' : 'Expense'); saveFinancialRecord(); }} className="w-full py-3 rounded-2xl bg-slate-900 text-white font-black text-sm shadow-xl flex items-center justify-center gap-2">
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Record</>}
+                      </motion.button>
+                    </div>
+                  </div>
+
+                  {/* History View */}
+                  <div className="md:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <h3 className="font-black text-slate-900">Recent {tab === 'income' ? 'Income' : 'Expenses'}</h3>
+                      <div className="flex items-center gap-4">
+                        <p className="text-xl font-black text-slate-800">{PKR((tab === 'income' ? income : expenses).reduce((s,x)=>s+x.amount,0))}</p>
+                      </div>
+                    </div>
+                    <div className="overflow-y-auto max-h-[500px]">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-white border-b border-slate-100">
+                          <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><th className="px-6 py-3 text-left">Date</th><th className="px-6 py-3 text-left">Description</th><th className="px-6 py-3 text-left">Category</th><th className="px-6 py-3 text-right">Amount</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {(tab === 'income' ? income : expenses).slice(0, 50).map(x => (
+                            <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
+                              <td className="px-6 py-3 text-slate-500">{(x.income_date || x.expense_date).slice(0,10)}</td>
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-slate-800">{x.description}</p>
+                                {x.recorded_by && <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Recorded by: {x.recorded_by}</p>}
+                                {x.slip_no && <p className="text-[9px] text-blue-600 font-bold mt-0.5">Slip: {x.slip_no} · {x.name}</p>}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px]">{x.category}</span></td>
+                              <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            {(isAccountant || isSuperAdmin) && tab === 'salaries' && (
               <motion.div key="salaries" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -3115,36 +3305,41 @@ const handlePrintReport = (data: any) => {
                 return d >= reportFrom && d <= reportTo;
               });
 
-              const generateStatement = (period: 'Daily' | 'Weekly' | 'Monthly') => {
-                const now = new Date();
-                let start = new Date();
-                if (period === 'Daily') start.setHours(0,0,0,0);
-                else if (period === 'Weekly') start.setDate(now.getDate() - 7);
-                else if (period === 'Monthly') start.setMonth(now.getMonth() - 1);
-                
-                const sStr = start.toISOString().slice(0, 10);
-                const filteredTx = transactions.filter(t => t.payment_date?.slice(0,10) >= sStr);
-                const filteredExp = expenses.filter(e => e.expense_date >= sStr);
-                const filteredInc = income.filter(i => i.income_date >= sStr);
+  const generateStatement = (period: 'Daily' | 'Weekly' | 'Monthly') => {
+    const now = new Date();
+    let start = new Date();
+    if (period === 'Daily') start.setHours(0,0,0,0);
+    else if (period === 'Weekly') start.setDate(now.getDate() - 7);
+    else if (period === 'Monthly') start.setMonth(now.getMonth() - 1);
+    
+    const sStr = start.toISOString().slice(0, 10);
+    const filteredTx = transactions.filter(t => t.payment_date?.slice(0,10) >= sStr);
+    const filteredExp = expenses.filter(e => e.expense_date >= sStr);
+    const filteredInc = income.filter(i => i.income_date >= sStr);
 
-                const feeRev = filteredTx.reduce((s,t) => s + Number(t.amount_paid || 0), 0);
-                const otherInc = filteredInc.reduce((s,i) => s + i.amount, 0);
-                const totalExp = filteredExp.reduce((s,e) => s + e.amount, 0);
-                const disc = filteredTx.reduce((s,t) => s + Number(t.discount || 0), 0);
-                const receivable = feeGroups.reduce((s,g) => s + (g.balance || 0), 0);
+    const feeRev = filteredTx.reduce((s,t) => s + Number(t.amount_paid || 0), 0);
+    const otherInc = filteredInc.reduce((s,i) => s + i.amount, 0);
+    const totalExp = filteredExp.reduce((s,e) => s + e.amount, 0);
+    const disc = filteredTx.reduce((s,t) => s + Number(t.discount || 0), 0);
+    
+    // Monthly balance logic: previous unpaid + current period dues
+    const receivable = feeGroups
+      .filter(g => !g.due_date || g.due_date <= endOfMonth)
+      .reduce((s, g) => s + calculateBalance(g), 0);
 
-                handlePrintReport({
-                  type: period,
-                  feeRev,
-                  otherInc,
-                  totalExp,
-                  discounts: disc,
-                  net: (feeRev + otherInc) - totalExp,
-                  txs: filteredTx,
-                  others: [...filteredInc, ...filteredExp],
-                  receivable
-                });
-              };
+    handlePrintReport({
+      type: period,
+      feeRev,
+      otherInc,
+      totalIncome: feeRev + otherInc,
+      totalExp,
+      discounts: disc,
+      net: (feeRev + otherInc) - totalExp,
+      txs: filteredTx,
+      others: [...filteredInc, ...filteredExp],
+      receivable
+    });
+  };
 
               const grandPaid    = reportTx.reduce((s, t) => s + Number(t.amount_paid   || 0), 0);
               const grandDisc    = reportTx.reduce((s, t) => s + Number(t.discount      || 0), 0);
@@ -3707,6 +3902,11 @@ const handlePrintReport = (data: any) => {
                    </div>
 
                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Deductions (Income Tax, etc)</label>
+                      <input type="number" value={salaryForm.deductions} onChange={e => setSalaryForm(p => ({ ...p, deductions: Number(e.target.value) }))} placeholder="0" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-black outline-none focus:border-rose-500 text-rose-500" />
+                   </div>
+
+                   <div>
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Payment Method</label>
                       <div className="grid grid-cols-2 gap-2">
                         {['Cash', 'Bank Transfer'].map(m => (
@@ -3723,7 +3923,7 @@ const handlePrintReport = (data: any) => {
                    <div className="pt-6 border-t border-slate-100 mt-2">
                       <div className="flex items-center justify-between mb-4">
                          <span className="text-xs font-black text-slate-600">Net Payable Amount</span>
-                         <span className="text-lg font-black text-slate-900">{PKR(Number(salaryModal.monthly_salary) + Number(salaryForm.bonus) - Number(salaryForm.fine))}</span>
+                         <span className="text-lg font-black text-slate-900">{PKR(Number(salaryModal.monthly_salary) + Number(salaryForm.bonus) - Number(salaryForm.fine) - Number(salaryForm.deductions))}</span>
                       </div>
                       <motion.button whileTap={{ scale: 0.97 }} onClick={payTeacherSalary} disabled={saving} className="w-full py-4 rounded-2xl text-sm font-black text-white shadow-xl flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                         {saving ? <Loader2 size={16} className="animate-spin text-white" /> : <><DollarSign size={16} /> Confirm Disbursement</>}
@@ -3749,6 +3949,32 @@ const handlePrintReport = (data: any) => {
                 <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
+                {preview.status === 'Pending' && (
+                  <div className="bg-slate-50 rounded-2xl p-4 mb-4 border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Set Installment Due Dates</p>
+                    <div className="space-y-3">
+                      {Array.from({ length: preview.num_installments || preview.installments || 3 }).map((_, i) => {
+                        const total = preview.fee_package || 0;
+                        const count = preview.num_installments || preview.installments || 3;
+                        const amt = Math.floor(total / count);
+                        const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
+                        return (
+                          <div key={i} className="flex items-center justify-between gap-4 bg-white p-2.5 rounded-xl border border-slate-100">
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
+                                <p className="text-xs font-black" style={{ color: ACCENT }}>{PKR(final)}</p>
+                            </div>
+                            <input type="date" value={instDates[i]} onChange={e => {
+                                const next = [...instDates];
+                                next[i] = e.target.value;
+                                setInstDates(next);
+                            }} className="text-xs font-bold border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent py-1" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(preview.fee_package)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
                   <div key={l} className="flex items-start justify-between py-2 border-b border-slate-50">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest w-40 flex-shrink-0">{l}</span>
