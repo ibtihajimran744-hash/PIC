@@ -1186,7 +1186,8 @@ const handlePrintReport = (data: any) => {
           supabase.from('income').select('*').order('income_date', { ascending: false }).limit(100),
           supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
         ]);
-        setFeeGroups(sf1.data || []); setTransactions(sf2.data || []); setDiscounts(sf3.data || []);
+        setFeeGroups((sf1.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
+        setTransactions(sf2.data || []); setDiscounts(sf3.data || []);
         setExpenses(sf4.data || []); setIncome(sf5.data || []);
         if (sf8.data?.[0]) setNextRoll(sf8.data[0].roll_no + 1);
       }
@@ -1220,7 +1221,9 @@ const handlePrintReport = (data: any) => {
         supabase.from('teachers').select('*').order('full_name'),
         supabase.from('teacher_salaries').select('*').order('payment_date', { ascending: false }).limit(100),
       ]);
-      setStudents(s1.data || []); setFeeGroups(s2.data || []); setTransactions(s3.data || []);
+      setStudents(s1.data || []);
+      setFeeGroups((s2.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
+      setTransactions(s3.data || []);
       setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
       setAdmForms(s7.data || []); setTeachers(s9.data || []); setSalaries(s10.data || []);
       if (s8.data?.[0]) setNextRoll(s8.data[0].roll_no + 1);
@@ -1293,7 +1296,7 @@ const handlePrintReport = (data: any) => {
       supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('due_date'),
     ]);
     setStudentProgress(progress.data || []);
-    setStuFeeGroups(fees.data || []);
+    setStuFeeGroups((fees.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
     setStuFeeLoading(false);
   };
 
@@ -3269,11 +3272,19 @@ const handlePrintReport = (data: any) => {
                                           {g.due_date && <span className="text-[11px] text-slate-400">Due: {g.due_date}</span>}
                                         </div>
                                       </div>
-                                      <span className="font-black text-sm ml-3 flex-shrink-0" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>{PKR(g.balance || 0)}</span>
+                                      <div className="flex flex-col items-end gap-2 ml-3 flex-shrink-0">
+                                        <span className="font-black text-sm" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>{PKR(g.balance || 0)}</span>
+                                        {g.status !== 'Paid' && g.balance > 0 && (
+                                          <button onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
+                                            className="px-3 py-1 rounded-lg text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center gap-1">
+                                            <DollarSign size={10} /> Collect
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   ))}
                                   <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                    <p className="text-xs text-slate-500 font-bold">To collect payment, use the <button onClick={() => { setSelectedAccStu(null); setTab('fee-ledger'); }} className="text-blue-600 underline font-black">Fee Ledger</button> tab.</p>
+                                    <p className="text-xs text-slate-400 font-bold italic">Individual fee records for this student.</p>
                                   </div>
                                 </div>
                               )
