@@ -65,6 +65,7 @@ const EMPTY_FORM: any = {
   inter_board:'BISE Gujranwala', inter_division:'',
   graduation_year:'', graduation_roll_no:'', graduation_marks:'', graduation_board:'', graduation_division:'',
   fee_package: 8000, student_type: 'Regular', is_fresher: true, num_installments: 1,
+  include_summer_camp: true, include_uniform_fee: true,
   notes: '',
 };
 
@@ -1367,6 +1368,8 @@ const handlePrintReport = (data: any) => {
       installments:       Number(admForm.num_installments),
       num_installments:   Number(admForm.num_installments),
       installment_dates:  instDates,
+      include_summer_camp: !!admForm.include_summer_camp,
+      include_uniform_fee: !!admForm.include_uniform_fee,
       suggested_section:  sec,
       suggested_class:    cls,
       notes:              admForm.notes || '',
@@ -1447,9 +1450,10 @@ const handlePrintReport = (data: any) => {
           const username = `stu_${roll}`, password = `PIC${roll}`;
 
           let totalPackage = 0;
-          if (studentType === 'Summer Camp') totalPackage = 7000;
-          else {
-              totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
+          if (studentType === 'Summer Camp') {
+              totalPackage = 7000;
+          } else {
+              totalPackage = (Number(f.fee_package) || 0) + (f.include_summer_camp ? 7000 : 0) + (f.include_uniform_fee ? 1000 : 0);
           }
 
           const { error: se } = await supabase.from('students').insert([{
@@ -1462,7 +1466,7 @@ const handlePrintReport = (data: any) => {
           if (se) throw se;
       } else {
           // Update existing
-          let totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
+          let totalPackage = (Number(f.fee_package) || 0) + (f.include_summer_camp ? 7000 : 0) + (f.include_uniform_fee ? 1000 : 0);
           await supabase.from('students').update({
               total_package: totalPackage,
               status: 'Active'
@@ -1492,13 +1496,18 @@ const handlePrintReport = (data: any) => {
               });
           }
 
-          const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
-          if (!exSC) {
-              ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
+          if (f.include_summer_camp) {
+              const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
+              if (!exSC) {
+                  ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
+              }
           }
-          const { data: exUN } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Uniform Fee').maybeSingle();
-          if (!exUN) {
-              ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
+          
+          if (f.include_uniform_fee) {
+              const { data: exUN } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Uniform Fee').maybeSingle();
+              if (!exUN) {
+                  ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
+              }
           }
       }
 
@@ -2080,7 +2089,10 @@ const handlePrintReport = (data: any) => {
                         </div>
                         <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
                           <span className="text-2xl">{selectedStudent.current_badge?.split(' ')[0] || '🥉'}</span>
-                          <div><p className="font-black text-slate-900 text-sm">{selectedStudent.current_badge || '🥉 Newcomer'}</p><p className="text-xs text-slate-400">{(selectedStudent.total_xp || 0).toLocaleString()} XP earned</p></div>
+                          <div className="flex-1"><p className="font-black text-slate-900 text-sm">{selectedStudent.current_badge || '🥉 Newcomer'}</p><p className="text-xs text-slate-400">{(selectedStudent.total_xp || 0).toLocaleString()} XP earned</p></div>
+                          <motion.button whileTap={{scale:0.96}} onClick={() => setSelectedLedgerRoll(selectedStudent.roll_no)} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-700 hover:border-blue-300 hover:text-blue-600 shadow-sm flex items-center gap-2 transition-all">
+                             <Receipt size={14} /> History
+                          </motion.button>
                         </div>
                       </div>
                     </motion.div>
@@ -3018,6 +3030,8 @@ const handlePrintReport = (data: any) => {
                                     graduation_division:f.graduation_division|| '',
                                     fee_package:        f.fee_package        || 8000,
                                     student_type:       f.student_type       || 'Regular',
+                                    include_summer_camp: f.include_summer_camp ?? true,
+                                    include_uniform_fee: f.include_uniform_fee ?? true,
                                     is_fresher:         f.is_fresher         ?? true,
                                     num_installments:   f.num_installments   || f.installments    || 1,
                                     notes:              f.notes              || '',
@@ -3188,6 +3202,21 @@ const handlePrintReport = (data: any) => {
                                   {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}</option>)}
                                 </TS>
                               </F>
+                            </div>
+
+                            <div className="flex flex-wrap gap-4 py-2">
+                               <label className="flex items-center gap-2 cursor-pointer group" onClick={() => setF('include_summer_camp', !admForm.include_summer_camp)}>
+                                  <div className={cn("w-5 h-5 rounded border-2 flex items-center justify-center transition-all", admForm.include_summer_camp ? "border-orange-600 bg-orange-600" : "border-slate-300 bg-white")}>
+                                     {admForm.include_summer_camp && <Check size={12} className="text-white" />}
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-700 group-hover:text-orange-700 transition-colors">Include Summer Camp Fee (7,000)</span>
+                               </label>
+                               <label className="flex items-center gap-2 cursor-pointer group" onClick={() => setF('include_uniform_fee', !admForm.include_uniform_fee)}>
+                                  <div className={cn("w-5 h-5 rounded border-2 flex items-center justify-center transition-all", admForm.include_uniform_fee ? "border-emerald-600 bg-emerald-600" : "border-slate-300 bg-white")}>
+                                     {admForm.include_uniform_fee && <Check size={12} className="text-white" />}
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-700 transition-colors">Include Uniform Fee (1,000)</span>
+                               </label>
                             </div>
 
                             {Number(admForm.num_installments) >= 1 && (
