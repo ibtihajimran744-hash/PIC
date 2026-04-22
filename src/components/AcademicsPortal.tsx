@@ -135,7 +135,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('scheme_of_study').select('*').order('created_at', { ascending: false }),
       supabase.from('teachers').select('*').order('full_name'),
       supabase.from('teacher_profiles').select('*').order('full_name'),
-      supabase.from('students').select('roll_no,full_name,class_section,program,part,status,total_xp,current_badge,profile_xp').order('roll_no'),
+      supabase.from('students').select('roll_no,full_name,class_section,program,part,status,total_xp,current_badge,profile_xp').neq('status', 'Deleted').order('roll_no'),
       supabase.from('student_course_progress').select('*').order('last_updated', { ascending: false }),
       supabase.from('timetable').select('*').order('start_time').limit(200),
       supabase.from('academic_announcements').select('*').order('created_at', { ascending: false }),

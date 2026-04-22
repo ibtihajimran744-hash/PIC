@@ -129,7 +129,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
         const raw = teacherData.assigned_classes || '';
         const sections = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
         if (sections.length === 0) { setStudentsLoading(false); return; }
-        const { data, error } = await supabase.from('students').select('*').in('class_section', sections).order('full_name');
+        const { data, error } = await supabase.from('students').select('*').in('class_section', sections).neq('status', 'Deleted').order('full_name');
         if (error) throw error;
         setAssignedStudents(data || []);
       } catch (error) {

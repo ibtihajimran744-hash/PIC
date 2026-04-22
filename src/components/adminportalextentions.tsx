@@ -1000,6 +1000,7 @@ export const ExcelReportsTab: React.FC<ExcelReportsTabProps> = ({
     let filename = '';
 
     const filterStudents = students.filter(s => {
+      if (s.status === 'Deleted') return false;
       if (filterProg && s.program !== filterProg) return false;
       if (filterSec  && s.class_section !== filterSec)  return false;
       return true;
@@ -1018,6 +1019,7 @@ export const ExcelReportsTab: React.FC<ExcelReportsTabProps> = ({
       feeGroups
         .filter(g => {
           const st = students.find(s => s.roll_no === g.student_roll);
+          if (!st || st.status === 'Deleted') return false;
           if (filterProg && st?.program !== filterProg) return false;
           if (filterSec  && st?.class_section !== filterSec)  return false;
           return true;

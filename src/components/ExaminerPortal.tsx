@@ -115,7 +115,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('exam_invigilation').select('*').order('created_at', { ascending: false }),
       supabase.from('result_cards').select('*').order('generated_at', { ascending: false }),
       supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(300),
-      supabase.from('students').select('roll_no,full_name,class_section,program,part').order('roll_no'),
+      supabase.from('students').select('roll_no,full_name,class_section,program,part').neq('status', 'Deleted').order('roll_no'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept').order('full_name'),
       supabase.from('admin_users').select('id,full_name,role').order('full_name'),
     ]);

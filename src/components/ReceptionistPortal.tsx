@@ -78,7 +78,7 @@ export const ReceptionistPortal: React.FC<ReceptionistPortalProps> = ({ onLogout
     setLoading(true);
     try {
       const [s1, s2, s3, s4, s5] = await Promise.all([
-        supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,cell_no,current_badge,total_xp').order('full_name'),
+        supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,cell_no,current_badge,total_xp').neq('status', 'Deleted').order('full_name'),
         supabase.from('admission_forms').select('*').order('created_at', { ascending: false }).limit(60),
         supabase.from('admin_notifications').select('*').order('created_at', { ascending: false }).limit(20),
         supabase.from('visitor_log').select('*').order('created_at', { ascending: false }).limit(50),

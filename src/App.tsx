@@ -59,14 +59,18 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
       const { data: s1 } = await supabase
         .from('students').select('*')
         .eq('username', username.trim())
-        .eq('password', password.trim()).single();
+        .eq('password', password.trim())
+        .neq('status', 'Deleted')
+        .single();
       if (s1) { onLogin(s1, 'student'); return; }
 
       // ── 6. students — lowercase ──
       const { data: s2 } = await supabase
         .from('students').select('*')
         .eq('username', username.trim().toLowerCase())
-        .eq('password', password.trim()).single();
+        .eq('password', password.trim())
+        .neq('status', 'Deleted')
+        .single();
       if (s2) { onLogin(s2, 'student'); return; }
 
       setError('Invalid username or password');

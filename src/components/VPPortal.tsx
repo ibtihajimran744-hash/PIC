@@ -237,12 +237,12 @@ export const VPPortal: React.FC<VPPortalProps> = ({ onLogout, adminData }) => {
     setStats({ monthlyFee, outstanding, monthlyExp, monthlyInc, present, absent, attPct,
       totalStu: studs.filter(s=>s.status==='Active').length,
       unpaidStu: studs.filter(s=>s.status==='Active'&&s.paid_amount===0).length,
-      maleStudents: studs.filter(s=>s.gender==='Male').length,
-      femaleStudents: studs.filter(s=>s.gender==='Female').length,
+      maleStudents: studs.filter(s=>s.status !== 'Deleted' && s.gender==='Male').length,
+      femaleStudents: studs.filter(s=>s.status !== 'Deleted' && s.gender==='Female').length,
       netSurplus: monthlyFee+monthlyInc-monthlyExp,
     });
     setStudents(studs);
-    setTransactions(txns.slice(0,30).map((t:any)=>{ const st=studs.find((s:any)=>String(s.roll_no)===String(t.student_roll_link)); return {...t,student_name:st?.full_name,class_section:st?.class_section}; }));
+    setTransactions(txns.slice(0,30).map((t:any)=>{ const st=studs.find((s:any)=>String(s.roll_no)===String(t.student_roll_link)); return {...t,student_name:st?.status === 'Deleted' ? 'Unknown Student' : st?.full_name,class_section:st?.class_section}; }));
     setExpenses(exps); setIncomeList(incs);
     setDiscounts(s5.data||[]); setNotifications(s6.data||[]);
     setClassSummary(s7.data||[]); setSummerStudents(s8.data||[]);

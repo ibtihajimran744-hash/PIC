@@ -1788,11 +1788,14 @@ const handlePrintReport = (data: any) => {
     return Math.max(0, amount + fine - paid - discount);
   };
 
+  const nonDeletedRolls = new Set(students.filter(s => s.status !== 'Deleted').map(s => String(s.roll_no)));
+
   const totalBalance = feeGroups
+    .filter(g => nonDeletedRolls.has(String(g.student_roll)))
     .filter(g => !g.due_date || g.due_date <= endOfMonth)
     .reduce((s, g) => s + calculateBalance(g), 0);
     
-  const totalFines = feeGroups.reduce((s, g) => s + (g.fine || 0), 0);
+  const totalFines = feeGroups.filter(g => nonDeletedRolls.has(String(g.student_roll))).reduce((s, g) => s + (g.fine || 0), 0);
 
   const filteredStudents = students.filter(s => {
     if (s.status === 'Deleted') return false;
@@ -2514,7 +2517,7 @@ const handlePrintReport = (data: any) => {
                     <p className="text-xs font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-100">Total Outstanding: {PKR(totalOutstanding)}</p>
                   </div>
                   <div className="grid grid-cols-4 gap-3">
-                    {[{ l: 'Total Balanced', v: feeGroups.filter(g=>g.status === 'Paid').length, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: feeGroups.filter(g=>g.status === 'Partial').length, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid Items', v: feeGroups.filter(g=>g.status === 'Unpaid').length, c: '#C0392B', bg: 'bg-rose-50' }, { l: 'Students List', v: studentsWithFees.length, c: '#1e3a8a', bg: 'bg-blue-50' }].map(({ l, v, c, bg }) => (
+                    {[{ l: 'Total Balanced', v: feeGroups.filter(g=>nonDeletedRolls.has(String(g.student_roll)) && g.status === 'Paid').length, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: feeGroups.filter(g=>nonDeletedRolls.has(String(g.student_roll)) && g.status === 'Partial').length, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid Items', v: feeGroups.filter(g=>nonDeletedRolls.has(String(g.student_roll)) && g.status === 'Unpaid').length, c: '#C0392B', bg: 'bg-rose-50' }, { l: 'Students List', v: studentsWithFees.length, c: '#1e3a8a', bg: 'bg-blue-50' }].map(({ l, v, c, bg }) => (
                       <div key={l} className={cn('rounded-2xl p-4 border border-slate-100 text-center', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-xl font-black" style={{ color: c }}>{v}</p></div>
                     ))}
                   </div>
@@ -2847,7 +2850,7 @@ const handlePrintReport = (data: any) => {
                                   {t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' }) : '—'}
                                 </td>
                                 <td className="px-4 py-2.5" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
-                                  <p className="font-black text-slate-900 leading-none">{student?.full_name || 'Unknown Student'}</p>
+                                  <p className="font-black text-slate-900 leading-none">{student?.status === 'Deleted' ? 'Unknown Student' : student?.full_name || 'Unknown Student'}</p>
                                   <p className="text-[10px] font-bold mt-1" style={{ color: ACCENT }}>{t.student_roll_link}</p>
                                 </td>
                                 <td className="px-4 py-2.5 font-black text-emerald-600" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>

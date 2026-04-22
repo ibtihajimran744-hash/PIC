@@ -96,7 +96,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({ onLogout, 
   const loadAll = useCallback(async () => {
     setLoading(true);
     const [s1, s2, s3, s4, s5, s6, s7, s8, s9] = await Promise.all([
-      supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status').order('class_section').order('full_name'),
+      supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status').neq('status', 'Deleted').order('class_section').order('full_name'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept,attendance_rate,status,assigned_classes').order('full_name'),
       supabase.from('timetable').select('*').order('day_of_week').order('start_time'),
       supabase.from('homework').select('id,class_section,subject,title,description,due_date,created_at,teacher_id').order('due_date', { ascending: false }).limit(60),
