@@ -1193,7 +1193,17 @@ const handlePrintReport = (data: any) => {
       const present = (s5.data || []).filter((a: any) => a.status === 'Present').length;
       const absent  = (s5.data || []).filter((a: any) => a.status === 'Absent').length;
       const total   = (s5.data || []).length;
-      setStats({ totalStu: studs.filter(s => s.status === 'Active').length, maleStudents: studs.filter(s => s.gender === 'Male').length, femaleStudents: studs.filter(s => s.gender === 'Female').length, present, absent, attPct: total > 0 ? Math.round((present / total) * 100) : 0 });
+      
+      const activeStuds = studs.filter(s => s.status === 'Active');
+      const nonDeletedStuds = studs.filter(s => s.status !== 'Deleted');
+      
+      setStats({ 
+        totalStu: activeStuds.length, 
+        maleStudents: nonDeletedStuds.filter(s => s.gender === 'Male').length, 
+        femaleStudents: nonDeletedStuds.filter(s => s.gender === 'Female').length, 
+        present, absent, 
+        attPct: total > 0 ? Math.round((present / total) * 100) : 0 
+      });
       setStudents(studs); setClassSummary(s2.data || []); setNotifications(s3.data || []);
       setAdmForms(s4.data || []); setLeaveRequests(s6.data || []);
       setTeachers(s9.data || []); setSalaries(s10.data || []);
@@ -1785,6 +1795,7 @@ const handlePrintReport = (data: any) => {
   const totalFines = feeGroups.reduce((s, g) => s + (g.fine || 0), 0);
 
   const filteredStudents = students.filter(s => {
+    if (s.status === 'Deleted') return false;
     if (filterProgram && s.program !== filterProgram) return false;
     if (filterSection && s.class_section !== filterSection) return false;
     if (!searchQ) return true;
@@ -1793,7 +1804,7 @@ const handlePrintReport = (data: any) => {
   });
 
   const filteredSectionOptions = students
-    .filter(s => !filterProgram || s.program === filterProgram)
+    .filter(s => s.status !== 'Deleted' && (!filterProgram || s.program === filterProgram))
     .map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
   const filteredAdmForms = admForms.filter(f => !admFilter || f.status === admFilter);
 
@@ -2458,7 +2469,7 @@ const handlePrintReport = (data: any) => {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Students</p><p className="text-3xl font-black" style={{ color: ACCENT }}>{students.length}</p><p className="text-xs text-slate-400 mt-1">Enrolled this session</p></div>
+                  <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Students</p><p className="text-3xl font-black" style={{ color: ACCENT }}>{students.filter(s => s.status !== 'Deleted').length}</p><p className="text-xs text-slate-400 mt-1">Enrolled this session</p></div>
                   <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Session Revenue</p><p className="text-3xl font-black text-emerald-600">{PKR(transactions.reduce((s, t) => s + Number(t.amount_paid || 0), 0))}</p><p className="text-xs text-slate-400 mt-1">All transactions</p></div>
                 </div>
               </motion.div>
@@ -2467,6 +2478,7 @@ const handlePrintReport = (data: any) => {
             {/* ════ ACCOUNTANT FEE LEDGER — Fee collection happens here ════ */}
             {(isAccountant || isSuperAdmin) && tab === 'fee-ledger' && (() => {
               const studentsWithFees = students.filter(s => {
+                if (s.status === 'Deleted') return false;
                 const groups = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
                 if (groups.length === 0) return false;
                 
