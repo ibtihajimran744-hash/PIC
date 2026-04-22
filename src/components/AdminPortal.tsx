@@ -578,6 +578,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
   const [selectedLedgerRoll, setSelectedLedgerRoll] = useState<number | null>(null);
+  const [txnSearch, setTxnSearch] = useState('');
+  const [txnStatusFilter, setTxnStatusFilter] = useState('');
 
   const [distProgram, setDistProgram] = useState('');
   const [distPart,    setDistPart]    = useState(1);
@@ -2593,55 +2595,114 @@ const handlePrintReport = (data: any) => {
                                </div>
                             </div>
 
-                            <div className="space-y-3">
-                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                 <FileText size={12} /> Individual Fee Items
-                               </p>
-                               <div className="grid grid-cols-1 gap-3">
-                                  {selectedStudentFees.map(g => (
-                                    <div key={g.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all hover:border-blue-200">
-                                      <div className="flex items-center gap-4">
-                                        <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0", g.status==='Paid'?'bg-emerald-50 text-emerald-600':'bg-rose-50 text-rose-600')}>
-                                          {g.fees_group.includes('Uniform') ? <Shirt size={22} /> : g.fees_group.includes('Summer') ? <Sun size={22} /> : <CreditCard size={22} />}
-                                        </div>
-                                        <div>
-                                          <p className="font-black text-slate-900 text-sm">{g.fees_group}</p>
-                                          <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Code: {g.fees_code}</span>
-                                            {g.due_date && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">Due: {g.due_date}</span>}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                              {/* Left side: Fee Items */}
+                              <div className="space-y-4">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                  <FileText size={12} /> Fee Breakdown
+                                </p>
+                                <div className="space-y-3">
+                                   {selectedStudentFees.map(g => (
+                                     <div key={g.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col items-stretch gap-4 transition-all hover:border-blue-200">
+                                       <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-4">
+                                            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", g.status==='Paid'?'bg-emerald-50 text-emerald-600':'bg-rose-50 text-rose-600')}>
+                                              {g.fees_group.includes('Uniform') ? <Shirt size={20} /> : g.fees_group.includes('Summer') ? <Sun size={20} /> : <CreditCard size={20} />}
+                                            </div>
+                                            <div>
+                                              <p className="font-black text-slate-900 text-xs">{g.fees_group}</p>
+                                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Code: {g.fees_code}</p>
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-6 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0">
-                                        <div className="text-right flex-1 md:flex-initial">
-                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap">Total / Paid</p>
-                                          <p className="text-sm font-black text-slate-800">{PKR(g.amount)} / <span className="text-emerald-600">{PKR(g.paid)}</span></p>
-                                        </div>
-                                        <div className="text-right flex-1 md:flex-initial">
-                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap">Status</p>
-                                          <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black whitespace-nowrap inline-block', 
+                                          <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-black whitespace-nowrap', 
                                             g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>
                                             {g.status}
                                           </span>
-                                        </div>
-                                        <div className="flex gap-2">
-                                          {g.status !== 'Paid' && g.balance > 0 && (
-                                            <motion.button whileTap={{scale:0.95}} onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
-                                              className="px-4 py-2.5 rounded-xl text-xs font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-                                              style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                              <DollarSign size={13} /> Collect
-                                            </motion.button>
-                                          )}
-                                          {(isSuperAdmin || hasPermission('edit_accounts')) && (
-                                            <button onClick={() => setDeleteId(g.id)} className="w-10 h-10 rounded-xl bg-rose-50 text-rose-400 hover:text-rose-600 flex items-center justify-center transition-colors">
-                                              <Trash2 size={16} />
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                               </div>
+                                       </div>
+                                       <div className="flex items-center justify-between border-t border-slate-50 pt-3">
+                                         <div>
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Due Date</p>
+                                            <p className="text-[10px] font-bold text-slate-700">{g.due_date || '—'}</p>
+                                         </div>
+                                         <div className="text-right">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Payable / Paid</p>
+                                            <p className="text-[11px] font-black text-slate-800">{PKR(g.amount)} / <span className="text-emerald-600">{PKR(g.paid)}</span></p>
+                                         </div>
+                                       </div>
+                                       {g.status !== 'Paid' && g.balance > 0 && (
+                                         <motion.button whileTap={{scale:0.95}} onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
+                                           className="w-full py-2.5 rounded-xl text-[10px] font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                                           style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                           <DollarSign size={12} /> Collect {PKR(g.balance)}
+                                         </motion.button>
+                                       )}
+                                     </div>
+                                   ))}
+                                </div>
+                              </div>
+
+                              {/* Right side: Transaction History */}
+                              <div className="space-y-4">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                  <Receipt size={12} /> Detailed Payment Timeline
+                                </p>
+                                <div className="space-y-3">
+                                   {transactions
+                                     .filter(t => String(t.student_roll_link) === String(selectedStudent.roll_no))
+                                     .map(t => {
+                                       const group = feeGroups.find(g => g.id === t.fee_group_id);
+                                       return (
+                                         <div key={t.id} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col gap-3 hover:border-blue-100 transition-all">
+                                           <div className="flex items-center justify-between gap-4">
+                                              <div className="flex items-center gap-3">
+                                                 <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", t.is_reversed ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600')}>
+                                                   {t.is_reversed ? <RefreshCw size={16} /> : <CheckCircle size={16} />}
+                                                 </div>
+                                                 <div>
+                                                   <p className="font-black text-slate-900 text-[11px] flex items-center gap-2">
+                                                     {t.transaction_type || 'Payment'} 
+                                                     <span className="text-[8px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-100 uppercase tracking-tight">
+                                                       {t.payment_method}
+                                                     </span>
+                                                   </p>
+                                                   <p className="text-[9px] font-bold text-slate-400">{new Date(t.payment_date).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                                 </div>
+                                              </div>
+                                              <div className="text-right">
+                                                 <p className={cn("font-black text-sm", t.is_reversed ? 'text-rose-600 line-through' : 'text-emerald-600')}>{PKR(t.amount_paid)}</p>
+                                                 <p className="text-[9px] font-mono text-slate-400">{t.receipt_serial || 'NO-REF'}</p>
+                                              </div>
+                                           </div>
+                                           
+                                           <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                                              <div className="flex items-center gap-4">
+                                                <div>
+                                                   <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Entry By</p>
+                                                   <p className="text-[9px] font-bold text-slate-600 leading-none">{t.collected_by || 'System'}</p>
+                                                </div>
+                                                {group && (
+                                                  <div>
+                                                     <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Allocated To</p>
+                                                     <p className="text-[9px] font-bold text-blue-600 leading-none">{group.fees_group}</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              {!t.is_reversed && (
+                                                <button onClick={() => handlePrint(t)} className="flex items-center gap-1 text-[9px] font-black text-slate-400 hover:text-blue-600 transition-colors">
+                                                  <Printer size={10} /> Print Receipt
+                                                </button>
+                                              )}
+                                           </div>
+                                         </div>
+                                       );
+                                     })}
+                                   {transactions.filter(t => String(t.student_roll_link) === String(selectedStudent.roll_no)).length === 0 && (
+                                     <div className="py-10 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                                       <p className="text-xs text-slate-400 font-medium">No payments recorded for this student.</p>
+                                     </div>
+                                   )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                           
@@ -2657,88 +2718,166 @@ const handlePrintReport = (data: any) => {
             })()}
 
             {/* ════ ACCOUNTANT TRANSACTIONS ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'transactions' && (
-              <motion.div key="txns" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {[{ l: 'Total Transactions', v: transactions.length, c: 'text-slate-900' }, { l: "Today's Count", v: todayTx.length, c: 'text-blue-700' }, { l: "Today's Revenue", v: PKR(todayRevenue), c: 'text-emerald-600' }].map(({ l, v, c }) => (
-                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-xl font-black', c)}>{v}</p></div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between mb-2 px-2">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction History</p>
-                  <motion.button 
-                    id="printVoucherBtn"
-                    initial={{ scale: 0.9, opacity: 0 }} 
-                    animate={{ scale: 1, opacity: 1 }}
-                    onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
-                    className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
-                  >
-                    <Printer size={15} /> Print Selected ({selectedTxIds.length})
-                  </motion.button>
-                </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
-                    <table className="w-full text-xs min-w-[700px]">
-              <thead>
-                <tr className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                  <th className="px-4 py-3 border-b border-slate-100">
-                    <input 
-                      type="checkbox" 
-                      onChange={(e) => setSelectedTxIds(e.target.checked ? transactions.map(t => t.id) : [])}
-                      checked={selectedTxIds.length === transactions.length && transactions.length > 0}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </th>
-                  {['Date', 'Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Confirmed By', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t, i) => (
-                  <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.008, 0.3) }} className={cn('border-b border-slate-50 hover:bg-slate-50/50', selectedTxIds.includes(t.id) && 'bg-blue-50/50')}>
-                    <td className="px-4 py-2.5">
-                      <input 
-                        type="checkbox" 
-                        className="transaction-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        data-id={t.id}
-                        checked={selectedTxIds.includes(t.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedTxIds(p => [...p, t.id]);
-                          else setSelectedTxIds(p => p.filter(id => id !== t.id));
-                        }}
-                      />
-                    </td>
-                            <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' }) : '—'}</td>
-                            <td className="px-4 py-2.5 font-black" style={{ color: ACCENT }}>{t.student_roll_link}</td>
-                            <td className="px-4 py-2.5 font-black text-emerald-600">{PKR(Number(t.amount_paid))}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{t.payment_method || '—'}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{t.collected_by || '—'}</td>
-                            <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-50 text-blue-700">{t.transaction_type || 'Payment'}</span></td>
-                            <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400">{t.receipt_serial || '—'}</td>
-                            <td className="px-4 py-2.5">{t.confirmed_by ? <span className="text-emerald-600 font-bold text-[10px]">✓ {t.confirmed_by}</span> : <span className="text-amber-500 text-[10px]">Pending</span>}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {isSuperAdmin && !t.is_reversed && (
-                          <button onClick={() => handleUndoTransaction(t)} title="Undo/Reverse" className="p-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all"><RefreshCw size={14} /></button>
-                        )}
-                        <button 
-                          onClick={() => handlePrint(t)} 
-                          disabled={t.is_reversed}
-                          title={t.is_reversed ? "Reversed" : "Print Receipt"}
-                          className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-30"
-                        >
-                          <Printer size={18} />
-                        </button>
+            {(isAccountant || isSuperAdmin) && tab === 'transactions' && (() => {
+              const filteredTx = transactions.filter(t => {
+                const s = students.find(st => String(st.roll_no) === String(t.student_roll_link));
+                if (txnSearch) {
+                  const q = txnSearch.toLowerCase();
+                  const matchesRoll = String(t.student_roll_link).includes(q);
+                  const matchesName = s?.full_name?.toLowerCase().includes(q);
+                  if (!matchesRoll && !matchesName) return false;
+                }
+                if (txnStatusFilter) {
+                  if (txnStatusFilter === 'Confirmed' && !t.confirmed_by) return false;
+                  if (txnStatusFilter === 'Pending' && t.confirmed_by) return false;
+                  if (txnStatusFilter === 'Reversed' && !t.is_reversed) return false;
+                }
+                return true;
+              });
+
+              return (
+                <motion.div key="txns" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Transactions</p>
+                      <p className="text-xl font-black text-slate-900">{transactions.length}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Today's Revenue</p>
+                      <p className="text-xl font-black text-emerald-600">{PKR(todayRevenue)}</p>
+                    </div>
+                    <div className="md:col-span-2 bg-white rounded-2xl border border-slate-100 p-3 shadow-sm flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                        <input 
+                          value={txnSearch} 
+                          onChange={e => setTxnSearch(e.target.value)} 
+                          placeholder="Search Name or Roll #..." 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2 pl-9 pr-4 text-xs font-bold outline-none focus:bg-white focus:border-blue-400 transition-all" 
+                        />
                       </div>
-                    </td>
-                          </motion.tr>
-                        ))}
-                        {!transactions.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No transactions yet</td></tr>}
-                      </tbody>
-                    </table>
+                      <select 
+                        value={txnStatusFilter} 
+                        onChange={e => setTxnStatusFilter(e.target.value)}
+                        className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:bg-white transition-all"
+                      >
+                        <option value="">All Status</option>
+                        <option value="Confirmed">Confirmed</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Reversed">Reversed</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
+
+                  <div className="flex items-center justify-between mb-2 px-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transaction History {filteredTx.length !== transactions.length && `(${filteredTx.length} items found)`}</p>
+                    <div className="flex gap-2">
+                      {(txnSearch || txnStatusFilter) && (
+                        <button onClick={() => { setTxnSearch(''); setTxnStatusFilter(''); }} className="text-[10px] font-black text-rose-600 hover:underline">Clear Filters</button>
+                      )}
+                      <motion.button 
+                        id="printVoucherBtn"
+                        initial={{ scale: 0.9, opacity: 0 }} 
+                        animate={{ scale: 1, opacity: 1 }}
+                        onClick={() => handlePrint(transactions.filter(t => selectedTxIds.includes(t.id)))}
+                        className="px-6 py-2 rounded-2xl bg-blue-600 text-white font-black text-xs shadow-xl shadow-blue-200 flex items-center gap-2 hover:bg-blue-700 transition-all active:scale-95"
+                      >
+                        <Printer size={15} /> Print Selected ({selectedTxIds.length})
+                      </motion.button>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
+                      <table className="w-full text-xs min-w-[800px]">
+                        <thead>
+                          <tr className="sticky top-0 z-10" style={{ background: '#f8f9fd' }}>
+                            <th className="px-4 py-3 border-b border-slate-100">
+                              <input 
+                                type="checkbox" 
+                                onChange={(e) => setSelectedTxIds(e.target.checked ? filteredTx.map(t => t.id) : [])}
+                                checked={filteredTx.length > 0 && selectedTxIds.length === filteredTx.length}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </th>
+                            {['Date', 'Student & Roll #', 'Amount', 'Method', 'Collected By', 'Type', 'Receipt', 'Status', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTx.map((t, i) => {
+                            const student = students.find(s => String(s.roll_no) === String(t.student_roll_link));
+                            return (
+                              <motion.tr key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.008, 0.3) }} className={cn('border-b border-slate-50 hover:bg-slate-50/50 cursor-pointer', selectedTxIds.includes(t.id) && 'bg-blue-50/50')}>
+                                <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                                  <input 
+                                    type="checkbox" 
+                                    className="transaction-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    data-id={t.id}
+                                    checked={selectedTxIds.includes(t.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) setSelectedTxIds(p => [...p, t.id]);
+                                      else setSelectedTxIds(p => p.filter(id => id !== t.id));
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' }) : '—'}
+                                </td>
+                                <td className="px-4 py-2.5" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  <p className="font-black text-slate-900 leading-none">{student?.full_name || 'Unknown Student'}</p>
+                                  <p className="text-[10px] font-bold mt-1" style={{ color: ACCENT }}>{t.student_roll_link}</p>
+                                </td>
+                                <td className="px-4 py-2.5 font-black text-emerald-600" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {PKR(Number(t.amount_paid))}
+                                </td>
+                                <td className="px-4 py-2.5 text-slate-600" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {t.payment_method || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-slate-600 font-medium" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {t.collected_by || '—'}
+                                </td>
+                                <td className="px-4 py-2.5" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-50 text-blue-700">
+                                    {t.transaction_type || 'Payment'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2.5 font-mono text-[10px] text-slate-400" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {t.receipt_serial || '—'}
+                                </td>
+                                <td className="px-4 py-2.5" onClick={() => setSelectedLedgerRoll(Number(t.student_roll_link))}>
+                                  {t.is_reversed ? (
+                                    <span className="text-rose-600 font-bold text-[10px]">Reversed</span>
+                                  ) : t.confirmed_by ? (
+                                    <span className="text-emerald-600 font-bold text-[10px]">✓ {t.confirmed_by}</span>
+                                  ) : (
+                                    <span className="text-amber-500 text-[10px]">Pending</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center justify-end gap-2">
+                                    {isSuperAdmin && !t.is_reversed && (
+                                      <button onClick={() => handleUndoTransaction(t)} title="Undo/Reverse" className="p-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all"><RefreshCw size={14} /></button>
+                                    )}
+                                    <button 
+                                      onClick={() => handlePrint(t)} 
+                                      disabled={t.is_reversed}
+                                      title={t.is_reversed ? "Reversed" : "Print Receipt"}
+                                      className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition-all active:scale-90 disabled:opacity-30"
+                                    >
+                                      <Printer size={18} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </motion.tr>
+                            );
+                          })}
+                          {filteredTx.length === 0 && <tr><td colSpan={10} className="px-4 py-16 text-center text-slate-400 font-medium italic">No transactions match your search.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })()}
 
             {/* ════ ACCOUNTANT SECTIONS ════ */}
             {(isAccountant || isSuperAdmin) && tab === 'sections' && (
