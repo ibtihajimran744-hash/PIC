@@ -71,8 +71,9 @@ const EMPTY: any = {
   inter_year:'', inter_roll_no:'', inter_marks:'', inter_subjects:'',
   inter_board:'BISE Gujranwala', inter_division:'',
   graduation_year:'', graduation_roll_no:'', graduation_marks:'', graduation_board:'', graduation_division:'',
-  fee_package:40000,
-  installments: 3,
+  fee_package: 8000,
+  installments: 1,
+  student_type: 'Regular',
 };
 
 export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, adminData }) => {
@@ -147,6 +148,15 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
       };
       const { data:saved, error } = await supabase.from('admission_forms').insert([payload]).select().single();
       if(error) throw error;
+
+      // 🔔 VP Notification
+      await supabase.from('admin_notifications').insert([{
+        target_role: 'VP',
+        title: 'New Admission Form (External)',
+        message: `${payload.student_name} (${payload.program}) submitted via Admission Portal.`,
+        type: 'Admission',
+        is_read: false
+      }]);
       syncToSheets(saved);
       showToast(`✅ Form ${saved.form_no} saved & synced to Google Sheets`);
       setForm({...EMPTY});
@@ -158,77 +168,109 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   const confirmToDatabase = async (f:any, installmentDates: string[]) => {
     setSaving(true);
     try {
-      const roll = nextRoll;
-      const username=`stu_${roll}`, password=`PIC${roll}`;
-      const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || 'TBD';
-      const { error:se } = await supabase.from('students').insert([{
-        roll_no:roll, full_name:f.student_name, father_name:f.father_name,
-        gender:f.gender, program:f.program, part:f.part, 
-        class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
-        total_package: f.program === 'Summer Camp' ? 10000 : (f.fee_package||40000), paid_amount:0, status:'Active',
-        username, password, total_xp:0, profile_xp:0, current_badge:'🥉 Newcomer'
-      }]);
-      if(se) throw se;
-
-      if (f.program === 'Summer Camp') {
-        const summerFees = [
-          { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: new Date().toISOString().split('T')[0], amount: 8000, paid: 0, status: 'Unpaid' },
-          { student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: new Date().toISOString().split('T')[0], amount: 2000, paid: 0, status: 'Unpaid' },
-        ];
-        await supabase.from('fee_groups').insert(summerFees);
+      const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
+      let roll = f.student_roll_no;
+      
+      if (!roll) {
+        roll = nextRoll;
+        const username=`stu_${roll}`, password=`PIC${roll}`;
+        const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
         
-        // Notify student
-        const scNotify = summerFees.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
-        await supabase.from('notifications').insert([{
-          target_user_id: roll,
-          title: 'Summer Camp Enrollment',
-          message: `Welcome to Summer Camp!\n\n${scNotify}`,
-          type: 'Fee',
-          is_read: false
+        let totalPackage = 0;
+        if (studentType === 'Summer Camp') totalPackage = 7000;
+        else if (studentType === 'Regular') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
+        else if (studentType === 'Transfer') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
+
+        const { error:se } = await supabase.from('students').insert([{
+          roll_no:roll, full_name:f.student_name, father_name:f.father_name,
+          gender:f.gender, program:f.program, part:f.part, 
+          class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
+          total_package: totalPackage, paid_amount:0, status:'Active',
+          username, password, total_xp:0, profile_xp:0, current_badge:'🥉 Newcomer'
         }]);
+        if(se) throw se;
+        if (!f.student_roll_no) setNextRoll(roll+1);
       } else {
-        // Calculate Installments
-        const totalAmount = f.fee_package || 40000;
-        const instCount = f.installments || 1;
-        const amountPerInst = Math.floor(totalAmount / instCount);
-        
-        const installments = Array.from({ length: instCount }).map((_, i) => {
-          // Adjust last installment for rounding issues
-          const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
-          return {
-            student_roll: roll,
-            fees_group: `Installment ${i + 1}`,
-            fees_code: `INST-${i + 1}`,
-            due_date: installmentDates[i] || new Date().toISOString().split('T')[0],
-            amount: amount,
-            paid: 0,
-            status: 'Unpaid'
-          };
-        });
-
-        await supabase.from('fee_groups').insert(installments);
-
-        // Notify student
-        const scheduleText = installments.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
-        await supabase.from('notifications').insert([{
-          target_user_id: roll,
-          title: 'Fee Schedule Created',
-          message: `Your fee schedule has been created.\n\n${scheduleText}`,
-          type: 'Fee',
-          is_read: false
-        }]);
+        // Handle Transfer / Update
+        let totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
+        await supabase.from('students').update({
+            total_package: totalPackage,
+            status: 'Active'
+        }).eq('roll_no', roll);
       }
+
+      let ledgerFees: any[] = [];
+      const today = new Date().toISOString().split('T')[0];
+
+      if (studentType === 'Summer Camp') {
+        ledgerFees = [
+            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: installmentDates[0] || today, amount: 7000, paid: 0, status: 'Unpaid' }
+        ];
+      } else {
+        // Regular or Transfer
+        const pkgAmt = Number(f.fee_package) || 0;
+        const instCount = f.installments || 1;
+        const perInst = Math.floor(pkgAmt / instCount);
+        
+        // Fee Package installments
+        for(let i=0; i<instCount; i++){
+            ledgerFees.push({
+                student_roll: roll,
+                fees_group: instCount > 1 ? `Fee Package (Inst ${i+1})` : 'Fee Package',
+                fees_code: `FEE-PK${instCount > 1 ? `-${i+1}` : ''}`,
+                due_date: installmentDates[i] || today,
+                amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
+                paid: 0, status: 'Unpaid'
+            });
+        }
+
+        // Summer Camp Fee if not exists
+        const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
+        if(!exSC) {
+            ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
+        }
+
+        // Uniform Fee if not exists
+        const { data: exUN } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Uniform Fee').maybeSingle();
+        if(!exUN) {
+            ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
+        }
+      }
+
+      if (ledgerFees.length > 0) {
+        const { error: fe } = await supabase.from('fee_groups').insert(ledgerFees);
+        if (fe) throw fe;
+      }
+      
+      // Notify student
+      const scNotify = ledgerFees.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
+      if (scNotify) {
+          await supabase.from('notifications').insert([{
+            target_user_id: roll,
+            title: 'Student Enrollment & Fee Ledger',
+            message: `Welcome!\n\nYour fee ledger has been updated:\n${scNotify}`,
+            type: 'Fee',
+            is_read: false
+          }]);
+      }
+
+      // Notify VP
+      await supabase.from('admin_notifications').insert([{
+        target_role: 'VP',
+        title: 'New Admission/Fee Ledger Created',
+        message: `${f.student_name} (Roll: ${roll}) confirmed by ${adminData.full_name}. Fees initialized.`,
+        type: 'Admission',
+        is_read: false
+      }]);
 
       await supabase.from('admission_forms').update({
         status:'Approved', synced_to_db:true, student_roll_no:roll,
         approved_by:adminData.full_name, approved_at:new Date().toISOString(),
       }).eq('id',f.id);
       syncToSheets({...f, status:'Approved', synced_to_db:true, student_roll_no:roll});
-      setNextRoll(roll+1);
-      showToast(`✅ ${f.student_name} → Roll #${roll} | ${username} / ${password}`);
+      showToast(`✅ ${f.student_name} → Roll #${roll}`);
       setPreview(null);
       setConfirming(null);
-      setInstDates([]);
       loadForms();
     } catch(e:any){ showToast(e.message||'Failed','err'); }
     finally{ setSaving(false); }
@@ -379,7 +421,15 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                     {/* Applied For */}
                     <div className="pb-5 border-b border-slate-100 space-y-4">
-                      <F label="Applied For" req>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <F label="Student Type" req>
+                          <TS value={form.student_type} onChange={e=>set('student_type',e.target.value)}>
+                            <option>Regular</option>
+                            <option>Summer Camp</option>
+                            <option>Transfer</option>
+                          </TS>
+                        </F>
+                        <F label="Applied For" req>
                         <div className="flex flex-wrap gap-5 mt-2">
                           {['Intermediate','ADP/BS','BS 0*','Others'].map(o=>(
                             <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={()=>set('applied_for',o)}>
@@ -397,8 +447,9 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                         <F label="Subjects (1)(2)(3)"><TI placeholder="(1) _____ (2) _____ (3) _____" value={form.inter_subjects} onChange={e=>set('inter_subjects',e.target.value)}/></F>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Personal Details */}
+                  {/* Personal Details */}
                     <div className="pb-5 border-b border-slate-100 space-y-4">
                       <div className="inline-block bg-[#c0392b] text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest">Personal Details</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -522,44 +573,16 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                     {/* Fee + Submit */}
                     <div className="pt-4 border-t border-slate-100 space-y-4">
-                      {form.program === 'Summer Camp' ? (
+                      {form.student_type === 'Summer Camp' ? (
                         <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100 italic space-y-2">
-                           <p className="text-sm font-black text-amber-700">Summer Camp Mode Active</p>
-                           <p className="text-xs text-amber-600">Specific fees for Summer Camp (8,000) and Uniform (2,000) will be applied automatically upon confirmation in Admin Portal.</p>
+                           <p className="text-sm font-black text-amber-700">Summer Camp Fee Applied</p>
+                           <p className="text-xs text-amber-600">A fee of 7,000 (Summer Camp Fee) will be applied for this admission.</p>
                         </div>
                       ) : (
-                        <>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <F label="Total Fee Package (Rs)">
-                              <TI type="number" value={form.fee_package} onChange={e=>set('fee_package',Number(e.target.value))}/>
-                            </F>
-                            <F label="Number of Installments">
-                              <TS value={form.installments} onChange={e=>set('installments',Number(e.target.value))}>
-                                {[1,2,3,4,5,6,7,8,10,12].map(n=><option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}
-                              </TS>
-                            </F>
-                          </div>
-
-                          {/* LIVE BREAKDOWN PREVIEW */}
-                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Fee Breakdown Preview</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                              {Array.from({ length: form.installments || 1 }).map((_, i) => {
-                                const total = Number(form.fee_package) || 0;
-                                const count = Number(form.installments) || 1;
-                                const amt   = Math.floor(total / count);
-                                const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
-                                return (
-                                  <div key={i} className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm text-center">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
-                                    <p className="text-xs font-black text-[#c0392b] mt-0.5">{PKR(final)}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-3 italic text-center">Due dates will be set by the Accountant during confirmation.</p>
-                          </div>
-                        </>
+                        <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100 italic space-y-2">
+                           <p className="text-sm font-black text-amber-700">Standard Fee Structure Applied</p>
+                           <p className="text-xs text-amber-600">The accountant-defined package plus 8,000 (Summer Camp Fee: 7,000 + Uniform Fee: 1,000) will be applied.</p>
+                        </div>
                       )}
 
                       <div className="flex flex-col sm:flex-row gap-3">
@@ -687,15 +710,13 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           <div className="flex gap-2 flex-shrink-0">
                             <button onClick={()=>{
                                 setConfirming(f);
-                                setInstDates(Array(f.installments || 1).fill(new Date().toISOString().split('T')[0]));
-                            }} className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Eye size={12}/> Preview & Set Dates</button>
+                            }} className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Eye size={12}/> View & Confirm</button>
                             <motion.button whileTap={{scale:0.95}} disabled={saving} onClick={()=>{
-                                setConfirming(f);
-                                setInstDates(Array(f.installments || 1).fill(new Date().toISOString().split('T')[0]));
+                                confirmToDatabase(f, []);
                             }}
                               className="flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-black text-white disabled:opacity-50"
                               style={{background:'linear-gradient(135deg,#059669,#10b981)'}}>
-                              {saving?<Loader2 size={12} className="animate-spin"/>:<><Database size={12}/> Confirm to DB</>}
+                              {saving?<Loader2 size={12} className="animate-spin"/>:<><Database size={12}/> Quick Confirm</>}
                             </motion.button>
                             <motion.button whileTap={{scale:0.95}} onClick={()=>rejectForm(f)}
                               className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-rose-50 text-rose-700 border border-rose-200">
@@ -730,30 +751,23 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-3">
                 {confirming && (
-                  <div className="bg-slate-50 rounded-2xl p-5 mb-6 border border-slate-100">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Set Installment Due Dates</p>
-                    <div className="space-y-4">
-                      {Array.from({ length: confirming.installments || 1 }).map((_, i) => {
-                        const amount = Math.floor((confirming.fee_package || 40000) / (confirming.installments || 1));
-                        const finalAmount = i === (confirming.installments || 1) - 1 ? (confirming.fee_package - (amount * (confirming.installments - 1))) : amount;
-                        return (
-                          <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-100">
-                            <div>
-                              <p className="text-sm font-black text-slate-800">Installment {i + 1}</p>
-                              <p className="text-xs text-[#c0392b] font-bold">{PKR(finalAmount)}</p>
-                            </div>
-                            <div className="flex-1 max-w-[200px]">
-                              <F label="Due Date">
-                                <TI type="date" value={instDates[i]} onChange={(e) => {
-                                  const d = [...instDates];
-                                  d[i] = e.target.value;
-                                  setInstDates(d);
-                                }} />
-                              </F>
-                            </div>
+                  <div className="space-y-4 mb-4">
+                    <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
+                      <p className="text-sm font-black text-indigo-700 mb-1">Set Installment Due Dates</p>
+                      <p className="text-[10px] text-indigo-500 mb-3 uppercase tracking-widest font-black leading-none">Schedule Payment Timeline</p>
+                      <div className="space-y-2">
+                        {Array.from({length: confirming.installments || 1}).map((_, idx) => (
+                          <div key={idx} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-100">
+                            <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-[10px]">{idx+1}</span>
+                            <span className="flex-1 text-[11px] font-bold text-slate-700">Installment {idx+1}</span>
+                            <input type="date" value={instDates[idx] || ''} onChange={(e) => {
+                              const newDates = [...instDates];
+                              newDates[idx] = e.target.value;
+                              setInstDates(newDates);
+                            }} className="text-[11px] font-black p-1.5 border border-slate-200 rounded-lg outline-none focus:border-indigo-500" />
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -767,7 +781,8 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                   ['Matric %',(preview || confirming).matric_percentage?`${(preview || confirming).matric_percentage}%`:'—'],
                   ['Matric Board',(preview || confirming).matric_board||'—'],
                   ['Suggested Section',(preview || confirming).suggested_section||'—'],['Suggested Class',(preview || confirming).suggested_class||'—'],
-                  ['Fee Package',PKR((preview || confirming).fee_package)],
+                  ['Student Type', (preview || confirming).student_type || 'Regular'],
+                  ['Fee Package Amount', PKR((preview || confirming).fee_package)],
                   ['Installments', (preview || confirming).installments || 1],
                   ['Status',(preview || confirming).status],
                   ['Submitted By',(preview || confirming).created_by||'—'],['Date',new Date((preview || confirming).created_at).toLocaleString('en-PK')],
@@ -781,9 +796,9 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
               {confirming && isAccountant && (
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
                   <motion.button whileTap={{scale:0.97}} disabled={saving} onClick={()=>confirmToDatabase(confirming, instDates)}
-                    className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
                     style={{background:'linear-gradient(135deg,#059669,#10b981)'}}>
-                    {saving?<Loader2 size={15} className="animate-spin"/>:<><Database size={15}/> Confirm & Create {confirming.installments} Installments</>}
+                    {saving?<Loader2 size={15} className="animate-spin"/>:<><Database size={15}/> Confirm Admission & Sync</>}
                   </motion.button>
                   <button onClick={()=>setConfirming(null)} className="flex-1 py-3 rounded-2xl text-slate-600 font-bold text-sm bg-slate-50 border border-slate-200">Cancel</button>
                 </div>

@@ -6,7 +6,8 @@ import {
   Shield, UserPlus, Loader2, Home, UserCog, Trash2,
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
-  Plus, Lock, Unlock, User, Printer, Minus, Layers, Target
+  Plus, Lock, Unlock, User, Printer, Minus, Layers, Target,
+  Shirt, Sun
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -63,7 +64,7 @@ const EMPTY_FORM: any = {
   inter_year:'', inter_roll_no:'', inter_marks:'', inter_subjects:'',
   inter_board:'BISE Gujranwala', inter_division:'',
   graduation_year:'', graduation_roll_no:'', graduation_marks:'', graduation_board:'', graduation_division:'',
-  fee_package:60000, student_type:'Regular', is_fresher:true, num_installments:3,
+  fee_package: 8000, student_type: 'Regular', is_fresher: true, num_installments: 1,
   notes: '',
 };
 
@@ -448,7 +449,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
 
 // ════════════════════════════════════════════════════════════════════════════
 export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData }) => {
-  const isAccountant = adminData.role === 'Accountant';
+  const isAccountant = adminData.role === 'Accountant' || adminData.role === 'VP';
   const isSuperAdmin = ['Director', 'VP', 'Principal'].includes(adminData.role);
   const { ACCENT, GRADIENT } = getTheme(adminData.role);
 
@@ -576,6 +577,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
+  const [selectedLedgerRoll, setSelectedLedgerRoll] = useState<number | null>(null);
 
   const [distProgram, setDistProgram] = useState('');
   const [distPart,    setDistPart]    = useState(1);
@@ -585,8 +587,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
 
   const [admForm, setAdmForm] = useState<any>({ 
     ...EMPTY_FORM,
-    fee_package: 60000,
-    num_installments: 3,
+    fee_package: 8000,
+    num_installments: 1,
   });
   
   const pct = Number(admForm.matric_percentage) || 0;
@@ -1374,6 +1376,16 @@ const handlePrintReport = (data: any) => {
         if (error) throw error;
         showToast('✅ Admission form saved');
       }
+
+      // 🔔 VP Notification
+      await supabase.from('admin_notifications').insert([{
+        target_role: 'VP',
+        title: editingId ? 'Admission Updated' : 'New Admission Form',
+        message: `${payload.student_name} (${payload.program}) ${editingId ? 'updated' : 'submitted'} by ${adminData.full_name}.`,
+        type: 'Admission',
+        is_read: false
+      }]);
+
       setAdmForm({ ...EMPTY_FORM });
       setTab('admissions');
       refresh();
@@ -1388,7 +1400,11 @@ const handlePrintReport = (data: any) => {
     }
     setSaving(true);
     try {
-      const now = new Date();
+      const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
+      let roll = f.student_roll_no;
+
+      if (!roll) {
+        const now = new Date();
       const joinYear = now.getFullYear(); 
       const endYear  = joinYear + 2;     
       const prefix   = Number(`${String(joinYear).slice(2)}${String(endYear).slice(2)}`); 
@@ -1401,43 +1417,92 @@ const handlePrintReport = (data: any) => {
         .limit(1);
       const lastRoll = lastRollData?.[0]?.roll_no ?? (prefix * 1000);
       const seq = (lastRoll % 1000) + 1; 
-      const roll = prefix * 1000 + seq;  
-      const username = `stu_${roll}`, password = `PIC${roll}`;
-      const { error: se } = await supabase.from('students').insert([{
-        roll_no: roll, full_name: f.student_name, father_name: f.father_name,
-        gender: f.gender, program: f.program, part: f.part,
-        class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
-        total_package: f.program === 'Summer Camp' ? 10000 : (f.fee_package || 40000), paid_amount: 0, status: 'Active',
-        username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
-      }]);
-      if (se) throw se;
+          const roll_val = prefix * 1000 + seq;  
+          roll = roll_val;
+          const username = `stu_${roll}`, password = `PIC${roll}`;
 
-      if (f.program === 'Summer Camp') {
-        const summerFees = [
-          { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: new Date().toISOString().split('T')[0], amount: 8000, paid: 0, status: 'Unpaid' },
-          { student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: new Date().toISOString().split('T')[0], amount: 2000, paid: 0, status: 'Unpaid' },
-        ];
-        await supabase.from('fee_groups').insert(summerFees);
+          let totalPackage = 0;
+          if (studentType === 'Summer Camp') totalPackage = 7000;
+          else {
+              totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
+          }
+
+          const { error: se } = await supabase.from('students').insert([{
+            roll_no: roll, full_name: f.student_name, father_name: f.father_name,
+            gender: f.gender, program: f.program, part: f.part,
+            class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
+            total_package: totalPackage, paid_amount: 0, status: 'Active',
+            username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
+          }]);
+          if (se) throw se;
       } else {
-        const totalAmount = f.fee_package || 40000;
-        const instCount = f.num_installments || f.installments || 1;
-        const amountPerInst = Math.floor(totalAmount / instCount);
-        
-        const installments = Array.from({ length: instCount }).map((_, i) => {
-          const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
-          return {
-            student_roll: roll,
-            fees_group: `Installment ${i + 1}`,
-            fees_code: `INST-${i + 1}`,
-            due_date: instDates[i] || new Date().toISOString().split('T')[0],
-            amount: amount,
-            paid: 0,
-            status: 'Unpaid'
-          };
-        });
-        await supabase.from('fee_groups').insert(installments);
+          // Update existing
+          let totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
+          await supabase.from('students').update({
+              total_package: totalPackage,
+              status: 'Active'
+          }).eq('roll_no', roll);
       }
-      
+
+      let ledgerFees: any[] = [];
+      const today = new Date().toISOString().split('T')[0];
+
+      if (studentType === 'Summer Camp') {
+          ledgerFees = [
+            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: instDates[0] || today, amount: 7000, paid: 0, status: 'Unpaid' }
+          ];
+      } else {
+          const pkgAmt = Number(f.fee_package) || 0;
+          const instCount = f.num_instalments || f.installments || 1;
+          const perInst = Math.floor(pkgAmt / instCount);
+          
+          for (let i = 0; i < instCount; i++) {
+              ledgerFees.push({
+                  student_roll: roll,
+                  fees_group: instCount > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
+                  fees_code: `FEE-PK${instCount > 1 ? `-${i + 1}` : ''}`,
+                  due_date: instDates[i] || today,
+                  amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
+                  paid: 0, status: 'Unpaid'
+              });
+          }
+
+          const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
+          if (!exSC) {
+              ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
+          }
+          const { data: exUN } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Uniform Fee').maybeSingle();
+          if (!exUN) {
+              ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
+          }
+      }
+
+      if (ledgerFees.length > 0) {
+        const { error: fe } = await supabase.from('fee_groups').insert(ledgerFees);
+        if (fe) throw fe;
+      }
+
+      // Notification for Student
+      const scNotify = ledgerFees.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
+      if (scNotify) {
+        await supabase.from('notifications').insert([{
+           target_user_id: roll,
+           title: 'Student Enrollment & Fee Ledger',
+           message: `Welcome!\n\nYour fee ledger has been updated:\n${scNotify}`,
+           type: 'Fee',
+           is_read: false
+        }]);
+      }
+
+      // Notification for VP
+      await supabase.from('admin_notifications').insert([{
+        target_role: 'VP',
+        title: 'New Admission/Fee Ledger Created',
+        message: `${f.student_name} (Roll: ${roll}) confirmed by ${adminData.full_name}. Fees initialized.`,
+        type: 'Admission',
+        is_read: false
+      }]);
+
       await supabase.from('admission_forms').update({
         status: 'Approved', synced_to_db: true, student_roll_no: roll,
         approved_by: adminData.full_name, approved_at: new Date().toISOString(),
@@ -1565,6 +1630,15 @@ const handlePrintReport = (data: any) => {
           target_role: 'STUDENT'
         }]);
       }
+
+      // 🔔 Notification for VP
+      await supabase.from('admin_notifications').insert([{
+        target_role: 'VP',
+        title: '💰 Fee Collected',
+        message: `Payment/Discount of ${PKR(amt + disc)} processed for ${collectModal.student_roll} (${collectModal.fees_group}) by ${adminData.full_name}.`,
+        type: 'Fee',
+        is_read: false
+      }]);
 
       showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
       setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); refresh();
@@ -2355,25 +2429,44 @@ const handlePrintReport = (data: any) => {
 
             {/* ════ ACCOUNTANT FEE LEDGER — Fee collection happens here ════ */}
             {(isAccountant || isSuperAdmin) && tab === 'fee-ledger' && (() => {
-              const ledgerSectionOptions = students.filter(s => !ledgerProgram || s.program === ledgerProgram).map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
-              const ledgerFiltered = feeGroups.filter(g => {
-                if (ledgerStatus && g.status !== ledgerStatus) return false;
-                const st = students.find(s => String(s.roll_no) === String(g.student_roll));
-                if (ledgerProgram && (!st || st.program !== ledgerProgram)) return false;
-                if (ledgerSection && (!st || st.class_section !== ledgerSection)) return false;
-                if (!searchQ) return true;
-                const q = searchQ.toLowerCase();
-                return String(g.student_roll).includes(q) || st?.full_name?.toLowerCase().includes(q);
+              const studentsWithFees = students.filter(s => {
+                const groups = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
+                if (groups.length === 0) return false;
+                
+                if (ledgerStatus) {
+                  if (ledgerStatus === 'Unpaid' && !groups.some(g => g.status === 'Unpaid')) return false;
+                  if (ledgerStatus === 'Paid' && groups.some(g => g.status !== 'Paid')) return false;
+                  if (ledgerStatus === 'Partial' && (!groups.some(g => g.status === 'Partial') && !groups.some(g => g.status === 'Paid'))) return false;
+                }
+                if (ledgerProgram && s.program !== ledgerProgram) return false;
+                if (ledgerSection && s.class_section !== ledgerSection) return false;
+                if (searchQ) {
+                  const q = searchQ.toLowerCase();
+                  return String(s.roll_no).includes(q) || s.full_name?.toLowerCase().includes(q);
+                }
+                return true;
               });
+
+              const totalOutstanding = studentsWithFees.reduce((acc, s) => {
+                 const groups = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
+                 return acc + groups.reduce((s2, g) => s2 + (g.balance || 0), 0);
+              }, 0);
+
+              const selectedStudent = students.find(s => s.roll_no === selectedLedgerRoll);
+              const selectedStudentFees = feeGroups.filter(g => String(g.student_roll) === String(selectedLedgerRoll));
+
               return (
                 <motion.div key="ledger" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-                    <DollarSign size={16} className="text-blue-600 flex-shrink-0" />
-                    <p className="text-sm font-bold text-blue-900">Fee Ledger — Click any unpaid row to collect payment from a student.</p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <DollarSign size={16} className="text-blue-600 flex-shrink-0" />
+                      <p className="text-sm font-bold text-blue-900">Fee Ledger — Grouped by student. Click "View Ledger" to see individual fees.</p>
+                    </div>
+                    <p className="text-xs font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-100">Total Outstanding: {PKR(totalOutstanding)}</p>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[{ l: 'Paid', v: paidGroups, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: partialGroups, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid', v: unpaidGroups, c: '#C0392B', bg: 'bg-rose-50' }].map(({ l, v, c, bg }) => (
-                      <div key={l} className={cn('rounded-2xl p-4 border border-slate-100 text-center', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[{ l: 'Total Balanced', v: feeGroups.filter(g=>g.status === 'Paid').length, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: feeGroups.filter(g=>g.status === 'Partial').length, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid Items', v: feeGroups.filter(g=>g.status === 'Unpaid').length, c: '#C0392B', bg: 'bg-rose-50' }, { l: 'Students List', v: studentsWithFees.length, c: '#1e3a8a', bg: 'bg-blue-50' }].map(({ l, v, c, bg }) => (
+                      <div key={l} className={cn('rounded-2xl p-4 border border-slate-100 text-center', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-xl font-black" style={{ color: c }}>{v}</p></div>
                     ))}
                   </div>
                   {/* Filters */}
@@ -2385,114 +2478,157 @@ const handlePrintReport = (data: any) => {
                       )}
                     </div>
                     <div className="p-4 space-y-3">
-                      <div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Payment Status</p>
-                        <div className="flex gap-2 flex-wrap">
-                          {[{ v: '', l: 'All', bg: GRADIENT }, { v: 'Unpaid', l: 'Unpaid', bg: 'linear-gradient(135deg,#C0392B,#e74c3c)' }, { v: 'Partial', l: 'Partial', bg: 'linear-gradient(135deg,#D97706,#f59e0b)' }, { v: 'Paid', l: 'Paid', bg: 'linear-gradient(135deg,#059669,#10b981)' }].map(({ v, l, bg }) => {
-                            const active = ledgerStatus === v;
-                            const cnt = v === '' ? feeGroups.length : feeGroups.filter(g => g.status === v).length;
-                            return <motion.button key={v} whileTap={{ scale: 0.96 }} onClick={() => setLedgerStatus(v)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: bg, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{l} <span className="ml-1 text-[9px] opacity-70">{cnt}</span></motion.button>;
-                          })}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Student Payment Status</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {[{ v: '', l: 'All' }, { v: 'Unpaid', l: 'With Pending' }, { v: 'Paid', l: 'All Clear' }].map(({ v, l }) => {
+                              const active = ledgerStatus === v;
+                              return <motion.button key={v} whileTap={{ scale: 0.96 }} onClick={() => setLedgerStatus(v)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{l}</motion.button>;
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {PROGRAMS.map(prog => (
+                              <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setLedgerProgram(ledgerProgram === prog ? '' : prog); setLedgerSection(''); }} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={ledgerProgram === prog ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{prog}</motion.button>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
-                        <div className="flex gap-2 flex-wrap">
-                          {PROGRAMS.map(prog => {
-                            const active = ledgerProgram === prog;
-                            return <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setLedgerProgram(active ? '' : prog); setLedgerSection(''); }} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{prog}</motion.button>;
-                          })}
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {ledgerSectionOptions.length > 0 && (
-                          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Section</p>
-                            <div className="flex gap-2 flex-wrap">
-                              {ledgerSectionOptions.map(sec => {
-                                const active = ledgerSection === sec;
-                                const cnt = feeGroups.filter(g => { const st2 = students.find(s => String(s.roll_no) === String(g.student_roll)); return st2?.class_section === sec; }).length;
-                                return <motion.button key={sec} whileTap={{ scale: 0.96 }} onClick={() => setLedgerSection(active ? '' : sec)} className="px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all" style={active ? { background: GRADIENT, color: '#fff', borderColor: 'transparent' } : { background: '#f8fafc', color: '#64748b', borderColor: '#e2e8f0' }}>{sec} <span className="ml-1 text-[9px] opacity-70">{cnt}</span></motion.button>;
-                              })}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                       <div className="relative pt-1">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                        <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search by roll no or student name…" className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
+                        <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search roll no or student name…" className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
                       </div>
                     </div>
                   </div>
-                  {/* Ledger table — clicking Collect opens the collect modal */}
+                  
+                  {/* Table */}
                   <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <p className="text-xs font-bold text-slate-500">{ledgerFiltered.length} records{ledgerProgram ? ` · ${ledgerProgram}` : ''}{ledgerSection ? ` · ${ledgerSection}` : ''}{ledgerStatus ? ` · ${ledgerStatus}` : ''}</p>
-                        <button 
-                          onClick={() => {
-                            const rows = ledgerFiltered.map(g => {
-                              const s = students.find(st => String(st.roll_no) === String(g.student_roll));
-                              return [g.student_roll, s?.full_name || '—', s?.class_section || '—', g.fees_group, PKR(g.amount), PKR(g.paid), PKR(g.balance), g.status, g.due_date || '—'];
-                            });
-                            handlePrintList('Fees Ledger Report', ['Roll','Name','Class','Group','Amount','Paid','Balance','Status','Due Date'], rows, `Summary: Total Balance Due ${PKR(ledgerFiltered.reduce((s,g)=>s+(g.balance||0),0))}`);
-                          }}
-                          className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
-                        >
-                          <Printer size={12} /> Print List
-                        </button>
-                      </div>
-                      <p className="text-[10px] font-black text-rose-600">Outstanding: {PKR(ledgerFiltered.reduce((s, g) => s + (g.balance || 0), 0))}</p>
-                    </div>
-                    <div className="overflow-x-auto" style={{ maxHeight: 520 }}>
-                      <table className="w-full text-xs min-w-[780px]">
-                        <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                          <tr>{['Roll #', 'Name', 'Class', 'Fee Group', 'Amount', 'Discount', 'Fine', 'Paid', 'Balance', 'Status', 'Due Date', 'Action'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs min-w-[700px]">
+                        <thead style={{ background: '#f8f9fd' }}>
+                          <tr>{['Roll #', 'Student Name', 'Program', 'Total Package', 'Paid', 'Outstanding', 'Action'].map(h => <th key={h} className="px-5 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">{h}</th>)}</tr>
                         </thead>
                         <tbody>
-                          {ledgerFiltered.slice(0, 200).map((g, i) => {
-                            const st = students.find(s => String(s.roll_no) === String(g.student_roll));
-                            return (
-                              <motion.tr key={g.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.005, 0.3) }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="px-4 py-2.5 font-mono font-bold" style={{ color: ACCENT }}>{g.student_roll}</td>
-                                <td className="px-4 py-2.5 font-medium text-slate-900 max-w-[120px] truncate">{st?.full_name || '—'}</td>
-                                <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{st?.class_section || '—'}</td>
-                                <td className="px-4 py-2.5 text-slate-700 max-w-[140px] truncate">{g.fees_group}</td>
-                                <td className="px-4 py-2.5 font-bold text-slate-700">{PKR(g.amount)}</td>
-                                <td className="px-4 py-2.5 text-emerald-600">{g.discount ? PKR(g.discount) : '—'}</td>
-                                <td className="px-4 py-2.5 text-rose-500">{g.fine ? PKR(g.fine) : '—'}</td>
-                                <td className="px-4 py-2.5 font-bold text-emerald-600">{PKR(g.paid)}</td>
-                                <td className="px-4 py-2.5 font-black text-rose-700">{PKR(g.balance)}</td>
-                                <td className="px-4 py-2.5"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>{g.status}</span></td>
-                                <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{g.due_date || '—'}</td>
-                                <td className="px-4 py-2.5">
-                                  <div className="flex items-center gap-2">
-                                    {g.status !== 'Paid' && g.balance > 0 && (
-                                      <motion.button whileTap={{ scale: 0.95 }}
-                                        onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white"
-                                        style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                        <DollarSign size={11} /> Collect
-                                      </motion.button>
-                                    )}
-                                    {(isSuperAdmin || hasPermission('undo_transactions')) && deleteId === g.id ? (
-                                      <div className="flex items-center gap-1">
-                                        <button onClick={() => deleteAssignment(g.id)} className="bg-rose-600 text-white px-2 py-1 rounded-lg text-[9px] font-black">Void</button>
-                                        <button onClick={() => setDeleteId(null)} className="bg-slate-100 text-slate-400 p-1 rounded-lg"><X size={10} /></button>
-                                      </div>
-                                    ) : (isSuperAdmin || hasPermission('edit_accounts')) ? (
-                                      <button onClick={() => setDeleteId(g.id)} className="p-1 px-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={12} /></button>
-                                    ) : null}
-                                  </div>
-                                </td>
-                              </motion.tr>
-                            );
+                          {studentsWithFees.map((s, i) => {
+                             const sFees = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
+                             const totalOut = sFees.reduce((acc, g) => acc + (g.balance || 0), 0);
+                             return (
+                               <motion.tr key={s.roll_no} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i*0.01, 0.4) }} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+                                 <td className="px-5 py-3 font-mono font-bold text-slate-900">{s.roll_no}</td>
+                                 <td className="px-5 py-3">
+                                   <p className="font-black text-slate-800 leading-none">{s.full_name}</p>
+                                   <p className="text-[10px] text-slate-400 font-bold mt-1">{s.class_section}</p>
+                                 </td>
+                                 <td className="px-5 py-3 text-slate-500 font-medium">{s.program}</td>
+                                 <td className="px-5 py-3 font-bold text-slate-700">{PKR(s.total_package)}</td>
+                                 <td className="px-5 py-3 font-bold text-emerald-600">{PKR(s.paid_amount)}</td>
+                                 <td className="px-5 py-3 font-black text-rose-600">{PKR(totalOut)}</td>
+                                 <td className="px-5 py-3">
+                                   <button onClick={() => setSelectedLedgerRoll(s.roll_no)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-200" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                                     <Eye size={12} /> View Ledger
+                                   </button>
+                                 </td>
+                               </motion.tr>
+                             );
                           })}
-                          {ledgerFiltered.length === 0 && <tr><td colSpan={12} className="px-4 py-10 text-center text-slate-400">No records match filters</td></tr>}
+                          {studentsWithFees.length === 0 && <tr><td colSpan={7} className="py-20 text-center text-slate-400">No students found</td></tr>}
                         </tbody>
                       </table>
                     </div>
                   </div>
+
+                  {/* Student Ledger Modal */}
+                  <AnimatePresence>
+                    {selectedStudent && (
+                      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedLedgerRoll(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col min-h-[500px] max-h-[85vh] overflow-hidden">
+                          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                            <div>
+                              <h3 className="text-lg font-black text-slate-900 leading-none">{selectedStudent.full_name}</h3>
+                              <p className="text-xs text-slate-400 font-bold mt-1 uppercase tracking-widest">{selectedStudent.roll_no} · {selectedStudent.program} · {selectedStudent.class_section}</p>
+                            </div>
+                            <button onClick={() => setSelectedLedgerRoll(null)} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400 hover:text-slate-900 flex items-center justify-center transition-colors"><X size={20} /></button>
+                          </div>
+                          
+                          <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Total Package</p>
+                                  <p className="text-2xl font-black text-slate-900">{PKR(selectedStudent.total_package)}</p>
+                               </div>
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Total Paid</p>
+                                  <p className="text-2xl font-black text-emerald-600">{PKR(selectedStudent.paid_amount)}</p>
+                               </div>
+                               <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Outstanding</p>
+                                  <p className="text-2xl font-black text-rose-600">{PKR((selectedStudent.total_package||0) - (selectedStudent.paid_amount||0))}</p>
+                               </div>
+                            </div>
+
+                            <div className="space-y-3">
+                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                 <FileText size={12} /> Individual Fee Items
+                               </p>
+                               <div className="grid grid-cols-1 gap-3">
+                                  {selectedStudentFees.map(g => (
+                                    <div key={g.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all hover:border-blue-200">
+                                      <div className="flex items-center gap-4">
+                                        <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0", g.status==='Paid'?'bg-emerald-50 text-emerald-600':'bg-rose-50 text-rose-600')}>
+                                          {g.fees_group.includes('Uniform') ? <Shirt size={22} /> : g.fees_group.includes('Summer') ? <Sun size={22} /> : <CreditCard size={22} />}
+                                        </div>
+                                        <div>
+                                          <p className="font-black text-slate-900 text-sm">{g.fees_group}</p>
+                                          <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Code: {g.fees_code}</span>
+                                            {g.due_date && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">Due: {g.due_date}</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-6 w-full md:w-auto border-t md:border-t-0 pt-4 md:pt-0">
+                                        <div className="text-right flex-1 md:flex-initial">
+                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap">Total / Paid</p>
+                                          <p className="text-sm font-black text-slate-800">{PKR(g.amount)} / <span className="text-emerald-600">{PKR(g.paid)}</span></p>
+                                        </div>
+                                        <div className="text-right flex-1 md:flex-initial">
+                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap">Status</p>
+                                          <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black whitespace-nowrap inline-block', 
+                                            g.status === 'Paid' ? 'bg-emerald-50 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>
+                                            {g.status}
+                                          </span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          {g.status !== 'Paid' && g.balance > 0 && (
+                                            <motion.button whileTap={{scale:0.95}} onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
+                                              className="px-4 py-2.5 rounded-xl text-xs font-black text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                                              style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                              <DollarSign size={13} /> Collect
+                                            </motion.button>
+                                          )}
+                                          {(isSuperAdmin || hasPermission('edit_accounts')) && (
+                                            <button onClick={() => setDeleteId(g.id)} className="w-10 h-10 rounded-xl bg-rose-50 text-rose-400 hover:text-rose-600 flex items-center justify-center transition-colors">
+                                              <Trash2 size={16} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                               </div>
+                            </div>
+                          </div>
+                          
+                          <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end">
+                              <button onClick={() => setSelectedLedgerRoll(null)} className="px-8 py-3 rounded-2xl bg-slate-900 text-white font-black text-sm shadow-xl shadow-slate-900/10">Close Ledger</button>
+                          </div>
+                        </motion.div>
+                      </div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               );
             })()}
@@ -2714,7 +2850,7 @@ const handlePrintReport = (data: any) => {
                                     graduation_marks:   f.graduation_marks   || '',
                                     graduation_board:   f.graduation_board   || '',
                                     graduation_division:f.graduation_division|| '',
-                                    fee_package:        f.fee_package        || 40000,
+                                    fee_package:        f.fee_package        || 8000,
                                     student_type:       f.student_type       || 'Regular',
                                     is_fresher:         f.is_fresher         ?? true,
                                     num_instalments:    f.num_instalments    || 1,
@@ -2869,61 +3005,31 @@ const handlePrintReport = (data: any) => {
                       {/* ══ FEE PACKAGE ══ */}
                       <div className="pb-5 border-b border-slate-100 space-y-4">
                         <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
-                        {admForm.program === 'Summer Camp' ? (
+                        {admForm.student_type === 'Summer Camp' ? (
                           <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100">
-                             <p className="text-sm font-black text-amber-700">Summer Camp Mode Active</p>
-                             <p className="text-xs text-amber-600 mt-1">Default Summer Camp (8,000) and Uniform (2,000) fees will be applied automatically upon confirmation.</p>
+                             <p className="text-sm font-black text-amber-700">Summer Camp Fee Applied</p>
+                             <p className="text-xs text-amber-600 mt-1">A total package of 7,000 (Summer Camp Fee) will be applied.</p>
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <F label="Total Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="60000" /></F>
-                            <F label="No. of Installments"><TS value={admForm.num_installments} onChange={e => setF('num_installments', Number(e.target.value))}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}</TS></F>
-                            <F label="Is Fresher?">
-                              <div className="flex gap-6 mt-2">
-                                {[true, false].map(v => (
-                                  <label key={String(v)} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('is_fresher', v)}>
-                                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.is_fresher === v ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.is_fresher === v && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
-                                    <span className="text-sm text-slate-700">{v ? 'Yes' : 'No'}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </F>
-                          </div>
-                        )}
-                        {pct > 0 && sec && admForm.program !== 'Summer Camp' && (
-                          <div className="p-4 rounded-2xl border" style={{ background: '#FFF7ED', borderColor: '#FED7AA' }}>
-                            <p className="text-xs font-black" style={{ color: FA }}>Auto-assigned Section: <span className="text-slate-900 text-sm">{sec}</span></p>
-                            <p className="text-xs font-black mt-0.5" style={{ color: FA }}>Class Code: <span className="text-slate-900 text-sm">{cls || 'TBD'}</span></p>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <F label="Total Package Amount (Accountant Defined)" req>
+                                <TI type="number" value={admForm.fee_package} onChange={(e: any) => setF('fee_package', e.target.value)} placeholder="e.g. 50000" />
+                              </F>
+                              <F label="No. of Installments" req>
+                                <TS value={admForm.num_installments} onChange={(e: any) => setF('num_installments', Number(e.target.value))}>
+                                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}</option>)}
+                                </TS>
+                              </F>
+                            </div>
+                            <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
+                              <p className="text-xs text-orange-700 font-bold flex items-center gap-2 italic">
+                                <AlertTriangle size={14} className="text-orange-500"/> Note: Summer Camp Fee (7,000) and Uniform Fee (1,000) will be added automatically.
+                              </p>
+                            </div>
                           </div>
                         )}
                       </div>
-
-                      {/* ══ FEE PACKAGE BREAKDOWN PREVIEW ══ */}
-                      {admForm.program !== 'Summer Camp' && (
-                        <div className="pb-5 border-b border-slate-100 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Installment Breakdown Preview</div>
-                          </div>
-                          
-                          <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
-                               {Array.from({ length: Number(admForm.num_installments) || 1 }).map((_, i) => {
-                                 const total = Number(admForm.fee_package) || 0;
-                                 const count = Number(admForm.num_installments) || 1;
-                                 const amt   = Math.floor(total / count);
-                                 const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
-                                 return (
-                                   <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
-                                     <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
-                                     <p className="text-sm font-black mt-0.5" style={{ color: ACCENT }}>{PKR(final)}</p>
-                                   </div>
-                                 );
-                               })}
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-slate-400 font-bold italic text-center">Due dates will be managed by the accountant during admission confirmation.</p>
-                        </div>
-                      )}
 
                       {/* ══ NOTES FIELD — at the end of admission form ══ */}
                       <div className="pb-5 border-b border-slate-100 space-y-3">
@@ -3966,44 +4072,32 @@ const handlePrintReport = (data: any) => {
                 <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
-                {preview.status === 'Pending' && preview.program === 'Summer Camp' && (
-                   <div className="bg-amber-50 rounded-2xl p-5 mb-4 border border-amber-100 text-center">
-                      <p className="text-sm font-black text-amber-700">Summer Camp Admission Confirmation</p>
-                      <p className="text-xs text-amber-600 mt-1">This student will be enrolled in Summer Camp with two specific fee groups: Summer Camp Fee (8,000) and Uniform Fee (2,000).</p>
-                   </div>
-                )}
-                {preview.status === 'Pending' && preview.program !== 'Summer Camp' && (
-                  <div className="bg-slate-50 rounded-2xl p-4 mb-4 border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Set Installment Due Dates</p>
-                    <div className="space-y-3">
-                      {Array.from({ length: preview.num_installments || preview.installments || 3 }).map((_, i) => {
-                        const total = preview.fee_package || 0;
-                        const count = preview.num_installments || preview.installments || 3;
-                        const amt = Math.floor(total / count);
-                        const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
-                        return (
-                          <div key={i} className="flex items-center justify-between gap-4 bg-white p-2.5 rounded-xl border border-slate-100">
-                            <div>
-                                <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
-                                <p className="text-xs font-black" style={{ color: ACCENT }}>{PKR(final)}</p>
-                            </div>
-                            <input type="date" value={instDates[i]} onChange={e => {
-                                const next = [...instDates];
-                                next[i] = e.target.value;
-                                setInstDates(next);
-                            }} className="text-xs font-bold border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent py-1" />
-                          </div>
-                        );
-                      })}
+                {preview.status === 'Pending' && (
+                    <div className="bg-amber-50 rounded-2xl p-5 mb-4 border border-amber-100">
+                       <p className="text-sm font-black text-amber-700 text-center">Standard Enrollment Fees</p>
+                       <ul className="mt-3 space-y-2">
+                         <li className="flex justify-between items-center text-xs font-bold text-amber-600 px-3 py-2 bg-white rounded-lg border border-amber-200">
+                           <span>Summer Camp Fee</span>
+                           <span>{PKR(7000)}</span>
+                         </li>
+                         <li className="flex justify-between items-center text-xs font-bold text-amber-600 px-3 py-2 bg-white rounded-lg border border-amber-200">
+                           <span>Uniform Fee</span>
+                           <span>{PKR(1000)}</span>
+                         </li>
+                         <li className="flex justify-between items-center text-xs font-black text-amber-800 px-3 py-2 bg-amber-100 rounded-lg border border-amber-300 mt-2">
+                           <span>Total Enrollment Package</span>
+                           <span>{PKR(8000)}</span>
+                         </li>
+                       </ul>
+                       <p className="text-[10px] text-amber-500 mt-3 italic text-center font-bold">These fees will be automatically generated in the student's ledger upon confirmation.</p>
                     </div>
-                  </div>
-                )}
-                {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(preview.fee_package)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
-                  <div key={l} className="flex items-start justify-between py-2 border-b border-slate-50">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest w-40 flex-shrink-0">{l}</span>
-                    <span className="text-sm font-bold text-slate-800 text-right flex-1">{v}</span>
-                  </div>
-                ))}
+                  )}
+                  {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(8000)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
+                    <div key={l} className="flex items-start justify-between py-2 border-b border-slate-50">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest w-40 flex-shrink-0">{l}</span>
+                      <span className="text-sm font-bold text-slate-800 text-right flex-1">{v}</span>
+                    </div>
+                  ))}
               </div>
               {preview.status === 'Pending' && (
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">

@@ -188,7 +188,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
 // ── Role → Portal mapping ──────────────────────────────────────
 const ROLE_PORTAL: Record<string, string> = {
   'Director':          'director',
-  'VP':                'vp',
+  'VP':                'admin',
   'Principal':         'admin',
   'Coordinator':       'coordinator',
   'Accountant':        'admin',
