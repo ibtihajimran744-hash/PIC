@@ -33,7 +33,7 @@ const CLASS_MAP: Record<string, Record<number, Record<string,string>>> = {
   'I.Com':          { 1:{'A-B':'I.Com-B','B-B':'I.Com-B','C-B':'I.Com-B','A-G':'I.Com-G','B-G':'I.Com-G','C-G':'I.Com-G'}, 2:{'A-B':'I.Com-II-B','B-B':'I.Com-II-B','C-B':'I.Com-II-B','A-G':'I.Com-II-G','B-G':'I.Com-II-G','C-G':'I.Com-II-G'} },
 };
 
-const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
+const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com','Summer Camp'];
 const BOARDS   = ['BISE Gujranwala','BISE Lahore','BISE Faisalabad','BISE Rawalpindi','BISE Multan','BISE Sargodha','BISE Sahiwal','Federal Board','Other'];
 const PKR = (n:number) => `Rs ${(n||0).toLocaleString('en-PK')}`;
 
@@ -163,42 +163,61 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
       const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || 'TBD';
       const { error:se } = await supabase.from('students').insert([{
         roll_no:roll, full_name:f.student_name, father_name:f.father_name,
-        gender:f.gender, program:f.program, part:f.part, class_section:classSection,
-        total_package:f.fee_package||40000, paid_amount:0, status:'Active',
+        gender:f.gender, program:f.program, part:f.part, 
+        class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
+        total_package: f.program === 'Summer Camp' ? 10000 : (f.fee_package||40000), paid_amount:0, status:'Active',
         username, password, total_xp:0, profile_xp:0, current_badge:'🥉 Newcomer'
       }]);
       if(se) throw se;
 
-      // Calculate Installments
-      const totalAmount = f.fee_package || 40000;
-      const instCount = f.installments || 1;
-      const amountPerInst = Math.floor(totalAmount / instCount);
-      
-      const installments = Array.from({ length: instCount }).map((_, i) => {
-        // Adjust last installment for rounding issues
-        const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
-        return {
-          student_roll: roll,
-          fees_group: `Installment ${i + 1}`,
-          fees_code: `INST-${i + 1}`,
-          due_date: installmentDates[i] || new Date().toISOString().split('T')[0],
-          amount: amount,
-          paid: 0,
-          status: 'Unpaid'
-        };
-      });
+      if (f.program === 'Summer Camp') {
+        const summerFees = [
+          { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: new Date().toISOString().split('T')[0], amount: 8000, paid: 0, status: 'Unpaid' },
+          { student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: new Date().toISOString().split('T')[0], amount: 2000, paid: 0, status: 'Unpaid' },
+        ];
+        await supabase.from('fee_groups').insert(summerFees);
+        
+        // Notify student
+        const scNotify = summerFees.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
+        await supabase.from('notifications').insert([{
+          target_user_id: roll,
+          title: 'Summer Camp Enrollment',
+          message: `Welcome to Summer Camp!\n\n${scNotify}`,
+          type: 'Fee',
+          is_read: false
+        }]);
+      } else {
+        // Calculate Installments
+        const totalAmount = f.fee_package || 40000;
+        const instCount = f.installments || 1;
+        const amountPerInst = Math.floor(totalAmount / instCount);
+        
+        const installments = Array.from({ length: instCount }).map((_, i) => {
+          // Adjust last installment for rounding issues
+          const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
+          return {
+            student_roll: roll,
+            fees_group: `Installment ${i + 1}`,
+            fees_code: `INST-${i + 1}`,
+            due_date: installmentDates[i] || new Date().toISOString().split('T')[0],
+            amount: amount,
+            paid: 0,
+            status: 'Unpaid'
+          };
+        });
 
-      await supabase.from('fee_groups').insert(installments);
+        await supabase.from('fee_groups').insert(installments);
 
-      // Notify student
-      const scheduleText = installments.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
-      await supabase.from('notifications').insert([{
-        target_user_id: roll,
-        title: 'Fee Schedule Created',
-        message: `Your fee schedule has been created.\n\n${scheduleText}`,
-        type: 'Fee',
-        is_read: false
-      }]);
+        // Notify student
+        const scheduleText = installments.map(inst => `${inst.fees_group} → ${inst.amount} → Due: ${inst.due_date}`).join('\n');
+        await supabase.from('notifications').insert([{
+          target_user_id: roll,
+          title: 'Fee Schedule Created',
+          message: `Your fee schedule has been created.\n\n${scheduleText}`,
+          type: 'Fee',
+          is_read: false
+        }]);
+      }
 
       await supabase.from('admission_forms').update({
         status:'Approved', synced_to_db:true, student_roll_no:roll,
@@ -503,36 +522,45 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                     {/* Fee + Submit */}
                     <div className="pt-4 border-t border-slate-100 space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <F label="Total Fee Package (Rs)">
-                          <TI type="number" value={form.fee_package} onChange={e=>set('fee_package',Number(e.target.value))}/>
-                        </F>
-                        <F label="Number of Installments">
-                          <TS value={form.installments} onChange={e=>set('installments',Number(e.target.value))}>
-                            {[1,2,3,4,5,6,7,8,10,12].map(n=><option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}
-                          </TS>
-                        </F>
-                      </div>
-
-                      {/* LIVE BREAKDOWN PREVIEW */}
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Fee Breakdown Preview</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                          {Array.from({ length: form.installments || 1 }).map((_, i) => {
-                            const total = Number(form.fee_package) || 0;
-                            const count = Number(form.installments) || 1;
-                            const amt   = Math.floor(total / count);
-                            const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
-                            return (
-                              <div key={i} className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm text-center">
-                                <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
-                                <p className="text-xs font-black text-[#c0392b] mt-0.5">{PKR(final)}</p>
-                              </div>
-                            );
-                          })}
+                      {form.program === 'Summer Camp' ? (
+                        <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100 italic space-y-2">
+                           <p className="text-sm font-black text-amber-700">Summer Camp Mode Active</p>
+                           <p className="text-xs text-amber-600">Specific fees for Summer Camp (8,000) and Uniform (2,000) will be applied automatically upon confirmation in Admin Portal.</p>
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-3 italic text-center">Due dates will be set by the Accountant during confirmation.</p>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <F label="Total Fee Package (Rs)">
+                              <TI type="number" value={form.fee_package} onChange={e=>set('fee_package',Number(e.target.value))}/>
+                            </F>
+                            <F label="Number of Installments">
+                              <TS value={form.installments} onChange={e=>set('installments',Number(e.target.value))}>
+                                {[1,2,3,4,5,6,7,8,10,12].map(n=><option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}
+                              </TS>
+                            </F>
+                          </div>
+
+                          {/* LIVE BREAKDOWN PREVIEW */}
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Fee Breakdown Preview</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {Array.from({ length: form.installments || 1 }).map((_, i) => {
+                                const total = Number(form.fee_package) || 0;
+                                const count = Number(form.installments) || 1;
+                                const amt   = Math.floor(total / count);
+                                const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
+                                return (
+                                  <div key={i} className="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm text-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
+                                    <p className="text-xs font-black text-[#c0392b] mt-0.5">{PKR(final)}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-3 italic text-center">Due dates will be set by the Accountant during confirmation.</p>
+                          </div>
+                        </>
+                      )}
 
                       <div className="flex flex-col sm:flex-row gap-3">
                         <motion.button whileHover={{y:-1}} whileTap={{scale:0.98}}

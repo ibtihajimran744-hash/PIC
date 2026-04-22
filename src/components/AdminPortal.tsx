@@ -26,7 +26,7 @@ const getTheme = (role: string) => {
 };
 
 // ── Accountant constants ──────────────────────────────────────────────────
-const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
+const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com','Summer Camp'];
 const BOARDS   = ['BISE Gujranwala','BISE Lahore','BISE Faisalabad','BISE Rawalpindi','BISE Multan','BISE Sargodha','BISE Sahiwal','Federal Board','Other'];
 const PKR      = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 
@@ -1406,30 +1406,37 @@ const handlePrintReport = (data: any) => {
       const { error: se } = await supabase.from('students').insert([{
         roll_no: roll, full_name: f.student_name, father_name: f.father_name,
         gender: f.gender, program: f.program, part: f.part,
-        class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || 'TBD',
-        total_package: f.fee_package || 40000, paid_amount: 0, status: 'Active',
+        class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
+        total_package: f.program === 'Summer Camp' ? 10000 : (f.fee_package || 40000), paid_amount: 0, status: 'Active',
         username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
       }]);
       if (se) throw se;
 
-      const totalAmount = f.fee_package || 40000;
-      const instCount = f.num_installments || f.installments || 1;
-      const amountPerInst = Math.floor(totalAmount / instCount);
-      
-      const installments = Array.from({ length: instCount }).map((_, i) => {
-        const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
-        return {
-          student_roll: roll,
-          fees_group: `Installment ${i + 1}`,
-          fees_code: `INST-${i + 1}`,
-          due_date: instDates[i] || new Date().toISOString().split('T')[0],
-          amount: amount,
-          paid: 0,
-          status: 'Unpaid'
-        };
-      });
-      
-      await supabase.from('fee_groups').insert(installments);
+      if (f.program === 'Summer Camp') {
+        const summerFees = [
+          { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: new Date().toISOString().split('T')[0], amount: 8000, paid: 0, status: 'Unpaid' },
+          { student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: new Date().toISOString().split('T')[0], amount: 2000, paid: 0, status: 'Unpaid' },
+        ];
+        await supabase.from('fee_groups').insert(summerFees);
+      } else {
+        const totalAmount = f.fee_package || 40000;
+        const instCount = f.num_installments || f.installments || 1;
+        const amountPerInst = Math.floor(totalAmount / instCount);
+        
+        const installments = Array.from({ length: instCount }).map((_, i) => {
+          const amount = (i === instCount - 1) ? (totalAmount - (amountPerInst * (instCount - 1))) : amountPerInst;
+          return {
+            student_roll: roll,
+            fees_group: `Installment ${i + 1}`,
+            fees_code: `INST-${i + 1}`,
+            due_date: instDates[i] || new Date().toISOString().split('T')[0],
+            amount: amount,
+            paid: 0,
+            status: 'Unpaid'
+          };
+        });
+        await supabase.from('fee_groups').insert(installments);
+      }
       
       await supabase.from('admission_forms').update({
         status: 'Approved', synced_to_db: true, student_roll_no: roll,
@@ -2859,23 +2866,31 @@ const handlePrintReport = (data: any) => {
                           </table>
                         </div>
                       </div>
+                      {/* ══ FEE PACKAGE ══ */}
                       <div className="pb-5 border-b border-slate-100 space-y-4">
                         <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <F label="Total Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="60000" /></F>
-                          <F label="No. of Installments"><TS value={admForm.num_installments} onChange={e => setF('num_installments', Number(e.target.value))}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}</TS></F>
-                          <F label="Is Fresher?">
-                            <div className="flex gap-6 mt-2">
-                              {[true, false].map(v => (
-                                <label key={String(v)} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('is_fresher', v)}>
-                                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.is_fresher === v ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.is_fresher === v && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
-                                  <span className="text-sm text-slate-700">{v ? 'Yes' : 'No'}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </F>
-                        </div>
-                        {pct > 0 && sec && (
+                        {admForm.program === 'Summer Camp' ? (
+                          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100">
+                             <p className="text-sm font-black text-amber-700">Summer Camp Mode Active</p>
+                             <p className="text-xs text-amber-600 mt-1">Default Summer Camp (8,000) and Uniform (2,000) fees will be applied automatically upon confirmation.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <F label="Total Package (PKR)" req><TI type="number" value={admForm.fee_package} onChange={e => setF('fee_package', Number(e.target.value))} placeholder="60000" /></F>
+                            <F label="No. of Installments"><TS value={admForm.num_installments} onChange={e => setF('num_installments', Number(e.target.value))}>{[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} Installment{n>1?'s':''}</option>)}</TS></F>
+                            <F label="Is Fresher?">
+                              <div className="flex gap-6 mt-2">
+                                {[true, false].map(v => (
+                                  <label key={String(v)} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('is_fresher', v)}>
+                                    <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.is_fresher === v ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.is_fresher === v && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
+                                    <span className="text-sm text-slate-700">{v ? 'Yes' : 'No'}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </F>
+                          </div>
+                        )}
+                        {pct > 0 && sec && admForm.program !== 'Summer Camp' && (
                           <div className="p-4 rounded-2xl border" style={{ background: '#FFF7ED', borderColor: '#FED7AA' }}>
                             <p className="text-xs font-black" style={{ color: FA }}>Auto-assigned Section: <span className="text-slate-900 text-sm">{sec}</span></p>
                             <p className="text-xs font-black mt-0.5" style={{ color: FA }}>Class Code: <span className="text-slate-900 text-sm">{cls || 'TBD'}</span></p>
@@ -2884,29 +2899,31 @@ const handlePrintReport = (data: any) => {
                       </div>
 
                       {/* ══ FEE PACKAGE BREAKDOWN PREVIEW ══ */}
-                      <div className="pb-5 border-b border-slate-100 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Installment Breakdown Preview</div>
-                        </div>
-                        
-                        <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
-                             {Array.from({ length: Number(admForm.num_installments) || 1 }).map((_, i) => {
-                               const total = Number(admForm.fee_package) || 0;
-                               const count = Number(admForm.num_installments) || 1;
-                               const amt   = Math.floor(total / count);
-                               const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
-                               return (
-                                 <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
-                                   <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
-                                   <p className="text-sm font-black mt-0.5" style={{ color: ACCENT }}>{PKR(final)}</p>
-                                 </div>
-                               );
-                             })}
+                      {admForm.program !== 'Summer Camp' && (
+                        <div className="pb-5 border-b border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Installment Breakdown Preview</div>
                           </div>
+                          
+                          <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+                               {Array.from({ length: Number(admForm.num_installments) || 1 }).map((_, i) => {
+                                 const total = Number(admForm.fee_package) || 0;
+                                 const count = Number(admForm.num_installments) || 1;
+                                 const amt   = Math.floor(total / count);
+                                 const final = i === count - 1 ? (total - (amt * (count - 1))) : amt;
+                                 return (
+                                   <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
+                                     <p className="text-[10px] font-black text-slate-400 uppercase">Installment {i+1}</p>
+                                     <p className="text-sm font-black mt-0.5" style={{ color: ACCENT }}>{PKR(final)}</p>
+                                   </div>
+                                 );
+                               })}
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-bold italic text-center">Due dates will be managed by the accountant during admission confirmation.</p>
                         </div>
-                        <p className="text-[10px] text-slate-400 font-bold italic text-center">Due dates will be managed by the accountant during admission confirmation.</p>
-                      </div>
+                      )}
 
                       {/* ══ NOTES FIELD — at the end of admission form ══ */}
                       <div className="pb-5 border-b border-slate-100 space-y-3">
@@ -3949,7 +3966,13 @@ const handlePrintReport = (data: any) => {
                 <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
-                {preview.status === 'Pending' && (
+                {preview.status === 'Pending' && preview.program === 'Summer Camp' && (
+                   <div className="bg-amber-50 rounded-2xl p-5 mb-4 border border-amber-100 text-center">
+                      <p className="text-sm font-black text-amber-700">Summer Camp Admission Confirmation</p>
+                      <p className="text-xs text-amber-600 mt-1">This student will be enrolled in Summer Camp with two specific fee groups: Summer Camp Fee (8,000) and Uniform Fee (2,000).</p>
+                   </div>
+                )}
+                {preview.status === 'Pending' && preview.program !== 'Summer Camp' && (
                   <div className="bg-slate-50 rounded-2xl p-4 mb-4 border border-slate-100">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Set Installment Due Dates</p>
                     <div className="space-y-3">
