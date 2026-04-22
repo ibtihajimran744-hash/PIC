@@ -594,7 +594,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const pct = Number(admForm.matric_percentage) || 0;
   const sec = pct > 0 ? getSuggestedSection(pct, admForm.gender) : '';
   const cls = sec ? CLASS_MAP[admForm.program]?.[admForm.part]?.[sec] || '' : '';
-  const setF = (k: string, v: any) => setAdmForm((p: any) => ({ ...p, [k]: v }));
+  const setF = (k: string, v: any) => {
+    setAdmForm((p: any) => ({ ...p, [k]: v }));
+    if (k === 'num_installments') {
+      const n = Number(v);
+      setInstDates(prev => {
+        const next = [...prev];
+        if (next.length < n) {
+          for (let i = next.length; i < n; i++) {
+            const d = new Date();
+            d.setMonth(d.getMonth() + i);
+            next.push(d.toISOString().slice(0, 10));
+          }
+        } else if (next.length > n) {
+          return next.slice(0, n);
+        }
+        return next;
+      });
+    }
+  };
 
   const showToast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); };
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
@@ -1345,6 +1363,8 @@ const handlePrintReport = (data: any) => {
       student_type:       admForm.student_type,
       is_fresher:         admForm.is_fresher,
       installments:       Number(admForm.num_installments),
+      num_installments:   Number(admForm.num_installments),
+      installment_dates:  instDates,
       suggested_section:  sec,
       suggested_class:    cls,
       notes:              admForm.notes || '',
@@ -1456,7 +1476,7 @@ const handlePrintReport = (data: any) => {
           ];
       } else {
           const pkgAmt = Number(f.fee_package) || 0;
-          const instCount = f.num_instalments || f.installments || 1;
+          const instCount = f.num_installments || f.installments || 1;
           const perInst = Math.floor(pkgAmt / instCount);
           
           for (let i = 0; i < instCount; i++) {
@@ -1464,7 +1484,7 @@ const handlePrintReport = (data: any) => {
                   student_roll: roll,
                   fees_group: instCount > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
                   fees_code: `FEE-PK${instCount > 1 ? `-${i + 1}` : ''}`,
-                  due_date: instDates[i] || today,
+                  due_date: (f.installment_dates && f.installment_dates[i]) || instDates[i] || today,
                   amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
                   paid: 0, status: 'Unpaid'
               });
@@ -2777,7 +2797,11 @@ const handlePrintReport = (data: any) => {
                       <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
                     ))}
                   </div>
-                  <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('new-admission')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}><UserPlus size={15} /> New Admission</motion.button>
+                  <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => {
+                    setAdmForm({ ...EMPTY_FORM, fee_package: 8000, num_installments: 1 });
+                    setInstDates([new Date().toISOString().slice(0, 10)]);
+                    setTab('new-admission');
+                  }} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}><UserPlus size={15} /> New Admission</motion.button>
                 </div>
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 border-b border-slate-100 mb-2 flex items-center justify-between">
@@ -2814,7 +2838,7 @@ const handlePrintReport = (data: any) => {
                               <div className="flex gap-1.5">
                                 <button onClick={() => {
                                     setPreview(f);
-                                    setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+                                    setInstDates(f.installment_dates || Array(f.num_installments || f.installments || 1).fill(new Date().toISOString().split('T')[0]));
                                 }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
                                   setAdmForm({
@@ -2856,10 +2880,11 @@ const handlePrintReport = (data: any) => {
                                     fee_package:        f.fee_package        || 8000,
                                     student_type:       f.student_type       || 'Regular',
                                     is_fresher:         f.is_fresher         ?? true,
-                                    num_instalments:    f.num_instalments    || 1,
+                                    num_installments:   f.num_installments   || f.installments    || 1,
                                     notes:              f.notes              || '',
                                     _editingId:         f.id,
                                   });
+                                  setInstDates(f.installment_dates || Array(f.num_installments || f.installments || 1).fill(new Date().toISOString().split('T')[0]));
                                   setTab('new-admission');
                                 }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
                                   <Save size={10} /> Edit
@@ -3025,6 +3050,32 @@ const handlePrintReport = (data: any) => {
                                 </TS>
                               </F>
                             </div>
+
+                            {Number(admForm.num_installments) >= 1 && (
+                              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
+                                  <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Installment Due Dates</p>
+                                  <p className="text-[10px] font-bold text-slate-500 italic">Set the target date for each installment</p>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                  {Array.from({ length: Number(admForm.num_installments) }).map((_, i) => (
+                                    <div key={i} className="space-y-1">
+                                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Due Date {i + 1}</label>
+                                      <input 
+                                        type="date" 
+                                        value={instDates[i] || ''} 
+                                        onChange={(e) => {
+                                          const newDates = [...instDates];
+                                          newDates[i] = e.target.value;
+                                          setInstDates(newDates);
+                                        }}
+                                        className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-medium outline-none focus:border-orange-500 transition-all bg-white"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
                               <p className="text-xs text-orange-700 font-bold flex items-center gap-2 italic">
                                 <AlertTriangle size={14} className="text-orange-500"/> Note: Summer Camp Fee (7,000) and Uniform Fee (1,000) will be added automatically.
