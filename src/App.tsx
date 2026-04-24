@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import { AdminPortal }       from './components/AdminPortal';
 import { ReceptionistPortal } from './components/ReceptionistPortal';
-import { VPPortal }          from './components/VPPortal';
+import VPPortal              from './components/VPPortal';
 import { CoordinatorPortal } from './components/CoordinatorPortal';
 import { ExaminerPortal }    from './components/ExaminerPortal';
 import { AcademicsPortal }   from './components/AcademicsPortal';
@@ -192,7 +192,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
 // ── Role → Portal mapping ──────────────────────────────────────
 const ROLE_PORTAL: Record<string, string> = {
   'Director':          'director',
-  'VP':                'admin',
+  'VP':                'vp',
   'Principal':         'admin',
   'Coordinator':       'coordinator',
   'Accountant':        'admin',
@@ -277,7 +277,7 @@ export default function App() {
     );
   }
 
-  if (portalType === 'vp') {
+  if (portalType === 'vp' || portalType === 'director') {
     return (
       <VPPortal
         onLogout={handleLogout}

@@ -33,7 +33,27 @@ const CLASS_MAP: Record<string, Record<number, Record<string,string>>> = {
   'I.Com':          { 1:{'A-B':'I.Com-B','B-B':'I.Com-B','C-B':'I.Com-B','A-G':'I.Com-G','B-G':'I.Com-G','C-G':'I.Com-G'}, 2:{'A-B':'I.Com-II-B','B-B':'I.Com-II-B','C-B':'I.Com-II-B','A-G':'I.Com-II-G','B-G':'I.Com-II-G','C-G':'I.Com-II-G'} },
 };
 
-const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com','Summer Camp'];
+const DEGREES = ['Intermediate', 'ADP', 'BS', 'BS 5th Semester Entry', 'Category B', 'Others'];
+
+const PROGRAM_OPTIONS: Record<string, string[]> = {
+  'Intermediate': ['ICS Physics', 'ICS Statistics', 'Pre-Medical', 'Pre-Engineering', 'FA IT', 'FA General', 'I.Com'],
+  'BS': [
+    'BS COMPUTER SCIENCE', 'BS SOFTWARE ENGINEERING', 'BS DATA SCIENCE', 
+    'BS CHEMISTRY', 'BS PHYSICS', 'BS MATH', 'BS BOTONY', 'BS ZOOLOGY', 
+    'BS ENGLISH', 'BS PSYCHOLOGY', 'BS URDU', 'BS ISLAMYAT'
+  ],
+  'ADP': [
+    'ADP COMPUTER SCIENCE (2-YEARS)', 'ADP BUSINESS ADMINISTRATION', 'ADP RECOGNIZED BY HEC'
+  ],
+  'BS 5th Semester Entry': [
+    'BS COMPUTER SCIENCE (5TH SEMESTER)', 'BS SOFTWARE ENGINEERING (5TH SEM)',
+    'BS CHEMISTRY (5th)', 'BS PHYSICS (5th)', 'BS MATH (5th)', 'BS BOTONY (5th)',
+    'BS ZOOLOGY (5th)', 'BS ENGLISH (5th)', 'BS PSYCHOLOGY (5th)'
+  ],
+  'Others': ['Summer Camp', 'Short Course'],
+  'Category B': ['Category B - General', 'Category B - Science', 'Category B - Arts', 'Category B - Commerce'],
+};
+
 const BOARDS   = ['BISE Gujranwala','BISE Lahore','BISE Faisalabad','BISE Rawalpindi','BISE Multan','BISE Sargodha','BISE Sahiwal','Federal Board','Other'];
 const PKR = (n:number) => `Rs ${(n||0).toLocaleString('en-PK')}`;
 
@@ -74,6 +94,16 @@ const EMPTY: any = {
   fee_package: 8000,
   installments: 1,
   student_type: 'Regular',
+  student_picture: '',
+  extra_fees: {
+    welcome_party: { active: false, amount: 2000 },
+    annual_trip: { active: false, amount: 3500 },
+    farewell_party: { active: false, amount: 2500 },
+    examination_fee: { active: false, amount: 3000 },
+    registration_fee: { active: false, amount: 5000 },
+    student_card_fee: { active: false, amount: 500 },
+    annual_charges: { active: false, amount: 2500 }
+  }
 };
 
 export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, adminData }) => {
@@ -124,6 +154,32 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
     } catch(e){ console.warn('Sheets sync skipped',e); }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      showToast('Only JPG and PNG formats are allowed', 'err');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      set('student_picture', reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const toggleExtraFee = (key: string) => {
+    const newFees = { ...form.extra_fees };
+    newFees[key].active = !newFees[key].active;
+    set('extra_fees', newFees);
+  };
+
+  const updateExtraFeeAmount = (key: string, amount: number) => {
+    const newFees = { ...form.extra_fees };
+    newFees[key].amount = amount;
+    set('extra_fees', newFees);
+  };
+
   const handleSubmit = async () => {
     if(!form.student_name.trim()||!form.father_name.trim()){
       showToast('Name and father name are required','err'); return;
@@ -170,6 +226,8 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
     try {
       const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
       let roll = f.student_roll_no;
+      let ledgerFees: any[] = [];
+      const today = new Date().toISOString().split('T')[0];
       
       if (!roll) {
         roll = nextRoll;
@@ -181,9 +239,28 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
         else if (studentType === 'Regular') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
         else if (studentType === 'Transfer') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
 
-        const { error:se } = await supabase.from('students').insert([{
+        // Additional Fees (Optional)
+        for (const [key, details] of Object.entries(f.extra_fees || {})) {
+          const fee = details as any;
+          if (fee.active && fee.amount > 0) {
+            const feeName = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            ledgerFees.push({
+              student_roll: roll,
+              fees_group: feeName,
+              fees_code: `OPT-${key.toUpperCase().slice(0, 3)}`,
+              due_date: today,
+              amount: fee.amount,
+              paid: 0,
+              status: 'Unpaid'
+            });
+            totalPackage += fee.amount;
+          }
+        }
+
+        const { error: se } = await supabase.from('students').insert([{
           roll_no:roll, full_name:f.student_name, father_name:f.father_name,
-          gender:f.gender, program:f.program, part:f.part, 
+          gender:f.gender, program:f.program, applied_for: f.applied_for, part:f.part, 
+          student_picture: f.student_picture,
           class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
           total_package: totalPackage, paid_amount:0, status:'Active',
           username, password, total_xp:0, profile_xp:0, current_badge:'🥉 Newcomer'
@@ -195,12 +272,12 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
         let totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
         await supabase.from('students').update({
             total_package: totalPackage,
+            program: f.program,
+            applied_for: f.applied_for,
+            student_picture: f.student_picture,
             status: 'Active'
         }).eq('roll_no', roll);
       }
-
-      let ledgerFees: any[] = [];
-      const today = new Date().toISOString().split('T')[0];
 
       if (studentType === 'Summer Camp') {
         ledgerFees = [
@@ -398,7 +475,20 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                     <div className="text-center md:text-right">
                       <p className="text-2xl font-black text-[#c0392b] uppercase tracking-wide">Admission Form</p>
                       <p className="text-sm text-slate-500 mt-1">Session: <strong>2026–27</strong></p>
-                      <div className="mt-2 w-20 h-24 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 font-bold ml-auto">PHOTO</div>
+                      <div 
+                        onClick={() => document.getElementById('student-pic-input')?.click()}
+                        className="mt-2 w-24 h-28 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex items-center justify-center text-[9px] text-slate-400 font-bold ml-auto cursor-pointer hover:border-[#c0392b] transition-all relative group"
+                      >
+                        {form.student_picture ? (
+                          <img src={form.student_picture} className="w-full h-full object-cover" alt="Student" />
+                        ) : (
+                          <div className="text-center p-2">
+                             <Plus size={20} className="mx-auto mb-1 opacity-40 group-hover:opacity-100 group-hover:text-[#c0392b]" />
+                             UPLOAD PHOTO
+                          </div>
+                        )}
+                        <input id="student-pic-input" type="file" hidden accept="image/*" onChange={handleImageUpload} />
+                      </div>
                     </div>
                   </div>
 
@@ -430,22 +520,67 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           </TS>
                         </F>
                         <F label="Applied For" req>
-                        <div className="flex flex-wrap gap-5 mt-2">
-                          {['Intermediate','ADP/BS','BS 0*','Others'].map(o=>(
-                            <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={()=>set('applied_for',o)}>
-                              <div className={cn('w-4 h-4 rounded border-2 flex items-center justify-center',form.applied_for===o?'bg-[#c0392b] border-[#c0392b]':'border-slate-400')}>
-                                {form.applied_for===o&&<div className="w-2 h-2 bg-white rounded-sm"/>}
-                              </div>
-                              <span className="text-sm text-slate-700">{o}</span>
-                            </label>
-                          ))}
+                          <div className="flex flex-wrap gap-4 mt-2">
+                            {DEGREES.map(o => (
+                              <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={() => {
+                                setForm((p: any) => ({
+                                  ...p,
+                                  applied_for: o,
+                                  program: (PROGRAM_OPTIONS[o] || PROGRAM_OPTIONS['Others'])[0],
+                                  part: o === 'BS 5th Semester Entry' ? 5 : 1
+                                }));
+                              }}>
+                                <div className={cn('w-4 h-4 rounded border-2 flex items-center justify-center', form.applied_for === o ? 'bg-[#c0392b] border-[#c0392b]' : 'border-slate-400')}>
+                                  {form.applied_for === o && <div className="w-2 h-2 bg-white rounded-sm" />}
+                                </div>
+                                <span className="text-xs font-black text-slate-700 uppercase tracking-tight">{o}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </F>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Program" req>
+                            <TS value={form.program} onChange={e => set('program', e.target.value)}>
+                              {PROGRAM_OPTIONS[form.applied_for]?.map(p => <option key={p} value={p}>{p}</option>)}
+                            </TS>
+                          </F>
+                          <F label={form.applied_for === 'Intermediate' ? "Part" : "Semester / Year"} req>
+                            <TS value={form.part} onChange={e => set('part', Number(e.target.value))}>
+                              {form.applied_for === 'Intermediate' ? (
+                                <>
+                                  <option value={1}>Part 1</option>
+                                  <option value={2}>Part 2</option>
+                                </>
+                              ) : form.applied_for === 'ADP' ? (
+                                <>
+                                  <option value={1}>1st Semester</option>
+                                  <option value={2}>2nd Semester</option>
+                                  <option value={3}>3rd Semester</option>
+                                  <option value={4}>4th Semester</option>
+                                </>
+                              ) : form.applied_for === 'BS 5th Semester Entry' ? (
+                                <>
+                                  {form.applied_for === 'Category B' ? null : [1,2,3,4,5,6,7,8].map(s => (
+                                    <option key={s} value={s}>{s}{s===1?'st':s===2?'nd':s===3?'rd':'th'} Semester</option>
+                                  ))}
+                                </>
+                              ) : (
+                                <>
+                                  {[1,2,3,4,5,6,7,8].map(s => (
+                                    <option key={s} value={s}>{s}{s===1?'st':s===2?'nd':s===3?'rd':'th'} Semester</option>
+                                  ))}
+                                  {form.applied_for === 'Category B' && <><option value={1}>1st Year</option><option value={2}>2nd Year</option></>}
+                                </>
+                              ) : form.applied_for === 'Category B' ? (
+                                <>
+                                  <option value={1}>1st Year</option>
+                                  <option value={2}>2nd Year</option>
+                                </>
+                              )}
+                            </TS>
+                          </F>
+                          <F label="Subjects (1)(2)(3)"><TI placeholder="(1) _____ (2) _____ (3) _____" value={form.inter_subjects} onChange={e => set('inter_subjects', e.target.value)} /></F>
                         </div>
-                      </F>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <F label="Program" req><TS value={form.program} onChange={e=>set('program',e.target.value)}>{PROGRAMS.map(p=><option key={p}>{p}</option>)}</TS></F>
-                        <F label="Part / Year" req><TS value={form.part} onChange={e=>set('part',Number(e.target.value))}><option value={1}>Part 1 (1st Year)</option><option value={2}>Part 2 (2nd Year)</option></TS></F>
-                        <F label="Subjects (1)(2)(3)"><TI placeholder="(1) _____ (2) _____ (3) _____" value={form.inter_subjects} onChange={e=>set('inter_subjects',e.target.value)}/></F>
-                      </div>
                     </div>
                   </div>
 
@@ -522,7 +657,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                               <td className="px-2 py-2"><TI placeholder="A/B/C" value={form.matric_division} onChange={e=>set('matric_division',e.target.value)}/></td>
                               <td className="px-2 py-2">
                                 <TI type="number" placeholder="%" value={form.matric_percentage} onChange={e=>set('matric_percentage',e.target.value)}/>
-                                {pct>0&&<div className={cn('mt-1 px-2 py-0.5 rounded text-[9px] font-black inline-block border',
+                                {pct>0&&form.applied_for === 'Intermediate' && <div className={cn('mt-1 px-2 py-0.5 rounded text-[9px] font-black inline-block border',
                                   sec.startsWith('A')?'bg-emerald-50 text-emerald-700 border-emerald-200':'bg-blue-50 text-blue-700 border-blue-200')}>
                                   → Section {sec}
                                 </div>}
@@ -559,8 +694,58 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                         </table>
                       </div>
 
+                      {/* Optional Fees */}
+                      <div className="pt-4 space-y-3">
+                        <div className="inline-block bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest">Optional Fee Choices</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {Object.entries(form.extra_fees).map(([key, details]: [string, any]) => {
+                            const name = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                            return (
+                              <div key={key} className={cn('p-3 rounded-2xl border transition-all flex flex-col gap-2', details.active ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100')}>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-black text-slate-700">{name}</span>
+                                  <button 
+                                    onClick={() => toggleExtraFee(key)}
+                                    className={cn('w-8 h-4 rounded-full relative transition-all', details.active ? 'bg-blue-600' : 'bg-slate-300')}
+                                  >
+                                    <div className={cn('absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all', details.active ? 'right-0.5' : 'left-0.5')} />
+                                  </button>
+                                </div>
+                                {details.active && (
+                                  <div className="relative">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rs</span>
+                                    <input 
+                                      type="number" 
+                                      value={details.amount} 
+                                      onChange={(e) => updateExtraFeeAmount(key, Number(e.target.value))}
+                                      className="w-full bg-white border border-blue-100 rounded-lg pl-7 pr-2 py-1 text-xs font-black outline-none"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       {/* Section preview */}
-                      {sec&&(
+                      {form.applied_for === 'Category B' && (
+  <div className="mt-3 p-4 bg-purple-50 rounded-2xl border border-purple-200">
+    <p className="text-[10px] font-black text-purple-700 uppercase tracking-widest mb-2">Category B Fee Amount</p>
+    <div className="relative">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">Rs</span>
+      <input
+        type="number"
+        value={form.fee_package}
+        onChange={e => set('fee_package', Number(e.target.value))}
+        placeholder="Enter fee amount"
+        className="w-full pl-8 pr-3 py-2.5 border-2 border-purple-200 rounded-xl text-sm font-black text-purple-900 outline-none focus:border-purple-500 bg-white"
+      />
+    </div>
+  </div>
+)}
+
+{sec && form.applied_for === 'Intermediate' && (
                         <motion.div initial={{opacity:0,y:4}} animate={{opacity:1,y:0}}
                           className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 flex items-center gap-3">
                           <CheckCircle size={18} className="text-emerald-600 flex-shrink-0"/>
@@ -569,6 +754,27 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           </p>
                         </motion.div>
                       )}
+                    </div>
+
+                    {/* Quick Fee Presets */}
+                    <div className="pt-2">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Quick Fee Presets</p>
+                       <div className="flex flex-wrap gap-2">
+                         {[
+                           { label: 'Inter (80k)', amt: 80000, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                           { label: 'BS/ADP (120k)', amt: 120000, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                           { label: 'Masters (150k)', amt: 150000, color: 'bg-purple-50 text-purple-700 border-purple-200' },
+                           { label: 'CS (140k)', amt: 140000, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                         ].map(p => (
+                           <button 
+                             key={p.label}
+                             onClick={() => set('fee_package', p.amt)}
+                             className={cn('px-3 py-1.5 rounded-xl text-[10px] font-black border transition-all hover:scale-105 active:scale-95', p.color)}
+                           >
+                             {p.label}
+                           </button>
+                         ))}
+                       </div>
                     </div>
 
                     {/* Fee + Submit */}
@@ -642,7 +848,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                         <tbody>
                           {filtered.map((f,i)=>(
                             <motion.tr key={f.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*0.01}}
-                              className="border-b border-slate-50 hover:bg-slate-50/50">
+                              className="border-b border-slate-50 hover:bg-white">
                               <td className="px-4 py-3 font-mono font-bold text-[#c0392b]">{f.form_no}</td>
                               <td className="px-4 py-3 font-black text-slate-900">{f.student_name}</td>
                               <td className="px-4 py-3 text-slate-500">{f.father_name}</td>

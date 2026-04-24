@@ -4,7 +4,9 @@ import {
   CreditCard, Calendar, BarChart3, BookOpen,
   Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
+  Sparkles
 } from 'lucide-react';
+import { EduChatAI } from './EduChatAI';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 
@@ -445,6 +447,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
   const NAV = [
     { id:'dashboard',     label:'Home',          icon:Home     },
+    { id:'ai-chat',       label:'Study AI',      icon:Sparkles },
     { id:'fees',          label:'My Fees',        icon:CreditCard},
     { id:'attendance',    label:'Attendance',     icon:Calendar },
     { id:'results',       label:'Results',        icon:BarChart3},
@@ -459,6 +462,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
     attendance:'Attendance Record', results:'My Results',
     courses:'My Courses', timetable:'Class Timetable', leaderboard:'Class Leaderboard',
     notifications:'All Notifications',
+    'ai-chat': 'Academic AI Assistant',
   };
 
   if (loading) return (
@@ -600,6 +604,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
         <div className="p-4 md:p-7 pb-28 md:pb-7">
           <AnimatePresence mode="wait">
+
+            {/* ══ AI CHAT ══ */}
+            {tab === 'ai-chat' && (
+              <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                <EduChatAI />
+              </motion.div>
+            )}
 
             {/* ══ DASHBOARD ══ */}
             {tab==='dashboard' && (

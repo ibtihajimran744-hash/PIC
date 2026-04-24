@@ -4,8 +4,9 @@ import {
   Users, Bell, LogOut, Plus, Calendar, LayoutDashboard, Search,
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
-  CheckCircle2, User, RefreshCw, AlertCircle, Loader2
+  CheckCircle2, User, RefreshCw, AlertCircle, Loader2, Sparkles
 } from 'lucide-react';
+import { EduChatAI } from './EduChatAI';
 import { cn } from '../lib/utils';
 import { 
   Student, Teacher, getChapters, addChapter, Chapter, Grade, addGrades,
@@ -885,6 +886,13 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                 </motion.div>
               )}
+
+              {/* ── AI CHAT ── */}
+              {activeTab === 'AI Assistant' && (
+                <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                  <EduChatAI />
+                </motion.div>
+              )}
             </>
           )}
         </AnimatePresence>
@@ -987,13 +995,21 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       </AnimatePresence>
 
       {/* ══ BOTTOM NAV ══════════════════════════════════════════════════════════ */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-around items-center z-50">
-        {[{ id: 'Home', icon: LayoutDashboard }, { id: 'Students', icon: Users }, { id: 'Grading', icon: CheckSquare }, { id: 'Leaderboard', icon: Trophy }, { id: 'Profile', icon: User }].map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubPage(null); }} className={cn("flex flex-col items-center gap-1 transition-all", activeTab === tab.id ? "text-[#2D3494]" : "text-slate-400")}>
-            <div className={cn("p-2.5 rounded-2xl transition-all", activeTab === tab.id ? "bg-blue-50" : "")}><tab.icon size={24} /></div>
-          </button>
-        ))}
-      </nav>
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-4 py-3 flex justify-around items-center z-50 overflow-x-auto scrollbar-hide">
+        {[
+          { id: 'Home', icon: LayoutDashboard },
+          { id: 'Students', icon: Users },
+    { id: 'Grading', icon: CheckSquare },
+    { id: 'Leaderboard', icon: Trophy },
+    { id: 'AI Assistant', icon: Sparkles, label: 'Study AI' },
+    { id: 'Profile', icon: User }
+  ].map(tab => (
+    <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubPage(null); }} className={cn("flex flex-col items-center gap-1 transition-all shrink-0 px-2", activeTab === tab.id ? "text-[#2D3494]" : "text-slate-400")}>
+      <div className={cn("p-2 rounded-2xl transition-all", activeTab === tab.id ? "bg-blue-50" : "")}><tab.icon size={22} /></div>
+      <span className={cn("text-[8px] font-black uppercase transition-opacity", activeTab === tab.id ? "opacity-100" : "opacity-0")}>{(tab as any).label || tab.id}</span>
+    </button>
+  ))}
+</nav>
 
       {/* ══ STUDENT PROFILE MODAL ═══════════════════════════════════════════════ */}
       <AnimatePresence>
