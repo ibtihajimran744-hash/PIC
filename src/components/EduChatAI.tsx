@@ -10,12 +10,9 @@ import {
   ChevronRight,
   GraduationCap
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
 import Markdown from 'react-markdown';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 interface Message {
   id: string;
@@ -118,55 +115,8 @@ export const EduChatAI: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const isImageRequest = /generate|show|create|draw|image|picture|diagram|photo/i.test(userMessage.content);
-      
-      let aiResponse: string = "";
-      let generatedImage: string | undefined = undefined;
-
-      if (isImageRequest) {
-        // First, check if it's academic
-        const validation = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: `Determine if this request is about educational/academic topics: "${userMessage.content}". Reply only YES or NO.`,
-        });
-
-        if (validation.text.trim().toUpperCase() === 'YES') {
-          // Generate image using nano banana
-          const imageResult = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-              parts: [{ text: `Create a high-quality academic illustration of: ${userMessage.content}. Keep it clear and educational.` }]
-            },
-            config: {
-              imageConfig: { aspectRatio: "1:1", imageSize: "1K" }
-            }
-          });
-
-          for (const part of imageResult.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData) {
-              generatedImage = `data:image/png;base64,${part.inlineData.data}`;
-            } else if (part.text) {
-              aiResponse += part.text;
-            }
-          }
-          if (!aiResponse) aiResponse = "Here is the illustration you requested for your studies.";
-        } else {
-          aiResponse = "I can only generate images related to educational topics. Please ask something about your studies!";
-        }
-      } else {
-        // Standard Chat
-        const result = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: messages.concat(userMessage).map(m => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }]
-          })),
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-          }
-        });
-        aiResponse = result.text || "I'm sorry, I couldn't generate a response.";
-      }
+      const aiResponse = "I'm sorry, the AI assistant is currently disabled due to configuration issues. Please contact support for more information.";
+      const generatedImage: string | undefined = undefined;
 
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),

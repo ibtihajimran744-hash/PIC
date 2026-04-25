@@ -14,12 +14,9 @@ import {
   Filter
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { GoogleGenAI } from "@google/genai";
 import { addAdmissionLead, getAdmissionLeads, AdmissionLead } from '../services/supabase';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 interface Message {
   role: 'assistant' | 'user';
@@ -65,21 +62,8 @@ export const AdmissionAssistant: React.FC = () => {
   const analyzeLead = async (notes: string) => {
     setIsAnalyzing(true);
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: `Analyze these admission conversation notes and determine if the student is highly interested (GREEN) or not likely to join (RED).
-        
-        Classification rules:
-        GREEN = highly interested in admission. If the student asked about admission process, fee payment, classes, or campus visit.
-        RED = not likely to join. If the student is unsure, just collecting information, or comparing colleges.
-        
-        Notes: "${notes}"
-        
-        Return ONLY the word GREEN or RED.`,
-      });
-
-      const status = response.text.trim().toUpperCase() as 'GREEN' | 'RED';
-      return status === 'GREEN' || status === 'RED' ? status : 'RED';
+      // AI analysis disabled - defaulting to GREEN for now
+      return 'GREEN';
     } catch (error) {
       console.error('Analysis error:', error);
       return 'RED';

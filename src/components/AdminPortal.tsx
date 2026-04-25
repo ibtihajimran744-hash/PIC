@@ -10,6 +10,7 @@ import {
   Shirt, Sun, Camera, History as HistoryIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AcademicsPortal } from './AcademicsPortal';
 import { supabase } from '../services/supabase';
 
 interface AdminPortalProps {
@@ -571,6 +572,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [savedMsg, setSavedMsg]     = useState('');
   const [errorMsg, setErrorMsg]     = useState('');
   const [moreOpen, setMoreOpen]     = useState(false);
+const [showAcademicsPortal, setShowAcademicsPortal] = useState(false);
 
   // ── Permissions state ──────────────────────────────────────────────────
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
@@ -1996,7 +1998,7 @@ const handlePrintReport = (data: any) => {
       group: 'Academics',
       items: [
         { id: 'staff',      label: 'Teachers',     icon: UserCog },
-        { id: 'academics',  label: 'Classes & Att',icon: GraduationCap },
+        { id: 'academics',  label: 'Academics Portal', icon: GraduationCap },
         { id: 'exams',      label: 'Exams Portal', icon: FileText },
         { id: 'leaves',     label: 'Leaves',       icon: Calendar },
         { id: 'scheme',     label: 'Topics/Schedules', icon: BookOpen }
@@ -2073,7 +2075,16 @@ const handlePrintReport = (data: any) => {
     staff: 'Staff & Role Management', permissions: 'Permission Control', scheme: 'Scheme of Study',
   };
 
-  const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
+  if (showAcademicsPortal) {
+  return (
+    <AcademicsPortal
+      adminData={adminData}
+      onBack={() => setShowAcademicsPortal(false)}
+    />
+  );
+}
+
+const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
   const SidebarIcon = isAccountant ? CreditCard : GraduationCap;
 
   return (
@@ -2095,7 +2106,7 @@ const handlePrintReport = (data: any) => {
                 {group.items.map(({ id, label, icon: Icon }) => {
                   const active = tab === id;
                   return (
-                    <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
+                    <motion.button key={id} onClick={() => id === 'academics' ? setShowAcademicsPortal(true) : setTab(id)} whileHover={{ x: 2 }}
                       className={cn('w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[12px] font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
                       style={active ? { background: GRADIENT } : {}}>
                       <Icon size={14} /><span className="flex-1">{label}</span>
@@ -2106,7 +2117,13 @@ const handlePrintReport = (data: any) => {
             ))
           ) : (
             NAV.map(({ id, label, icon: Icon }) => {
-              const active = tab === id; const badgeN = getBadge(id);
+              if (id === 'academics') return (
+  <motion.button key={id} onClick={() => setShowAcademicsPortal(true)} whileHover={{ x: 2 }}
+    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left text-slate-500 hover:bg-slate-50 hover:text-slate-800">
+    <GraduationCap size={16} /><span className="flex-1">Academics Portal</span>
+  </motion.button>
+);
+const active = tab === id; const badgeN = getBadge(id);
               return (
                 <motion.button key={id} onClick={() => setTab(id)} whileHover={{ x: 2 }}
                   className={cn('w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
@@ -2217,7 +2234,7 @@ const handlePrintReport = (data: any) => {
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="font-black text-slate-900">📊 Class Attendance Today</h3>
-                    <button onClick={() => setTab('academics')} className="text-xs font-bold hover:underline" style={{ color: ACCENT }}>Full Overview →</button>
+                    <button onClick={() => setShowAcademicsPortal(true)} className="text-xs font-bold hover:underline" style={{ color: ACCENT }}>Full Overview →</button>
                   </div>
                   <div className="p-5 space-y-3.5">
                     {classSummary.slice(0, 7).map((r: any) => {
@@ -2306,256 +2323,10 @@ const handlePrintReport = (data: any) => {
             )}
 
             {!isAccountant && tab === 'academics' && (
-              <motion.div key="acad" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[{ l: 'Classes', v: classSummary.length, c: 'text-teal-600', bg: 'bg-teal-50' }, { l: 'Students', v: classSummary.reduce((s: number, r: any) => s + (r.total_students || 0), 0), c: 'text-blue-600', bg: 'bg-blue-50' }, { l: 'Present', v: classSummary.reduce((s: number, r: any) => s + (r.present_today || 0), 0), c: 'text-emerald-600', bg: 'bg-emerald-50' }, { l: 'Absent', v: classSummary.reduce((s: number, r: any) => s + (r.absent_today || 0), 0), c: 'text-rose-600', bg: 'bg-rose-50' }].map(({ l, v, c, bg }) => (
-                    <div key={l} className={cn('rounded-2xl p-4 border border-slate-100', bg)}><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{l}</p><p className={cn('text-2xl font-black mt-1', c)}>{v}</p></div>
-                  ))}
-                </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Attendance by Class</h3></div>
-                  <div className="p-5 space-y-4">
-                    {classSummary.map((r: any) => { const p2 = r.total_students > 0 ? Math.round(((r.present_today || 0) / r.total_students) * 100) : 0; const color = p2 >= 75 ? '#059669' : p2 >= 50 ? '#D97706' : '#C0392B'; return <ProgressBar key={r.class_section} pct={p2} color={color} label={`${r.class_section} · ${r.program} Part ${r.part}`} sub={`${p2}% · ${r.present_today || 0}/${r.total_students}`} />; })}
-                    {classSummary.length === 0 && <p className="text-center text-slate-400 text-sm py-4">No class data available</p>}
-                  </div>
-                </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900">Class-wise Detail</h3></div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs min-w-[500px]">
-                      <thead style={{ background: '#f8f9fd' }}><tr>{['Class', 'Program', 'Part', 'Students', 'Present', 'Absent', 'Avg %'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
-                      <tbody>
-                        {classSummary.map((r: any, i: number) => (
-                          <motion.tr key={r.id || r.class_section || i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                            <td className="px-4 py-3 font-black text-slate-900">{r.class_section}</td>
-                            <td className="px-4 py-3 text-slate-600">{r.program}</td>
-                            <td className="px-4 py-3 text-slate-500">Part {r.part}</td>
-                            <td className="px-4 py-3 font-bold text-slate-700">{r.total_students}</td>
-                            <td className="px-4 py-3 font-bold text-emerald-600">{r.present_today || 0}</td>
-                            <td className="px-4 py-3 font-bold text-rose-600">{r.absent_today || 0}</td>
-                            <td className="px-4 py-3 font-bold text-slate-700">{r.avg_marks_pct ? `${r.avg_marks_pct}%` : '—'}</td>
-                          </motion.tr>
-                        ))}
-                        {classSummary.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No data</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {!isAccountant && tab === 'leaves' && (
-              <motion.div key="leaves" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {[{ l: 'Total', v: leaveRequests.length, c: 'text-slate-900' }, { l: 'Pending', v: pendingLeaves, c: 'text-amber-600' }, { l: 'Approved', v: leaveRequests.filter(l => l.status === 'Approved').length, c: 'text-emerald-600' }].map(({ l, v, c }) => (
-                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
-                  ))}
-                </div>
-                <div className="space-y-3">
-                  {leaveRequests.length === 0 ? (
-                    <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center"><Calendar size={28} className="mx-auto mb-3 text-slate-300" /><p className="text-slate-400 font-bold">No leave requests yet</p></div>
-                  ) : leaveRequests.map((l: any, i: number) => {
-                    const isPending = !l.status || l.status === 'Pending';
-                    return (
-                      <motion.div key={l.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                        className={cn('bg-white rounded-2xl overflow-hidden shadow-sm', isPending ? 'border-l-4 border border-amber-200' : 'border border-slate-100')}
-                        style={isPending ? { borderLeftColor: '#D97706' } : {}}>
-                        <div className="px-4 py-4">
-                          <div className="flex items-start gap-3">
-                            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{(l.student_name || l.student_roll_no || 'S')?.charAt(0)}</div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-black text-slate-900">{l.student_name || `Roll #${l.student_roll_no}`}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">{l.reason || l.leave_type || 'Leave request'}</p>
-                              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                                {(l.from_date || l.request_date) && <span className="text-[11px] text-slate-400 flex items-center gap-1"><Calendar size={10} />{l.from_date || l.request_date}{l.to_date && l.to_date !== l.from_date ? ` → ${l.to_date}` : ''}</span>}
-                                {l.class_section && <span className="text-[11px] text-slate-400">{l.class_section}</span>}
-                                <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-black', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{l.status || 'Pending'}</span>
-                              </div>
-                            </div>
-                            {isPending && (
-                              <div className="flex gap-1.5 flex-shrink-0">
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                  {leaveSaving === l.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
-                                </motion.button>
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">
-                                  <X size={10} /> Reject
-                                </motion.button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-
-            {!isAccountant && tab === 'admissions' && (
-              <motion.div key="adm-p" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-teal-50 border border-teal-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-                  <BookOpen size={16} className="text-teal-600 flex-shrink-0" />
-                  <p className="text-sm font-bold text-teal-900">View only. Processed by Admission Officer & Accountant.</p>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {[{ v: '', l: 'All' }, { v: 'Pending', l: 'Pending' }, { v: 'Approved', l: 'Approved' }, { v: 'Rejected', l: 'Rejected' }].map(({ v, l }) => (
-                    <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
-                  ))}
-                </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs min-w-[600px]">
-                      <thead style={{ background: '#f8f9fd' }}><tr>{['Form', 'Student', 'Father', 'Program', 'Section', '%', 'Status', 'Date'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
-                      <tbody>
-                        {filteredAdmForms.map((f: any, i: number) => (
-                          <motion.tr key={f.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                            <td className="px-4 py-3 font-mono font-bold" style={{ color: ACCENT }}>{f.form_no}</td>
-                            <td className="px-4 py-3 font-black text-slate-900">{f.student_name}</td>
-                            <td className="px-4 py-3 text-slate-500">{f.father_name}</td>
-                            <td className="px-4 py-3 text-slate-600"><p>{f.program}</p><p className="text-[10px] text-slate-400">Part {f.part}</p></td>
-                            <td className="px-4 py-3">{f.suggested_section ? <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200">{f.suggested_section}</span> : '—'}</td>
-                            <td className="px-4 py-3 font-bold text-slate-700">{f.matric_percentage ? `${f.matric_percentage}%` : '—'}</td>
-                            <td className="px-4 py-3"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', f.status === 'Approved' ? 'bg-emerald-50 text-emerald-700' : f.status === 'Rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700')}>{f.status}</span></td>
-                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{new Date(f.created_at).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' })}</td>
-                          </motion.tr>
-                        ))}
-                        {filteredAdmForms.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No forms found</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {!isAccountant && tab === 'staff' && (
-              <motion.div key="staff" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div><h2 className="text-lg font-black text-slate-900">Staff Management</h2><p className="text-xs text-slate-400 mt-0.5">You can assign: {assignableRoles.length > 0 ? assignableRoles.join(', ') : '—'}</p></div>
-                  {assignableRoles.length > 0 && <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setShowAssignModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}><UserPlus size={15} /> Assign Role</motion.button>}
-                </div>
-                <div className="bg-teal-50 border border-teal-200 rounded-2xl px-5 py-3"><p className="text-sm font-bold text-teal-900">Principal manages: {assignableRoles.join(', ')}. Financial roles managed by VP/Director.</p></div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="font-black text-slate-900">All Staff ({staffList.length})</h3>
-                    <button onClick={loadStaff} className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center hover:bg-slate-100"><RefreshCw size={12} className="text-slate-500" /></button>
-                  </div>
-                  <div className="divide-y divide-slate-50" style={{ maxHeight: 480, overflowY: 'auto' }}>
-                    {staffList.map((s: any, i: number) => {
-                      const canManage = assignableRoles.includes(s.role);
-                      const rc: Record<string, string> = { Director: 'bg-orange-100 text-orange-700', VP: 'bg-purple-100 text-purple-700', Principal: 'bg-teal-100 text-teal-700', Accountant: 'bg-emerald-100 text-emerald-700', Teacher: 'bg-blue-100 text-blue-700', Coordinator: 'bg-indigo-100 text-indigo-700', Examiner: 'bg-violet-100 text-violet-700', Academics: 'bg-cyan-100 text-cyan-700' };
-                      return (
-                        <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
-                          <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0" style={{ background: `hsl(${(s.username?.charCodeAt(0) || 50) * 37 % 360},55%,45%)` }}>{s.full_name?.charAt(0)}</div>
-                          <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900 truncate">{s.full_name}</p><p className="text-[10px] text-slate-400">{s.username}</p></div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', rc[s.role] || 'bg-slate-100 text-slate-600')}>{s.role}</span>
-                            {canManage && <motion.button whileTap={{ scale: 0.9 }} onClick={() => deactivateStaff(s.id, s.username)} className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 hover:bg-rose-100"><Trash2 size={12} /></motion.button>}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                    {staffList.length === 0 && <div className="px-5 py-10 text-center text-slate-400 text-sm">No staff found</div>}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {!isAccountant && tab === 'permissions' && (
-              <motion.div key="perms" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-                <div className="rounded-3xl p-6 text-white" style={{ background: 'linear-gradient(135deg,#042F2E,#0F766E)' }}>
-                  <h2 className="text-xl font-black">Permission Control</h2>
-                  <p className="text-teal-200 text-sm mt-1">Manage permissions for academic staff you oversee.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {Object.entries(allPermissions).filter(([role]) => assignableRoles.includes(role)).map(([role, permData]: [string, any]) => (
-                    <div key={role} className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                        <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: GRADIENT }}>{role.charAt(0)}</div><p className="font-black text-slate-900">{role}</p></div>
-                        <motion.button whileTap={{ scale: 0.95 }} onClick={() => setEditPermRole({ role, perms: { ...(permData.permissions || {}) } })} className="px-3 py-1.5 rounded-xl text-xs font-black text-white" style={{ background: GRADIENT }}>Edit</motion.button>
-                      </div>
-                      <div className="p-4 flex flex-wrap gap-2">
-                        {Object.entries(permData.permissions || {}).map(([k, v]: any) => (
-                          <span key={k} className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', v === true ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>{k.replace(/_/g, ' ')} {v === true ? '✓' : '✗'}</span>
-                        ))}
-                        {Object.keys(permData.permissions || {}).length === 0 && <span className="text-xs text-slate-400">No permissions set</span>}
-                      </div>
-                    </div>
-                  ))}
-                  {Object.entries(allPermissions).filter(([role]) => assignableRoles.includes(role)).length === 0 && (
-                    <div className="col-span-2 bg-white rounded-2xl border border-slate-100 p-12 text-center text-slate-400"><Shield size={28} className="mx-auto mb-3" /><p>No editable permissions</p></div>
-                  )}
-                </div>
-                <AnimatePresence>
-                  {editPermRole && (
-                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditPermRole(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-                      <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                        className="relative bg-white rounded-3xl w-full max-w-lg overflow-hidden z-10 max-h-[85vh] flex flex-col" style={{ boxShadow: '0 40px 100px rgba(0,0,0,0.25)' }}>
-                        <div className="h-1" style={{ background: GRADIENT }} />
-                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0"><h3 className="font-black text-slate-900">Edit: {editPermRole.role}</h3><button onClick={() => setEditPermRole(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button></div>
-                        <div className="overflow-y-auto flex-1 p-6 space-y-3">
-                          {Object.entries(editPermRole.perms).map(([k, v]: any) => (
-                            <div key={k} className="flex items-center justify-between py-3 px-4 bg-slate-50 rounded-2xl">
-                              <span className="text-sm font-bold text-slate-700">{k.replace(/_/g, ' ')}</span>
-                              <button onClick={() => setEditPermRole((p: any) => ({ ...p, perms: { ...p.perms, [k]: !v } }))} className={cn('w-12 h-6 rounded-full transition-all flex items-center', v === true ? 'bg-teal-500' : 'bg-slate-300')}><div className={cn('w-5 h-5 bg-white rounded-full shadow transition-transform mx-0.5', v === true ? 'translate-x-6' : 'translate-x-0')} /></button>
-                            </div>
-                          ))}
-                          <p className="text-xs text-slate-400 text-center pt-2">Changes take effect immediately after saving.</p>
-                        </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
-                          <button onClick={() => setEditPermRole(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-200 transition-all">Cancel</button>
-                          <motion.button whileTap={{ scale: 0.97 }} onClick={() => savePermission(editPermRole.role, editPermRole.perms)} className="flex-1 py-3 rounded-2xl text-white font-black text-sm" style={{ background: GRADIENT }}>Save Changes</motion.button>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )}
-
-            {!isAccountant && tab === 'scheme' && (
-              <motion.div key="scheme" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                {schemeList.length > 0 && (() => {
-                  const bySub: Record<string, number> = {};
-                  schemeList.forEach((s: any) => { bySub[s.subject] = (bySub[s.subject] || 0) + 1; });
-                  const subs = Object.entries(bySub).sort((a, b) => b[1] - a[1]);
-                  const maxCnt = Math.max(...subs.map(s => s[1]));
-                  return (
-                    <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                      <p className="font-black text-slate-900 mb-4 text-sm">Topics Uploaded by Subject</p>
-                      <div className="space-y-2.5">{subs.map(([subject, count]) => <ProgressBar key={subject} pct={Math.round((count / maxCnt) * 100)} color={ACCENT} label={subject} sub={`${count} ${count === 1 ? 'entry' : 'entries'}`} />)}</div>
-                    </div>
-                  );
-                })()}
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <h3 className="font-black text-slate-900">Scheme of Study ({schemeList.length})</h3>
-                    <button onClick={loadScheme} className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center"><RefreshCw size={12} className="text-slate-500" /></button>
-                  </div>
-                  {schemeList.length === 0 ? <div className="p-12 text-center text-slate-400"><BookOpen size={28} className="mx-auto mb-3" /><p>No entries yet</p></div> : (
-                    <div className="overflow-x-auto" style={{ maxHeight: 480 }}>
-                      <table className="w-full text-xs min-w-[600px]">
-                        <thead className="sticky top-0" style={{ background: '#f8f9fd' }}><tr>{['Week', 'Month', 'Subject', 'Program', 'Part', 'Topic', 'By', 'Date'].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
-                        <tbody>
-                          {schemeList.map((s: any, i: number) => (
-                            <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                              <td className="px-4 py-3 font-black" style={{ color: ACCENT }}>W{s.week_no}</td>
-                              <td className="px-4 py-3 text-slate-600">{s.month || '—'}</td>
-                              <td className="px-4 py-3 font-bold text-slate-800">{s.subject}</td>
-                              <td className="px-4 py-3 text-slate-500">{s.program}</td>
-                              <td className="px-4 py-3 text-slate-500">P{s.part}</td>
-                              <td className="px-4 py-3 font-bold text-slate-900 max-w-[160px] truncate">{s.topic}</td>
-                              <td className="px-4 py-3 text-slate-400">{s.uploaded_by}</td>
-                              <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{new Date(s.created_at).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' })}</td>
-                            </motion.tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
+  <motion.div key="acad" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    {(() => { setShowAcademicsPortal(true); return null; })()}
+  </motion.div>
+)}
 
             {(isAccountant || isSuperAdmin) && tab === 'fee-groups' && (
               <FeeGroupsTab adminData={adminData} GRADIENT={GRADIENT} ACCENT={ACCENT} showToast={showToast} showErr={showErr} PKR={PKR} students={students} />
@@ -4115,9 +3886,15 @@ const handlePrintReport = (data: any) => {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50" style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
         <div className="flex items-center justify-around px-2 py-2">
           {MOBILE_PRIMARY.map(({ id, label, icon: Icon }) => {
-            const active = tab === id; const badgeN = getBadge(id);
+            if (id === 'academics') return (
+  <motion.button key={id} onClick={() => setShowAcademicsPortal(true)} whileHover={{ x: 2 }}
+    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left text-slate-500 hover:bg-slate-50 hover:text-slate-800">
+    <GraduationCap size={16} /><span className="flex-1">Academics Portal</span>
+  </motion.button>
+);
+const active = tab === id; const badgeN = getBadge(id);
             return (
-              <button key={id} onClick={() => setTab(id)} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-1 min-w-0" style={{ color: active ? ACCENT : '#94a3b8' }}>
+              <button key={id} onClick={() => id === 'academics' ? setShowAcademicsPortal(true) : setTab(id)} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-1 min-w-0" style={{ color: active ? ACCENT : '#94a3b8' }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={active ? { background: `${ACCENT}18` } : {}}>
                   <Icon size={19} />
                   {badgeN > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">{badgeN > 9 ? '9+' : badgeN}</span>}

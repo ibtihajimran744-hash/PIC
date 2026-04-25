@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Image as ImageIcon, Sparkles, Download, Loader2, Wand2, RefreshCw } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import toast from 'react-hot-toast';
 
 export const ImageGenerator: React.FC = () => {
   const [prompt, setPrompt] = useState('');
@@ -16,21 +14,12 @@ export const ImageGenerator: React.FC = () => {
 
     setIsGenerating(true);
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: [{ text: `Generate a high-quality educational illustration for a school project about: ${prompt}` }],
-        config: {
-          imageConfig: {
-            aspectRatio: "1:1",
-          }
-        }
-      });
-
-      // Find the image part
-      const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      if (imagePart?.inlineData) {
-        setGeneratedImage(`data:image/png;base64,${imagePart.inlineData.data}`);
-      }
+      // AI Image generation removed due to missing API key
+      toast.error('AI Image generation is currently disabled.');
+      setTimeout(() => {
+        setIsGenerating(false);
+      }, 1000);
+      return;
     } catch (error) {
       console.error('Image Generation Error:', error);
     } finally {
