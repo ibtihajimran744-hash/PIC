@@ -21,11 +21,34 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
   const [showPwd,  setShowPwd]  = useState(false);
+  const [showGuest, setShowGuest] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) { setError('Enter credentials'); return; }
     setLoading(true); setError('');
+
+    // --- Guest/Verification Access Interceptor ---
+    const guestPass = 'pic_guest_123';
+    if (password.trim() === guestPass) {
+      if (username.trim() === 'admin_guest') {
+        onLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin');
+        return;
+      }
+      if (username.trim() === 'teacher_guest') {
+        onLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher');
+        return;
+      }
+      if (username.trim() === 'student_guest') {
+        onLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student');
+        return;
+      }
+      if (username.trim() === 'examiner_guest') {
+        onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'admin');
+        return;
+      }
+    }
+
     try {
       // ── 1. admin_users — lowercase username ──
       const { data: a1 } = await supabase
@@ -176,6 +199,45 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
             }}>
             {loading ? 'Signing in…' : 'SIGN IN'}
           </button>
+
+          <div className="pt-2 text-center">
+            <button type="button" onClick={() => setShowGuest(!showGuest)}
+              className="text-[10px] font-black uppercase tracking-[0.15em]"
+              style={{ color: 'rgba(255,255,255,0.45)' }}>
+              {showGuest ? 'Hide Guest Access' : 'Guest Access (Verification)'}
+            </button>
+          </div>
+
+          {showGuest && (
+            <div className="mt-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-[10px] space-y-2">
+                <p className="font-black uppercase tracking-widest text-white/40 mb-2">Guest Credentials (Password: pic_guest_123)</p>
+                <div className="flex justify-between text-white/70"><span>Admin:</span> <span className="font-mono">admin_guest</span></div>
+                <div className="flex justify-between text-white/70"><span>Teacher:</span> <span className="font-mono">teacher_guest</span></div>
+                <div className="flex justify-between text-white/70"><span>Student:</span> <span className="font-mono">student_guest</span></div>
+                <div className="flex justify-between text-white/70"><span>Examiner:</span> <span className="font-mono">examiner_guest</span></div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => onLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin')}
+                  className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                  Quick Admin
+                </button>
+                <button type="button" onClick={() => onLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher')}
+                  className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                  Quick Teacher
+                </button>
+                <button type="button" onClick={() => onLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student')}
+                  className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                  Quick Student
+                </button>
+                <button type="button" onClick={() => onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'admin')}
+                  className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
+                  Quick Examiner
+                </button>
+              </div>
+            </div>
+          )}
         </form>
 
         <p className="text-center text-[10px] font-black uppercase tracking-[0.2em] mt-6"

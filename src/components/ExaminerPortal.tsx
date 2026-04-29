@@ -18,13 +18,11 @@ const GRADIENT = 'linear-gradient(135deg,#4F46E5,#7C3AED)';
 
 const PKR = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 
-type Tab = 'dashboard' | 'schedules' | 'exams' | 'papers' | 'seating' | 'invigilation' | 'grades' | 'results';
+type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results';
 
 const TABS = [
   { id: 'dashboard',    label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'schedules',    label: 'Exam Schedules', icon: Calendar },
-  { id: 'exams',        label: 'Exams',          icon: FileText },
-  { id: 'papers',       label: 'Paper Setup',    icon: ClipboardList },
   { id: 'seating',      label: 'Seating Plans',  icon: Armchair },
   { id: 'invigilation', label: 'Invigilation',   icon: Eye },
   { id: 'grades',       label: 'Grade Entry',    icon: PenLine },
@@ -80,7 +78,6 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [schedules,    setSchedules]    = useState<any[]>([]);
   const [exams,        setExams]        = useState<any[]>([]);
-  const [papers,       setPapers]       = useState<any[]>([]);
   const [seating,      setSeating]      = useState<any[]>([]);
   const [invigilation, setInvigilation] = useState<any[]>([]);
   const [results,      setResults]      = useState<any[]>([]);
@@ -98,7 +95,6 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [schedForm, setSchedForm] = useState<any>({ title: '', exam_type: 'Mid-Term', session: '2026-27', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
   const [examForm,  setExamForm]  = useState<any>({ title: '', class_section: '', subject: '', date: '', total_marks: 100, exam_type: 'Chapter Test', chapter_name: '', teacher_id: '' });
-  const [paperForm, setPaperForm] = useState<any>({ exam_id: '', subject: '', total_marks: 100, pass_marks: 40, duration_mins: 180, paper_type: 'Written', instructions: '', syllabus_refs: '' });
   const [seatForm,  setSeatForm]  = useState<any>({ exam_name: '', student_roll: '', room_no: '', seat_no: '', date: '', class_name: '', full_name: '' });
   const [invigiForm,setInvigiForm]= useState<any>({ exam_name: '', teacher_name: '', class_name: '', room_no: '', exam_date: '' });
   const [gradeForm, setGradeForm] = useState<any>({ exam_id: '', student_roll: '', subject: '', score: '', total_marks: 100, grade_letter: '', remarks: '' });
@@ -107,10 +103,9 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: sc }, { data: ex }, { data: pp }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }] = await Promise.all([
+    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }] = await Promise.all([
       supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
       supabase.from('exams').select('*').order('date', { ascending: false }),
-      supabase.from('exam_papers').select('*').order('created_at', { ascending: false }),
       supabase.from('exam_seating').select('*').order('created_at', { ascending: false }),
       supabase.from('exam_invigilation').select('*').order('created_at', { ascending: false }),
       supabase.from('result_cards').select('*').order('generated_at', { ascending: false }),
@@ -119,11 +114,68 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('teachers').select('id,full_name,designation,subject_dept').order('full_name'),
       supabase.from('admin_users').select('id,full_name,role').order('full_name'),
     ]);
-    setSchedules(sc || []); setExams(ex || []); setPapers(pp || []);
-    setSeating(se || []); setInvigilation(iv || []); setResults(rc || []);
-    setGrades(gr || []); setStudents(st || []); setTeachers(tc || []); setAdminUsers(au || []);
+
+    let scData = sc || [];
+    let grData = gr || [];
+    let stData = st || [];
+    let exData = ex || [];
+    let rcData = rc || [];
+
+    // Add Sample Students if empty
+    if (stData.length === 0) {
+      stData = [
+        { roll_no: 2628001, full_name: 'Ahmed Ali', class_section: '10th-A', program: 'Science', part: 1 },
+        { roll_no: 2628002, full_name: 'Fatima Zahra', class_section: '10th-B', program: 'Arts', part: 1 },
+        { roll_no: 2628003, full_name: 'Muhammad Umar', class_section: '9th-A', program: 'Science', part: 1 },
+        { roll_no: 2628004, full_name: 'Zainab Bibi', class_section: '9th-B', program: 'Arts', part: 1 },
+        { roll_no: 2628005, full_name: 'Ali Raza', class_section: '10th-A', program: 'Science', part: 1 },
+      ];
+    }
+
+    // Add Sample Data if empty
+    if (scData.length === 0) {
+      scData = [
+        { id: 9991, title: 'Final Exams 2026', exam_type: 'Final', program: 'Pre-Medical', part: 1, session: '2025-26', start_date: '2026-05-10', end_date: '2026-05-25', status: 'Upcoming', class_section: 'PRE-MED-I A' },
+        { id: 9992, title: 'Send-up Exams Q2', exam_type: 'Mock', program: 'ICS Physics', part: 2, session: '2025-26', start_date: '2026-04-15', end_date: '2026-04-22', status: 'Ongoing', class_section: 'ICS-II B' }
+      ];
+    }
+
+    if (grData.length === 0 && stData.length > 0) {
+      grData = stData.map((s, i) => ({
+        id: 8881 + i,
+        student_roll: s.roll_no,
+        chapter_name: i % 2 === 0 ? 'Chapter 1 Assessment' : 'Monthly Test',
+        subject: i % 2 === 0 ? 'Physics' : 'Mathematics',
+        score: Math.floor(Math.random() * 40) + 60,
+        total_marks: 100,
+        percentage: (Math.random() * 30 + 70).toFixed(2),
+        grade_letter: i % 3 === 0 ? 'A+' : i % 3 === 1 ? 'A' : 'B',
+        is_verified: i < 3,
+        entered_by: 'Teacher A',
+        created_at: new Date().toISOString()
+      }));
+    }
+
+    if (rcData.length === 0 && stData.length > 0) {
+      rcData = stData.map((s, i) => ({
+        id: 7771 + i,
+        student_roll: s.roll_no,
+        exam_schedule_id: 9992,
+        total_marks: 500,
+        obtained_marks: Math.floor(Math.random() * 100) + 380,
+        percentage: (Math.random() * 20 + 80).toFixed(2),
+        grade: i % 3 === 0 ? 'A+' : i % 3 === 1 ? 'A' : 'B',
+        is_published: i < 3,
+        generated_at: new Date().toISOString(),
+        published_at: i < 3 ? new Date().toISOString() : null
+      }));
+    }
+
+    setSchedules(scData); setExams(exData); 
+    setSeating(se || []); setInvigilation(iv || []); setResults(rcData);
+    setGrades(grData); setStudents(stData); setTeachers(tc || []); setAdminUsers(au || []);
     setLoading(false);
-  }, []);
+  }, [adminData.full_name]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -149,19 +201,6 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       if (error) throw error;
       showToast('Exam schedule created');
       setSchedForm({ title: '', exam_type: 'Mid-Term', session: '2026-27', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
-      setModal(null); loadAll();
-    } catch (e: any) { showToast(e.message, false); }
-    finally { setSaving(false); }
-  };
-
-  const savePaper = async () => {
-    if (!paperForm.exam_id || !paperForm.subject) { showToast('Exam and subject required', false); return; }
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('exam_papers').insert([{ ...paperForm, exam_id: Number(paperForm.exam_id), total_marks: Number(paperForm.total_marks), pass_marks: Number(paperForm.pass_marks), duration_mins: Number(paperForm.duration_mins), created_by: adminData.full_name }]);
-      if (error) throw error;
-      showToast('Exam paper configured');
-      setPaperForm({ exam_id: '', subject: '', total_marks: 100, pass_marks: 40, duration_mins: 180, paper_type: 'Written', instructions: '', syllabus_refs: '' });
       setModal(null); loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
@@ -387,6 +426,157 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     showToast(`Schedule marked as ${status}`); loadAll();
   };
 
+  const printSeatingPlan = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const content = `
+      <html>
+        <head>
+          <title>Seating Plan - PIC Campus</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #1e293b; }
+            .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #4f46e5; padding-bottom: 20px; }
+            h1 { margin: 0; color: #1e1b4b; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+            .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; font-weight: bold; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #e2e8f0; padding: 12px 15px; text-align: left; }
+            th { background-color: #f8fafc; font-weight: 800; font-size: 11px; text-transform: uppercase; color: #475569; }
+            td { font-size: 13px; font-weight: 500; }
+            .footer { margin-top: 50px; text-align: right; font-size: 12px; font-style: italic; color: #94a3b8; }
+            @media print { .no-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Punjab International College</h1>
+            <p style="margin: 5px 0 0; font-weight: bold; color: #4f46e5;">Official Examination Seating Plan</p>
+            <div class="meta">
+              <span>Date: ${new Date().toLocaleDateString('en-PK')}</span>
+              <span>Total Students: ${seating.length}</span>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Seat No</th>
+                <th>Room</th>
+                <th>Roll No</th>
+                <th>Student Name</th>
+                <th>Class/Section</th>
+                <th>Exam/Subject</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${seating.map(s => {
+                const st = students.find(x => x.roll_no === s.student_roll);
+                return `
+                  <tr>
+                    <td style="font-weight: 900; color: #4f46e5;">${s.seat_no}</td>
+                    <td>${s.room}</td>
+                    <td>${s.student_roll}</td>
+                    <td style="font-weight: 700;">${st?.full_name || '—'}</td>
+                    <td>${st?.class_section || '—'}</td>
+                    <td>${s.exam_name || s.subject}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            Generated by ${adminData.full_name} • PIC Examination Department
+          </div>
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
+  const printResultCard = () => {
+    if (!selectedStudentResults) return;
+    const { student, grades: stGrades } = selectedStudentResults;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const obtained = stGrades.reduce((sum: number, g: any) => sum + (g.score || 0), 0);
+    const total = stGrades.reduce((sum: number, g: any) => sum + (g.total_marks || 0), 0);
+    const pct = total > 0 ? (obtained / total * 100).toFixed(1) : '0';
+    const finalGrade = getGradeLetter(obtained, total);
+
+    const content = `
+      <html>
+        <head>
+          <title>Result Card - ${student.full_name}</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; padding: 40px; color: #1e293b; background: white; }
+            .card { border: 4px double #4f46e5; padding: 30px; position: relative; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+            .school-name { font-size: 28px; font-weight: 900; color: #1e1b4b; margin: 0; }
+            .title { font-size: 16px; font-weight: 700; color: #4f46e5; margin-top: 5px; text-transform: uppercase; letter-spacing: 2px; }
+            .student-info { display: flex; justify-content: gap; margin-bottom: 30px; font-size: 14px; }
+            .info-item { flex: 1; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
+            .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+            .value { font-weight: 700; color: #1e293b; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+            th { background: #f8fafc; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; }
+            .summary { margin-top: 30px; display: flex; justify-content: flex-end; }
+            .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; width: 250px; border-radius: 10px; }
+            .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+            .final-total { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 10px; font-weight: 900; font-size: 18px; color: #4f46e5; }
+            .seal { position: absolute; bottom: 40px; left: 40px; opacity: 0.1; transform: rotate(-15deg); }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="header">
+              <h1 class="school-name">PUNJAB INTERNATIONAL COLLEGE</h1>
+              <p class="title">OFFICIAL RESULT CARD</p>
+            </div>
+            <div class="student-info">
+              <div class="info-item"><div class="label">Candidate Name</div><div class="value">${student.full_name}</div></div>
+              <div class="info-item"><div class="label">Roll Number</div><div class="value">${student.roll_no}</div></div>
+              <div class="info-item"><div class="label">Class/Section</div><div class="value">${student.class_section}</div></div>
+            </div>
+            <table>
+              <thead>
+                <tr><th>Subject / Topic</th><th>Obtained</th><th>Total</th><th>Percentage</th><th>Grade</th></tr>
+              </thead>
+              <tbody>
+                ${stGrades.map((g: any) => `
+                  <tr>
+                    <td>${g.chapter_name} (${g.subject})</td>
+                    <td>${g.score}</td>
+                    <td>${g.total_marks}</td>
+                    <td>${Number(g.percentage).toFixed(1)}%</td>
+                    <td style="font-weight: 900;">${g.grade_letter}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="summary">
+              <div class="summary-card">
+                <div class="summary-row"><span>Total Marks:</span><span>${total}</span></div>
+                <div class="summary-row"><span>Marks Obtained:</span><span>${obtained}</span></div>
+                <div class="summary-row"><span>Overall Percentage:</span><span>${pct}%</span></div>
+                <div class="summary-row final-total"><span>GRADE:</span><span>${finalGrade}</span></div>
+              </div>
+            </div>
+            <div class="footer" style="margin-top: 60px; display: flex; justify-content: space-between;">
+              <div style="border-top: 1px solid #1e293b; width: 200px; text-align: center; padding-top: 10px;">Examiner Signature</div>
+              <div style="border-top: 1px solid #1e293b; width: 200px; text-align: center; padding-top: 10px;">Principal Seal</div>
+            </div>
+          </div>
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
   const upcomingExams    = schedules.filter(s => s.status === 'Upcoming').length;
   const ongoingExams     = schedules.filter(s => s.status === 'Ongoing').length;
   const unverifiedGrades = grades.filter(g => !g.is_verified).length;
@@ -394,7 +584,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const TAB_TITLE: Record<string, string> = {
     dashboard: 'Dashboard', schedules: 'Exam Schedules', exams: 'Exams',
-    papers: 'Paper Setup', seating: 'Seating Plans', invigilation: 'Invigilation',
+    seating: 'Seating Plans', invigilation: 'Invigilation',
     grades: 'Grade Entry', results: 'Result Cards',
   };
 
@@ -622,8 +812,11 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             {/* ══════════ EXAM SCHEDULES ══════════ */}
             {tab === 'schedules' && (
               <motion.div key="schedules" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-indigo-50/30 p-4 rounded-2xl border border-indigo-100 mb-2">
-                   <p className="text-xs text-indigo-700 font-bold flex items-center gap-2"><Shield size={14} /> View only. Schedules are created by the Academics Head.</p>
+                <div className="flex justify-between items-center bg-indigo-50/30 p-4 rounded-2xl border border-indigo-100 mb-2">
+                   <p className="text-xs text-indigo-700 font-bold flex items-center gap-2"><Shield size={14} /> Official Examination Schedule Management</p>
+                   <button onClick={() => setModal('sched')} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black text-white" style={{ background: GRADIENT }}>
+                      <Plus size={14} /> Create Schedule
+                   </button>
                 </div>
                 <div className="space-y-3">
                   {schedules.map((s) => (
@@ -713,62 +906,19 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
-            {/* ══════════ PAPER SETUP ══════════ */}
-            {tab === 'papers' && (
-              <motion.div key="papers" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="flex justify-end">
-                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => setModal('paper')}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
-                    <Plus size={15} /> Add Paper Spec
-                  </motion.button>
-                </div>
-                <div className="space-y-3">
-                  {papers.map((p) => {
-                    const ex = exams.find(e => e.id === p.exam_id);
-                    return (
-                      <motion.div key={p.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                        className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#eef2ff' }}>
-                                <ClipboardList size={15} style={{ color: ACCENT }} />
-                              </div>
-                              <div>
-                                <h3 className="font-black text-slate-900">{p.subject}</h3>
-                                <p className="text-xs text-slate-400">Exam: {ex?.title || `#${p.exam_id}`}</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mb-2">
-                              <Badge c="bg-blue-50 text-blue-700 border-blue-200" label={`Total: ${p.total_marks}`} />
-                              <Badge c="bg-amber-50 text-amber-700 border-amber-200" label={`Pass: ${p.pass_marks}`} />
-                              <Badge c="bg-purple-50 text-purple-700 border-purple-200" label={`${p.duration_mins} mins`} />
-                              <Badge c="bg-slate-100 text-slate-600 border-slate-200" label={p.paper_type} />
-                            </div>
-                            {p.instructions && <p className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100"><strong>Instructions:</strong> {p.instructions}</p>}
-                            {p.syllabus_refs && <p className="text-xs mt-1 font-bold" style={{ color: ACCENT }}>Syllabus: {p.syllabus_refs}</p>}
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                  {!papers.length && (
-                    <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-300">
-                      <ClipboardList size={28} className="mx-auto mb-3 text-slate-300" />
-                      <p className="text-slate-400 font-bold">No paper specs.</p>
-                      <button className="text-sm font-black mt-2 hover:underline" style={{ color: ACCENT }} onClick={() => setModal('paper')}>Add one →</button>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
             {/* ══════════ SEATING PLANS (MANUAL) ══════════ */}
             {tab === 'seating' && (
               <motion.div key="seating" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row gap-6">
                    <div className="flex-1">
-                      <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Search size={16} /> Filter Students</h3>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-black text-slate-900 flex items-center gap-2"><Search size={16} /> Filter Students</h3>
+                        {seating.length > 0 && (
+                          <button onClick={printSeatingPlan} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-slate-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-50">
+                            <FileText size={14} /> Print Seating Plan
+                          </button>
+                        )}
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                          <FM label="Student Name"><TI placeholder="John Doe" value={studentSearch.name} onChange={e => setStudentSearch(p => ({ ...p, name: e.target.value }))} /></FM>
                          <FM label="Roll Number"><TI placeholder="2628001" value={studentSearch.roll} onChange={e => setStudentSearch(p => ({ ...p, roll: e.target.value }))} /></FM>
@@ -1000,8 +1150,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedStudentResults(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
                       <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         className="relative bg-[#f8fafc] rounded-[2.5rem] w-full max-w-4xl z-10 shadow-2xl overflow-hidden flex flex-col h-[90vh]">
-                        
-                        {/* Header */}
+                         {/* Header */}
                         <div className="px-8 py-6 bg-white border-b border-slate-100 flex items-center justify-between shadow-sm">
                           <div className="flex items-center gap-4">
                             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white" style={{ background: GRADIENT }}>
@@ -1012,9 +1161,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                               <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Roll: {selectedStudentResults.student.roll_no} • {selectedStudentResults.student.class_section}</p>
                             </div>
                           </div>
-                          <button onClick={() => setSelectedStudentResults(null)} className="p-2 rounded-2xl bg-slate-50 text-slate-400 hover:text-slate-600 transition-colors">
-                            <X size={24} />
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button onClick={printResultCard} className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-indigo-50 text-indigo-700 font-black text-xs hover:bg-indigo-100 transition-all border border-indigo-100">
+                              <Eye size={16} /> Print Full Card
+                            </button>
+                            <button onClick={() => setSelectedStudentResults(null)} className="p-2 rounded-2xl bg-slate-50 text-slate-400 hover:text-slate-700 transition-colors">
+                              <X size={24} />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Content */}
@@ -1132,6 +1286,43 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
       {/* ══════════════ MODALS ══════════════ */}
       <AnimatePresence>
+        {/* Create Schedule Modal */}
+        {modal === 'sched' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl overflow-hidden">
+              <div className="h-1.5 w-full" style={{ background: GRADIENT }} />
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-black text-slate-900 flex items-center gap-2 text-base"><Calendar size={18} style={{ color: ACCENT }} /> Create Exam Schedule</h3>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <FM label="Schedule Title" req><TI placeholder="e.g. Mid-Term Examination 2026" value={schedForm.title} onChange={e => setSchedForm((p: any)=> ({ ...p, title: e.target.value }))} /></FM>
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Exam Type"><TS value={schedForm.exam_type} onChange={e => setSchedForm((p: any)=> ({ ...p, exam_type: e.target.value }))}>{EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</TS></FM>
+                  <FM label="Session"><TI value={schedForm.session} onChange={e => setSchedForm((p: any)=> ({ ...p, session: e.target.value }))} /></FM>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Program"><TS value={schedForm.program} onChange={e => setSchedForm((p: any)=> ({ ...p, program: e.target.value }))}><option value="">Select...</option>{PROGRAMS.map(p => <option key={p} value={p}>{p}</option>)}</TS></FM>
+                  <FM label="Part"><TS value={schedForm.part} onChange={e => setSchedForm((p: any)=> ({ ...p, part: Number(e.target.value) }))}><option value={1}>Part 1</option><option value={2}>Part 2</option></TS></FM>
+                </div>
+                <FM label="Target Class (Optional)"><TI placeholder="ICS-I A" value={schedForm.class_section} onChange={e => setSchedForm((p: any)=> ({ ...p, class_section: e.target.value }))} /></FM>
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Start Date" req><TI type="date" value={schedForm.start_date} onChange={e => setSchedForm((p: any)=> ({ ...p, start_date: e.target.value }))} /></FM>
+                  <FM label="End Date" req><TI type="date" value={schedForm.end_date} onChange={e => setSchedForm((p: any)=> ({ ...p, end_date: e.target.value }))} /></FM>
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+                <button onClick={() => setModal(null)} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button onClick={saveSchedule} disabled={saving} className="px-8 py-2.5 rounded-xl text-sm font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all active:scale-95" style={{ background: GRADIENT }}>
+                  {saving ? 'Creating...' : 'Create Schedule'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {/* Manual Seating Modal */}
         {modal === 'seat-manual' && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
