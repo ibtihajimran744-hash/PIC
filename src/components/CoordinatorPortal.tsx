@@ -95,7 +95,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({ onLogout, 
   // ── Load all ───────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [s1, s2, s3, s4, s5, s6, s7, s8, s9] = await Promise.all([
+    const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11] = await Promise.all([
       supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status').neq('status', 'Deleted').order('class_section').order('full_name'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept,attendance_rate,status,assigned_classes').order('full_name'),
       supabase.from('timetable').select('*').order('day_of_week').order('start_time'),
@@ -105,6 +105,8 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({ onLogout, 
       supabase.from('attendance').select('student_roll,status,date').order('date', { ascending: false }).limit(2000),
       supabase.from('exams').select('id,title,class_section,subject,date,total_marks,exam_type,grading_status,created_at').order('date', { ascending: false }).limit(60),
       supabase.from('leave_requests').select('id,student_roll_no,student_name,class_section,reason,from_date,to_date,status,leave_type').order('created_at', { ascending: false }).limit(50),
+      supabase.from('academic_sessions').select('*'),
+      supabase.from('academic_programs').select('*'),
     ]);
     setStudents(s1.data || []);
     setTeachers(s2.data || []);
@@ -116,7 +118,7 @@ export const CoordinatorPortal: React.FC<CoordinatorPortalProps> = ({ onLogout, 
     setExams(s8.data || []);
     setLeaves(s9.data || []);
     // Log any query errors for debugging
-    [s1,s2,s3,s4,s5,s6,s7,s8,s9].forEach((r,i) => { if (r.error) console.warn(`Query ${i+1} error:`, r.error.message); });
+    [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11].forEach((r, i) => { if (r.error) console.warn(`Query ${i + 1} error:`, r.error.message); });
     setLoading(false);
   }, []);
 

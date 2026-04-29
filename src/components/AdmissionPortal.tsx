@@ -571,11 +571,6 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                                   ))}
                                   {form.applied_for === 'Category B' && <><option value={1}>1st Year</option><option value={2}>2nd Year</option></>}
                                 </>
-                              ) : form.applied_for === 'Category B' ? (
-                                <>
-                                  <option value={1}>1st Year</option>
-                                  <option value={2}>2nd Year</option>
-                                </>
                               )}
                             </TS>
                           </F>

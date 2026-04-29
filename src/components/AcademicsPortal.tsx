@@ -8,9 +8,12 @@ import {
   Menu, Bell, Save, Upload
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { AcademicSession, AcademicProgram, AcademicSubject, AcademicResource, SchemeEntry, AcademicQuiz, QuizResult } from '../services/academicManagement';
+import toast, { Toaster } from 'react-hot-toast';
 
 interface Props {
-  onLogout: () => void;
+  onLogout?: () => void;
+  onBack?: () => void;
   adminData: { id: string; full_name: string; role: string; username: string };
 }
 
@@ -19,17 +22,18 @@ const GRADIENT = 'linear-gradient(135deg,#059669,#10b981)';
 
 const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
 
-type Tab = 'dashboard'|'scheme'|'teachers'|'classes'|'students'|'announcements'|'messages'|'timetable'|'progress'|'exams';
+type Tab = 'dashboard'|'scheme'|'teachers'|'classes'|'students'|'announcements'|'messages'|'timetable'|'programs'|'tracking'|'exams';
 
 const TABS = [
   { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
+  { id: 'programs',      label: 'Academic Setup',   icon: BookMarked },
   { id: 'classes',       label: 'Class Management', icon: Users },
   { id: 'teachers',      label: 'Teacher Management', icon: Users },
   { id: 'scheme',        label: 'Scheme of Study',  icon: BookMarked },
   { id: 'timetable',     label: 'Timetable',        icon: Calendar },
+  { id: 'tracking',      label: 'Track Progress',   icon: TrendingUp },
   { id: 'exams',         label: 'Exam Schedules',   icon: BookOpen },
   { id: 'students',      label: 'Student Academics',icon: GraduationCap },
-  { id: 'progress',      label: 'Course Progress',  icon: TrendingUp },
   { id: 'announcements', label: 'Announcements',    icon: Megaphone },
   { id: 'messages',      label: 'Messages',         icon: Mail },
 ];
@@ -90,9 +94,14 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [attendance,     setAttendance]     = useState<any[]>([]);
   const [examSchedules,  setExamSchedules]  = useState<any[]>([]);
 
+  const [activeSession, setActiveSession] = useState<any>(null);
+  const [sessions,       setSessions]       = useState<any[]>([]);
+  const [activePrograms, setActivePrograms] = useState<any[]>([]);
+  const [allSubjects,    setAllSubjects]    = useState<any[]>([]);
+  const [quizAnalytics,  setQuizAnalytics]  = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
-  const [toast,   setToast]   = useState<{ msg: string; ok: boolean } | null>(null);
   const [modal,   setModal]   = useState<string | null>(null);
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('');
@@ -110,7 +119,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     to_teacher_username: '', subject: '', body: '',
   });
   const [teacherForm, setTeacherForm] = useState<any>({
-    full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active'
+    full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active', assigned_classes: ''
   });
   const [classForm, setClassForm] = useState<any>({
     class_name: '', department: '', academic_year: '2026-27'
@@ -122,7 +131,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [schemeFilter, setSchemeFilter] = useState({ program: '', part: '', subject: '' });
 
   const showToast = (msg: string, ok = true) => {
-    setToast({ msg, ok }); setTimeout(() => setToast(null), 3500);
+    if (ok) toast.success(msg);
+    else toast.error(msg);
   };
 
   const loadAll = useCallback(async () => {
@@ -130,7 +140,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     const [
       { data: sc }, { data: tc }, { data: tp }, { data: st }, { data: cp }, 
       { data: tt }, { data: an }, { data: ms }, { data: gr }, { data: at }, 
-      { data: exS }, { data: cls }
+      { data: exS }, { data: cls }, { data: sess }, { data: progs }, { data: subjs },
+      { data: qrz }
     ] = await Promise.all([
       supabase.from('scheme_of_study').select('*').order('created_at', { ascending: false }),
       supabase.from('teachers').select('*').order('full_name'),
@@ -144,15 +155,110 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('attendance').select('student_roll,status,date').order('date', { ascending: false }).limit(500),
       supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('class_name'),
+      supabase.from('academic_sessions').select('*').order('created_at', { ascending: false }),
+      supabase.from('academic_programs').select('*').order('created_at', { ascending: false }),
+      supabase.from('subjects').select('*').order('name'),
+      supabase.from('quiz_results').select('*'),
     ]);
     setSchemes(sc || []); setTeachers(tc || []); setTeacherProfs(tp || []);
     setStudents(st || []); setCourseProgress(cp || []); setTimetable(tt || []);
     setAnnouncements(an || []); setMessages(ms || []); setGrades(gr || []); setAttendance(at || []);
     setExamSchedules(exS || []); setClasses(cls || []);
+    setSessions(sess || []); setActivePrograms(progs || []); setAllSubjects(subjs || []);
+    
+    const active = sess?.find(s => s.is_active);
+    setActiveSession(active);
+
+    // Calculate quiz analytics
+    if (qrz && qrz.length > 0) {
+      const avg = qrz.reduce((acc, curr) => acc + (curr.score / (curr.total || 5)), 0) / qrz.length;
+      setQuizAnalytics({ avg_score: (avg * 100).toFixed(1), total_attempts: qrz.length });
+    }
+
     setLoading(false);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  const [ttForm, setTtForm] = useState({
+    session_id: '', program_id: '', subject_id: '', teacher_id: '',
+    day_of_week: 'Monday', start_time: '08:00', end_time: '09:00',
+    class_section: '', room: '', campus: 'Main'
+  });
+
+  const saveScheduleEntry = async () => {
+    if (!ttForm.program_id || !ttForm.subject_id || !ttForm.teacher_id || !ttForm.class_section) {
+      toast.error('Please fill all required fields');
+      return;
+    }
+    setSaving(true);
+    try {
+      const subj = allSubjects.find(s => s.id === ttForm.subject_id);
+      
+      const { error } = await supabase.from('timetable').insert([{
+        ...ttForm,
+        program: activePrograms.find(p => p.id === ttForm.program_id)?.name,
+        subject: subj?.name,
+        period_number: 1 
+      }]);
+      if (error) throw error;
+      toast.success('Schedule entry added');
+      setModal(null);
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const [programForm, setProgramForm] = useState({ name: '', session_id: '' });
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [sessionForm, setSessionForm] = useState({ name: '', is_active: true });
+  const [subjForm,    setSubjForm]    = useState({ name: '', program_id: '', teacher_id: '' });
+
+  const saveSession = async () => {
+    if (!sessionForm.name) { showToast('Session name required', false); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('academic_sessions').insert([sessionForm]);
+      if (error) throw error;
+      showToast('New academic session created');
+      setModal(null); loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const saveProgram = async () => {
+    if (!programForm.name || !programForm.session_id) { showToast('Name and Session required', false); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('academic_programs').insert([programForm]);
+      if (error) throw error;
+      showToast('New program defined');
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const saveSubject = async (progId?: string) => {
+    const targetProgId = progId || subjForm.program_id;
+    const targetName = progId ? prompt('Subject Name:') : subjForm.name;
+    if (!targetName || !targetProgId) { showToast('Name and Program required', false); return; }
+    
+    setSaving(true);
+    try {
+      const teacherId = progId ? prompt('Assign Teacher ID (optional):') : subjForm.teacher_id;
+      const { error } = await supabase.from('subjects').insert([{ 
+        name: targetName, 
+        program_id: targetProgId, 
+        teacher_id: teacherId || null 
+      }]);
+      if (error) throw error;
+      showToast('Subject added');
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
 
   const saveScheme = async () => {
     if (!schemeForm.title || !schemeForm.subject || !schemeForm.topic) {
@@ -293,7 +399,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       
       if (error) throw error;
       showToast(selectedTeacher ? 'Teacher updated' : 'Teacher added');
-      setTeacherForm({ full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active' });
+      setTeacherForm({ full_name: '', subject_dept: '', phone_no: '', email: '', employee_id: '', monthly_salary: 0, status: 'Active', assigned_classes: '' });
       setModal(null); setSelectedTeacher(null); loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
@@ -432,8 +538,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const TAB_TITLE: Record<string, string> = {
     dashboard: 'Dashboard', scheme: 'Scheme of Study', teachers: 'Teacher Profiles',
-    students: 'Student Academics', progress: 'Course Progress', timetable: 'Timetable',
-    announcements: 'Announcements', messages: 'Messages',
+    students: 'Student Academics', tracking: 'Track Progress', timetable: 'Timetable',
+    announcements: 'Announcements', messages: 'Messages', programs: 'Academic Setup'
   };
 
   return (
@@ -585,10 +691,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   <h2 className="text-xl font-black text-white mb-1">Academic coordination and scheduling overview</h2>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mt-4">
                     {[
-                      { l: 'Active Classes',   v: [...new Set(timetable.map(t => t.class_section))].length },
+                      { l: 'Programs',         v: activePrograms.length },
                       { l: 'Total Students',   v: totalStudents },
                       { l: 'Teachers',         v: activeTeachers },
-                      { l: 'Upcoming Exams',   v: 0 },
+                      { l: 'Avg Quiz Score',   v: quizAnalytics ? `${quizAnalytics.avg_score}%` : '—' },
                     ].map(({ l, v }) => (
                       <div key={l}>
                         <p className="text-emerald-400/70 text-[9px] font-black uppercase tracking-widest mb-1">{l}</p>
@@ -600,10 +706,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
                 {/* Stat cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <StatCard label="Active Classes"    value={[...new Set(timetable.map(t => t.class_section))].length} sub={`${totalStudents} students total`} color={ACCENT}   icon={Users} />
-                  <StatCard label="Upcoming Exams"    value={0}              sub="Scheduled ahead"   color="#0891B2" icon={Calendar} />
+                  <StatCard label="Total Programs"    value={activePrograms.length} sub={`${allSubjects.length} subjects total`} color={ACCENT}   icon={BookOpen} />
+                  <StatCard label="Quiz Attempts"    value={quizAnalytics?.total_attempts || 0} sub="Participated students"   color="#0891B2" icon={CheckCircle} />
                   <StatCard label="Scheme Entries"    value={totalSchemes}   sub={`${[...new Set(schemes.map(s => s.subject))].length} subjects`} color="#7C3AED" icon={BookMarked} />
-                  <StatCard label="Homework"          value={0}              sub="Assigned this session" color="#D97706" icon={FileText} />
+                  <StatCard label="Overall Progress"  value={`${(courseProgress.reduce((acc, c) => acc + (c.progress_pct || 0), 0) / (courseProgress.length || 1)).toFixed(0)}%`} sub="Syllabus coverage" color="#D97706" icon={TrendingUp} />
                 </div>
 
                 {/* Attendance overview */}
@@ -648,10 +754,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     <h3 className="font-black text-slate-900 mb-4">Quick Actions</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {[
+                        { label: 'Session Setup',   icon: GraduationCap, action: () => setModal('session') },
                         { label: 'Upload Scheme',   icon: BookMarked, action: () => { setTab('scheme'); setModal('scheme'); } },
                         { label: 'Announcement',    icon: Megaphone,  action: () => { setTab('announcements'); setModal('announce'); } },
                         { label: 'Message Teacher', icon: Send,       action: () => { setTab('messages'); setModal('msg'); } },
-                        { label: 'View Progress',   icon: TrendingUp, action: () => setTab('progress') },
                       ].map(({ label, icon: Icon, action }) => (
                         <motion.button key={label} onClick={action} whileTap={{ scale: 0.97 }}
                           className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all text-slate-600 hover:text-emerald-700">
@@ -1023,79 +1129,20 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
-            {/* ══════════ COURSE PROGRESS ══════════ */}
-            {tab === 'progress' && (
-              <motion.div key="progress" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by subject or class…"
-                      className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-emerald-400 bg-white" />
-                  </div>
-                  <TS value={filter} onChange={e => setFilter(e.target.value)}>
-                    <option value="">All Programs</option>{PROGRAMS.map(p => <option key={p}>{p}</option>)}
-                  </TS>
-                </div>
-                {(() => {
-                  const bySubject: Record<string, any[]> = {};
-                  courseProgress.filter(cp => !filter || cp.program === filter).forEach(cp => {
-                    if (!bySubject[cp.subject]) bySubject[cp.subject] = [];
-                    bySubject[cp.subject].push(cp);
-                  });
-                  return Object.entries(bySubject)
-                    .filter(([subj]) => !search || subj.toLowerCase().includes(search.toLowerCase()))
-                    .map(([subj, items]) => {
-                      const avgPct    = items.length > 0 ? Math.round(items.reduce((s, c) => s + (c.topics_total > 0 ? (c.topics_done / c.topics_total) * 100 : 0), 0) / items.length) : 0;
-                      const totalTopics = items[0]?.topics_total || 0;
-                      const avgDone   = items.length > 0 ? Math.round(items.reduce((s, c) => s + c.topics_done, 0) / items.length) : 0;
-                      return (
-                        <div key={subj} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <h3 className="font-black text-slate-900">{subj}</h3>
-                              <p className="text-xs text-slate-400">{items.length} students · Avg {avgDone}/{totalTopics} topics</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-2xl font-black" style={{ color: ACCENT }}>{avgPct}%</p>
-                              <p className="text-[10px] text-slate-400">Class Average</p>
-                            </div>
-                          </div>
-                          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
-                            <motion.div initial={{ width: 0 }} animate={{ width: `${avgPct}%` }}
-                              transition={{ duration: 0.9 }} className="h-full rounded-full" style={{ background: GRADIENT }} />
-                          </div>
-                          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                            {items.slice(0, 12).map((cp) => {
-                              const st  = students.find(s => s.roll_no === cp.student_roll);
-                              const pct = cp.topics_total > 0 ? Math.round((cp.topics_done / cp.topics_total) * 100) : 0;
-                              return (
-                                <div key={cp.id} className="bg-slate-50 rounded-xl p-2 text-center border border-slate-100">
-                                  <p className="text-xs font-black" style={{ color: pct >= 70 ? '#27ae60' : pct >= 40 ? ACCENT : '#c0392b' }}>{pct}%</p>
-                                  <p className="text-[9px] text-slate-500 truncate">{st?.full_name?.split(' ')[0] || `#${cp.student_roll}`}</p>
-                                </div>
-                              );
-                            })}
-                            {items.length > 12 && (
-                              <div className="bg-slate-50 rounded-xl p-2 flex items-center justify-center text-[10px] text-slate-400 border border-slate-100">
-                                +{items.length - 12}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                })()}
-                {courseProgress.length === 0 && <p className="text-center py-12 text-slate-400 text-sm">No course progress data yet</p>}
-              </motion.div>
-            )}
-
             {/* ══════════ TIMETABLE ══════════ */}
             {tab === 'timetable' && (
               <motion.div key="timetable" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by class, subject or teacher…"
-                    className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-emerald-400 bg-white" />
+                <div className="flex items-center justify-between">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by class, subject or teacher…"
+                      className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-emerald-400 bg-white" />
+                  </div>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => setModal('schedule_entry')}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white shadow-lg shadow-emerald-500/20"
+                    style={{ background: GRADIENT }}>
+                    <Plus size={16} /> Add Schedule Entry
+                  </motion.button>
                 </div>
                 {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => {
                   const dayEntries = timetable.filter(tt => tt.day_of_week === day && (!search ||
@@ -1252,6 +1299,127 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
+            {/* ══════════ ACADEMIC SETUP ══════════ */}
+            {tab === 'programs' && (
+              <motion.div key="programs" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl border border-slate-100 p-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800">Programs & Sessions</h3>
+                    <p className="text-xs text-slate-400">Define administrative sessions, academic programs and their subjects.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveSession} className="px-5 py-2.5 rounded-xl text-xs font-black text-white" style={{ background: GRADIENT }}>New Session</button>
+                    <button onClick={saveProgram} className="px-5 py-2.5 rounded-xl text-xs font-black text-slate-600 bg-slate-50 border border-slate-100">Add Program</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Sessions List */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">Active Sessions</h4>
+                    {sessions.map(s => (
+                      <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-800">{s.name}</p>
+                          <p className="text-[10px] text-slate-400">{s.is_active ? 'Currently Active' : 'Previous Session'}</p>
+                        </div>
+                        {s.is_active && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Programs & Subjects Grid */}
+                  <div className="lg:col-span-2 space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">Program Structure</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {activePrograms.map(p => {
+                        const pSubjs = allSubjects.filter(s => s.program_id === p.id);
+                        return (
+                          <div key={p.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between">
+                              <p className="font-black text-slate-800 text-sm">{p.name}</p>
+                              <div className="flex items-center gap-2">
+                                <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label={`${pSubjs.length} Subj`} />
+                                <button onClick={() => saveSubject(p.id)} className="p-1 rounded-md bg-white border border-slate-200 text-slate-400 hover:text-emerald-500 transition-colors">
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="p-4 space-y-2">
+                              {pSubjs.map(s => {
+                                const teacher = teachers.find(t => t.id === Number(s.teacher_id));
+                                return (
+                                  <div key={s.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0 pb-1">
+                                    <span className="font-medium text-slate-600">{s.name}</span>
+                                    <span className="text-[10px] text-slate-400 italic">
+                                      {teacher ? teacher.full_name : 'No teacher assigned'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              {pSubjs.length === 0 && <p className="text-[10px] text-slate-400 text-center py-2 italic">No subjects added yet</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {tab === 'tracking' && (
+              <motion.div key="tracking" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {teacherProfs.map(t => {
+                    const tSubjs = allSubjects.filter(s => s.teacher_id === t.id);
+                    const tSchemes = schemes.filter(s => tSubjs.some(subj => subj.name === s.subject));
+                    const completed = tSchemes.filter(s => s.status === 'Completed').length;
+                    const total = tSchemes.length;
+                    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                    
+                    return (
+                      <div key={t.id} className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+                        <div className="flex items-center gap-3 mb-6">
+                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-black text-white" style={{ background: GRADIENT }}>{t.full_name?.charAt(0)}</div>
+                          <div>
+                            <h3 className="font-black text-slate-800 leading-tight">{t.full_name}</h3>
+                            <p className="text-xs text-slate-400">{t.subject_dept || 'Senior Faculty'}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div>
+                            <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                              <span>Syllabus Progress</span>
+                              <span style={{ color: ACCENT }}>{pct}%</span>
+                            </div>
+                            <div className="h-2 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                              <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${pct}%`, background: GRADIENT }} />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 pt-2">
+                            {tSubjs.map(s => {
+                              const sTotal = tSchemes.filter(ts => ts.subject === s.name).length;
+                              const sDone = tSchemes.filter(ts => ts.subject === s.name && ts.status === 'Completed').length;
+                              const sPct = sTotal > 0 ? Math.round((sDone / sTotal) * 100) : 0;
+                              return (
+                                <div key={s.id} className="flex items-center justify-between text-xs">
+                                  <span className="font-bold text-slate-600">{s.name}</span>
+                                  <span className="text-slate-400">{sDone}/{sTotal} topics</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
             {/* ══════════ MESSAGES ══════════ */}
             {tab === 'messages' && (
               <motion.div key="messages" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -1303,6 +1471,204 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
       {/* ══════════════ MODALS ══════════════ */}
       <AnimatePresence>
+        {modal === 'schedule_entry' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-xl z-20 shadow-2xl overflow-hidden">
+              <div className="h-1" style={{ background: GRADIENT }} />
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-xl font-black text-slate-900">Add Timetable Entry</h3>
+                  <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 text-sm font-bold uppercase tracking-widest">Close</button>
+                </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Program</p>
+                      <select value={ttForm.program_id} onChange={e => setTtForm({...ttForm, program_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
+                        <option value="">Select Program</option>
+                        {activePrograms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
+                      <select value={ttForm.subject_id} onChange={e => setTtForm({...ttForm, subject_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
+                        <option value="">Select Subject</option>
+                        {allSubjects.filter(s => s.program_id === ttForm.program_id).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teacher</p>
+                      <select value={ttForm.teacher_id} onChange={e => setTtForm({...ttForm, teacher_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
+                        <option value="">Select Teacher</option>
+                        {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Section</p>
+                      <TI placeholder="e.g. ICS-A" value={ttForm.class_section} onChange={e => setTtForm({...ttForm, class_section: e.target.value})} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Day</p>
+                      <select value={ttForm.day_of_week} onChange={e => setTtForm({...ttForm, day_of_week: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
+                        {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">From</p>
+                      <input type="time" value={ttForm.start_time} onChange={e => setTtForm({...ttForm, start_time: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">To</p>
+                      <input type="time" value={ttForm.end_time} onChange={e => setTtForm({...ttForm, end_time: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-4">
+                    <button onClick={() => setModal(null)} className="py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-400 bg-slate-50 hover:bg-slate-100 transition-all">Cancel</button>
+                    <button onClick={saveScheduleEntry} disabled={saving} className="py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all disabled:opacity-50" style={{ background: GRADIENT }}>
+                      {saving ? 'Saving...' : 'Add Entry'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {modal === 'session' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-4xl z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="h-1" style={{ background: GRADIENT }} />
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f0fdf4' }}><GraduationCap size={16} style={{ color: ACCENT }} /></div>
+                  <h3 className="font-black text-slate-900">Academic Session Setup</h3>
+                </div>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-8">
+                {/* Session Creation */}
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">1. Manage Sessions</h4>
+                    {activeSession && <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label={`Active: ${activeSession.name}`} />}
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1 min-w-0">
+                      <TI placeholder="e.g. 2026-27" value={sessionForm.name} onChange={e => setSessionForm({ ...sessionForm, name: e.target.value })} />
+                    </div>
+                    <button onClick={saveSession} disabled={saving} className="px-6 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
+                      {saving ? 'Creating...' : 'Create Session'}
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {sessions.map(s => (
+                      <button key={s.id} onClick={() => setSessionForm({ ...s, is_active: true })} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${s.is_active ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                        {s.name} {s.is_active ? ' (Active)' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Program Management */}
+                <section>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">2. Programs for Session</h4>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <TS value={programForm.session_id} onChange={e => setProgramForm({ ...programForm, session_id: e.target.value })}>
+                      <option value="">Select Session</option>
+                      {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </TS>
+                    <div className="flex gap-2">
+                      <TI placeholder="e.g. ICS Physics" value={programForm.name} onChange={e => setProgramForm({ ...programForm, name: e.target.value })} />
+                      <button onClick={saveProgram} className="p-2.5 rounded-xl bg-slate-100 text-slate-600 border border-slate-200"><Plus size={18} /></button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {activePrograms.filter(p => !programForm.session_id || p.session_id === programForm.session_id).map(p => (
+                      <div key={p.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 relative group">
+                        <p className="text-sm font-black text-slate-900">{p.name}</p>
+                        <p className="text-[10px] text-slate-400">{sessions.find(s => s.id === p.session_id)?.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Subject Assignment */}
+                <section>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">3. Subjects & Teachers</h4>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <TS value={subjForm.program_id} onChange={e => setSubjForm({ ...subjForm, program_id: e.target.value })}>
+                      <option value="">Select Program</option>
+                      {activePrograms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </TS>
+                    <TI placeholder="Subject Name" value={subjForm.name} onChange={e => setSubjForm({ ...subjForm, name: e.target.value })} />
+                    <div className="flex gap-2">
+                      <TS value={subjForm.teacher_id} onChange={e => setSubjForm({ ...subjForm, teacher_id: e.target.value })}>
+                        <option value="">Assign Teacher (Optional)</option>
+                        {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      </TS>
+                      <button onClick={() => saveSubject()} className="p-2.5 rounded-xl bg-slate-100 text-slate-600 border border-slate-200"><Plus size={18} /></button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {allSubjects.filter(s => !subjForm.program_id || s.program_id === subjForm.program_id).map(s => {
+                      const prog = activePrograms.find(p => p.id === s.program_id);
+                      const tea = teachers.find(t => t.id === Number(s.teacher_id));
+                      return (
+                        <div key={s.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white shadow-sm">
+                          <div>
+                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{prog?.name}</p>
+                            <p className="text-sm font-black text-slate-900">{s.name}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Teacher</p>
+                            <Badge c="bg-slate-50 text-slate-700 border-slate-200" label={tea?.full_name || 'Not assigned'} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* Resource Management */}
+                <section>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">4. Subject Resources (PDFs, Notes)</h4>
+                  <p className="text-[11px] text-slate-400 mb-4 bg-amber-50 p-3 rounded-xl border border-amber-100">Uploaded resources will automatically appear in the Student Portal for the relevant subject.</p>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <TS onChange={async (e) => {
+                      const subjectId = e.target.value;
+                      if (!subjectId) return;
+                      // Mock resource upload UI
+                      const title = prompt('Resource Title (e.g., Chapter 1 Notes)');
+                      const url = prompt('Resource URL (or path)');
+                      if (title && url) {
+                        setSaving(true);
+                        const { error } = await supabase.from('academic_resources').insert([{ subject_id: subjectId, title, file_url: url, file_type: 'pdf' }]);
+                        setSaving(false);
+                        if (error) showToast(error.message, false);
+                        else showToast('Resource uploaded successfully');
+                      }
+                    }}>
+                      <option value="">Upload Resource for Subject...</option>
+                      {allSubjects.map(s => <option key={s.id} value={s.id}>{s.name} ({activePrograms.find(p => p.id === s.program_id)?.name})</option>)}
+                    </TS>
+                  </div>
+                </section>
+              </div>
+              <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end flex-shrink-0">
+                <button onClick={() => setModal(null)} className="px-8 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>Done Settings</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {modal === 'schedule' && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
@@ -1574,15 +1940,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         )}
       </AnimatePresence>
 
-      {/* TOAST */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[999] px-5 py-3 rounded-2xl text-sm font-black text-white flex items-center gap-2 shadow-xl ${toast.ok ? 'bg-emerald-500' : 'bg-rose-500'}`}>
-            {toast.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />} {toast.msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Toaster position="bottom-center" />
     </div>
   );
 };

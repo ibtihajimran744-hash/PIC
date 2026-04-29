@@ -333,6 +333,73 @@ export interface LibraryChapter {
   title: string;
 }
 
+// ─── NEW: Academic Session ───
+export interface AcademicSession {
+  id: string;
+  name: string; // e.g., "2026-27"
+  is_active: boolean;
+  created_at?: string;
+}
+
+// ─── NEW: Academic Program ───
+export interface AcademicProgram {
+  id: string;
+  name: string; // e.g., "ICS Physics"
+  session_id: string;
+  created_at?: string;
+}
+
+// ─── NEW: Academic Subject ───
+export interface AcademicSubject {
+  id: string;
+  name: string;
+  program_id: string;
+  teacher_id?: number;
+  created_at?: string;
+}
+
+// ─── NEW: Academic Resource ───
+export interface AcademicResource {
+  id: string;
+  subject_id: string;
+  title: string;
+  file_url: string;
+  file_type: string;
+  created_at?: string;
+}
+
+// ─── NEW: Scheme of Study / Topic Plan ───
+export interface SchemeOfStudy {
+  id: string;
+  subject_id: string;
+  topic: string;
+  description?: string;
+  week_no: number;
+  day: string;
+  scheduled_date: string;
+  status: 'planned' | 'completed' | 'in_progress';
+  completed_at?: string;
+  created_at?: string;
+}
+
+// ─── NEW: Academic Quiz ───
+export interface AcademicQuiz {
+  id: string;
+  topic_id: string;
+  questions: any[]; // JSON array of 5 MCQs
+  created_at?: string;
+}
+
+// ─── NEW: Quiz Result ───
+export interface QuizResult {
+  id: string;
+  quiz_id: string;
+  student_roll: number;
+  score: number;
+  total: number;
+  created_at?: string;
+}
+
 // ─────────────────────────────────────────────
 // BASIC CRUD
 // ─────────────────────────────────────────────
@@ -738,17 +805,51 @@ export async function getTeacherSchedule(teacherId: number): Promise<TeacherSche
 /**
  * Get today's schedule for a specific teacher.
  */
-export async function getTeacherTodaySchedule(teacherId: number): Promise<TeacherScheduleEntry[]> {
+export async function getTeacherTodaySchedule(teacherId: number, teacherName?: string): Promise<TeacherScheduleEntry[]> {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }); // e.g. "Monday"
-  const { data, error } = await supabase
+  
+  // 1. Try the view first
+  const { data: viewData, error: viewError } = await supabase
     .from('teacher_schedule_view')
     .select('*')
     .eq('teacher_id', teacherId)
     .eq('day_of_week', today)
     .order('start_time', { ascending: true });
 
+  if (viewData && viewData.length > 0) return viewData as TeacherScheduleEntry[];
+
+  // 2. Fallback to direct timetable query (very important if view is stale/missing)
+  let query = supabase
+    .from('timetable')
+    .select('*')
+    .eq('day_of_week', today);
+    
+  if (teacherId) {
+    if (teacherName) {
+      query = query.or(`teacher_id.eq.${teacherId},teacher_name.ilike.%${teacherName}%`);
+    } else {
+      query = query.eq('teacher_id', teacherId);
+    }
+  }
+
+  const { data, error } = await query.order('start_time', { ascending: true });
+
   if (error) { console.error('Error fetching today schedule:', error); return []; }
-  return (data || []) as TeacherScheduleEntry[];
+  
+  // Map Timetable to TeacherScheduleEntry
+  return (data || []).map(t => ({
+    timetable_id: t.id,
+    teacher_id: t.teacher_id,
+    teacher_name: teacherName || '',
+    day_of_week: t.day_of_week,
+    start_time: t.start_time,
+    end_time: t.end_time || '',
+    subject: t.subject || '',
+    class_section: t.class_section || '',
+    room: t.room || '',
+    campus: t.campus || '',
+    total_students: 0
+  }));
 }
 
 /**

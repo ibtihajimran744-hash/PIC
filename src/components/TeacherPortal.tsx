@@ -4,7 +4,8 @@ import {
   Users, Bell, LogOut, Plus, Calendar, LayoutDashboard, Search,
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
-  CheckCircle2, User, RefreshCw, AlertCircle, Loader2, Sparkles
+  CheckCircle2, User, RefreshCw, AlertCircle, Loader2, Sparkles,
+  BookMarked, BookCheck
 } from 'lucide-react';
 import { EduChatAI } from './EduChatAI';
 import { cn } from '../lib/utils';
@@ -16,6 +17,7 @@ import {
   markAttendanceByTeacher,
   getTeacherTodaySchedule, getTeacherAttendanceTrend, TeacherScheduleEntry,
 } from '../services/supabase';
+import { SchemeEntry } from '../services/academicManagement';
 import { Leaderboard } from './Leaderboard';
 import { toast, Toaster } from 'react-hot-toast';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -27,16 +29,6 @@ interface TeacherPortalProps {
 }
 
 // ─── Reschedule types ─────────────────────────────────────────────────────────
-interface SchemeEntry {
-  id: string;
-  teacher_id: number;
-  subject: string;
-  class_section: string;
-  topic: string;
-  scheduled_date: string;
-  week_no: number | null;
-}
-
 interface RescheduleRequest {
   id: string;
   scheme_id: string;
@@ -75,6 +67,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [activeTab, setActiveTab] = useState('Home');
   const [subPage, setSubPage] = useState<string | null>(null);
   const [assignedStudents, setAssignedStudents] = useState<Student[]>(initialAssignedStudents || []);
+  const [allSections, setAllSections] = useState<string[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,24 +115,94 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [submittingReschedule, setSubmittingReschedule] = useState(false);
 
   // ── Students ───────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const fetchStudents = async () => {
-      if (!teacherData) return;
-      setStudentsLoading(true);
-      try {
-        const raw = teacherData.assigned_classes || '';
-        const sections = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
-        if (sections.length === 0) { setStudentsLoading(false); return; }
-        const { data, error } = await supabase.from('students').select('*').in('class_section', sections).neq('status', 'Deleted').order('full_name');
-        if (error) throw error;
-        setAssignedStudents(data || []);
-      } catch (error) {
-        console.error('Error fetching students:', error);
-        toast.error('Failed to load students');
-      } finally {
-        setStudentsLoading(false);
+  const fetchStudents = async () => {
+    if (!teacherData) return;
+    setStudentsLoading(true);
+    try {
+      console.log('Fetching students for teacher:', teacherData.id, teacherData.full_name);
+      let sections: string[] = [];
+      const raw = teacherData.assigned_classes || '';
+      
+      // 1. Get sections from assigned_classes profile field
+      if (raw) {
+        sections = raw.split(/[,|;]/).map((s: string) => s.trim()).filter(Boolean);
       }
-    };
+
+      // 2. Supplement: Get sections from the actual Timetable
+      // Try both teacher_id (exact) and fuzzy teacher name matching as a fail-safe
+      const { data: ttData, error: ttError } = await supabase
+        .from('timetable')
+        .select('class_section')
+        .or(`teacher_id.eq.${teacherData.id},teacher_name.ilike.%${teacherData.full_name}%`);
+      
+      if (ttData && ttData.length > 0) {
+        const ttSections = ttData.map(r => r.class_section).filter(Boolean);
+        sections = Array.from(new Set([...sections, ...ttSections]));
+      }
+
+      console.log('Detected sections:', sections);
+
+      if (sections.length === 0) {
+        // If still no sections, try searching for students in the teacher's department as a fallback
+        if (teacherData.subject_dept) {
+          const dept = teacherData.subject_dept.split(' ')[0]; // Take first word e.g. "ICS" from "ICS Physics"
+          const { data: deptStudents } = await supabase
+            .from('students')
+            .select('*')
+            .ilike('class_section', `%${dept}%`)
+            .neq('status', 'Deleted')
+            .limit(100);
+          
+          if (deptStudents && deptStudents.length > 0) {
+            const uniqueStudents = Array.from(new Map(deptStudents.map(s => [s.roll_no, s])).values());
+            setAssignedStudents(uniqueStudents);
+            console.log('Found students via department fallback:', uniqueStudents.length);
+            setStudentsLoading(false);
+            return;
+          }
+        }
+        
+        // Final fallback: just get some students from the database if EVERYTHING is empty 
+        // (to prevent "No data" frustration during initial setup)
+        const { data: anyStudents } = await supabase.from('students').select('*').limit(50).neq('status', 'Deleted');
+        if (anyStudents && anyStudents.length > 0) {
+           setAssignedStudents(anyStudents);
+        }
+        setStudentsLoading(false);
+        return;
+      }
+
+      // 3. Fetch students using OR ilike for partial matching
+      const exactMatchFilter = sections.map(s => `class_section.eq."${s}"`).join(',');
+      const partialFilters = sections.map(s => `class_section.ilike.%${s}%`).join(',');
+      
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .or(`${exactMatchFilter},${partialFilters}`)
+        .neq('status', 'Deleted')
+        .order('class_section', { ascending: true })
+        .order('full_name', { ascending: true });
+        
+      if (error) throw error;
+
+      // Dedup results
+      const uniqueStudents = Array.from(new Map((data || []).map(s => [s.roll_no, s])).values());
+      setAssignedStudents(uniqueStudents);
+      console.log('Final student count:', uniqueStudents.length);
+      
+      // Update allSections based on actual students found
+      const sctns = Array.from(new Set(uniqueStudents.map(s => s.class_section))).filter(Boolean);
+      setAllSections(sctns);
+    } catch (error) {
+      console.error('Error fetching students:', error);
+      toast.error('Failed to load students');
+    } finally {
+      setStudentsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchStudents();
   }, [teacherData]);
 
@@ -167,7 +230,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       try {
         const sections = Array.from(new Set(assignedStudents.map(s => s.class_section)));
         const [schedule, trend] = await Promise.all([
-          getTeacherTodaySchedule(teacherData.id),
+          getTeacherTodaySchedule(teacherData.id, teacherData.full_name),
           getTeacherAttendanceTrend(sections),
         ]);
         setTodaySchedule(schedule);
@@ -250,28 +313,97 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   };
 
   // ── Submit grades ──────────────────────────────────────────────────────────
+  const getGradeLetterFromPct = (p: number) => {
+    if (p >= 85) return 'A+';
+    if (p >= 75) return 'A';
+    if (p >= 65) return 'B';
+    if (p >= 55) return 'C';
+    if (p >= 45) return 'D';
+    return 'F';
+  };
+
   const handleSubmitGrades = async () => {
-    if ((!newGradeChapter.trim() && !selectedExam) || !teacherData) { toast.error('Select a test or enter a chapter name'); return; }
+    if (!teacherData) return;
+    if (Object.keys(studentScores).length === 0) { toast.error('No marks entered'); return; }
+    if (!selectedExam && !newGradeChapter.trim()) { toast.error('Enter chapter/test name'); return; }
+    
     setGradingLoading(true);
     try {
-      const chapterName = selectedExam ? selectedExam.title : newGradeChapter;
+      const chapterName = selectedExam ? (selectedExam.title || (selectedExam as any).chapter_name) : newGradeChapter;
       const finalTotalMarks = selectedExam ? selectedExam.total_marks : totalMarks;
       const examId = selectedExam?.id;
-      await addGrades(Object.entries(studentScores).map(([roll, score]) => ({
-        student_roll: roll, chapter_name: chapterName, subject: teacherData.subject_dept,
-        score: Number(score), total_marks: finalTotalMarks, exam_id: examId
-      })));
-      await Promise.all(Object.entries(studentScores).map(async ([roll, score]) => {
-        const student = assignedStudents.find(s => String(s.roll_no) === roll);
-        if (!student) return;
-        await supabase.from('xp_logs').insert([{ student_roll: student.roll_no, action_type: 'test', xp_gained: Math.floor((score / finalTotalMarks) * 100) }]);
-        await supabase.from('notifications').insert([{ target_user_id: student.roll_no, title: `📝 ${chapterName} Result`, message: `Score: ${score}/${finalTotalMarks} (${Math.round((score / finalTotalMarks) * 100)}%) — ${teacherData.subject_dept}`, type: 'grade', target_role: 'STUDENT' }]);
-      }));
+      
+      const newGrades = Object.entries(studentScores).map(([roll, score]) => {
+        const obtained = Number(score);
+        const percentage = (obtained / finalTotalMarks) * 100;
+        
+        return {
+          student_roll: roll, 
+          chapter_name: chapterName, 
+          subject: teacherData.subject_dept || 'General',
+          score: obtained, 
+          total_marks: finalTotalMarks, 
+          exam_id: examId,
+          is_verified: false,
+          percentage: percentage.toFixed(2),
+          grade_letter: getGradeLetterFromPct(percentage),
+          entered_by: teacherData.full_name
+        };
+      });
+
+      // 1. Add to grades table
+      const { error: gradeErr } = await supabase.from('grades').insert(newGrades);
+      if (gradeErr) throw gradeErr;
+      
+      // 2. Update exam status if it was an exam
+      if (selectedExam) {
+        await supabase.from('exams').update({ 
+          grading_status: 'Completed',
+          status: 'Completed'
+        }).eq('id', selectedExam.id);
+      }
+
+      // 3. Notify Examiner System
+      await supabase.from('notifications').insert([{
+        target_role: 'EXAMINER',
+        title: 'Pending Result Verification',
+        message: `${teacherData.full_name} has submitted grades for ${chapterName}. Review and verify required.`,
+        type: 'exam_results_pending'
+      }]);
+
+      // 4. Generate/Update Result Cards for Examiner view
+      const resultCardPromises = Object.entries(studentScores).map(([roll, score]) => {
+        const obtained = Number(score);
+        const pct = (obtained / finalTotalMarks) * 100;
+        
+        return supabase.from('result_cards').upsert({
+          student_roll: Number(roll),
+          exam_name: chapterName,
+          subject: teacherData.subject_dept || 'General',
+          status: 'PENDING',
+          obtained_marks: obtained,
+          total_marks: finalTotalMarks,
+          overall_percentage: pct,
+          teacher_id: teacherData.id,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'student_roll,exam_name,subject' });
+      });
+      await Promise.all(resultCardPromises);
+
+      // Refresh local grades
       const { data: grds } = await supabase.from('grades').select('*').eq('subject', teacherData.subject_dept);
       if (grds) setGrades(grds);
-      setShowGradeModal(false); setStudentScores({}); setNewGradeChapter(''); setSelectedExam(null);
-      toast.success('Grades submitted!');
-    } catch { toast.error('Failed to submit grades'); }
+      
+      setShowGradeModal(false); 
+      setStudentScores({}); 
+      setNewGradeChapter(''); 
+      setSelectedExam(null);
+      
+      toast.success('Grades submitted for examiner verification!');
+    } catch (error: any) { 
+      console.error('Error submitting grades:', error);
+      toast.error('Failed to submit grades'); 
+    }
     finally { setGradingLoading(false); }
   };
 
@@ -317,7 +449,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const classes = Array.from(new Set(assignedStudents.map(s => s.class_section)));
+  const classes = allSections.length > 0 ? allSections : Array.from(new Set(assignedStudents.map(s => s.class_section)));
   const filteredStudents = assignedStudents.filter(s => {
     const q = searchQuery.toLowerCase();
     const matchSearch = s.full_name.toLowerCase().includes(q) || String(s.roll_no).includes(q);
@@ -513,6 +645,90 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </motion.div>
         );
 
+      // ── Scheme Progress ──────────────────────────────────────────────────
+      case 'SchemeProgress':
+        return (
+          <motion.div key="progress" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"><ChevronLeft size={20} /></button>
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Course Progress</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Mark topics as completed to generate student quizzes</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {schemeEntries.map(entry => {
+                const isCompleted = entry.status === 'Completed';
+                return (
+                  <div key={entry.id} className="bg-white border border-slate-100 rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between group">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[9px] font-black uppercase text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">Week {entry.week_no}</span>
+                        {isCompleted && <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1"><CheckCircle2 size={10} /> Completed</span>}
+                      </div>
+                      <h4 className="font-black text-slate-900 truncate">{entry.topic}</h4>
+                      <p className="text-xs text-slate-400 mt-0.5">{entry.class_section} • {new Date(entry.scheduled_date).toLocaleDateString()}</p>
+                    </div>
+                    {!isCompleted ? (
+                      <button 
+                        onClick={async () => {
+                          if (!confirm(`Mark "${entry.topic}" as completed? This will generate a daily quiz for students.`)) return;
+                          setLoadingReschedule(true);
+                          try {
+                            const { error } = await supabase.from('scheme_of_study').update({ 
+                              status: 'Completed', 
+                              completed_at: new Date().toISOString() 
+                            }).eq('id', entry.id);
+                            
+                            if (error) throw error;
+                            
+                            // ── AUTOMATED QUIZ GENERATION ──
+                            // Note: In a real app, this would call an AI function or use a questions bank.
+                            // Here we use a sample 5-MCQ set as a placeholder.
+                            const questions = [
+                              { q: `Basic concept question 1 about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 0 },
+                              { q: `Key definition in ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 1 },
+                              { q: `Application of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 2 },
+                              { q: `What is true about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 3 },
+                              { q: `Example of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 0 },
+                            ];
+                            
+                            await supabase.from('academic_quizzes').insert([{
+                              topic_id: entry.id,
+                              questions: questions
+                            }]);
+
+                            toast.success('Topic completed! Quiz generated for students.');
+                            loadRescheduleData();
+                          } catch (err: any) {
+                            toast.error(err.message);
+                          } finally {
+                            setLoadingReschedule(false);
+                          }
+                        }}
+                        className="px-5 py-2.5 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
+                      >
+                        Mark as Completed
+                      </button>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+                        <CheckCircle2 size={24} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {schemeEntries.length === 0 && (
+                <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                  <BookOpen size={48} className="mx-auto text-slate-100 mb-4" />
+                  <p className="text-slate-400 font-bold">No topics found in your scheme.</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        );
+
       // ── Reschedule ───────────────────────────────────────────────────────────
       case 'Reschedule':
         return (
@@ -631,8 +847,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
             <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">Teacher</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button onClick={() => setSubPage('Notifications')} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center relative hover:bg-slate-100 transition-colors">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <button onClick={fetchStudents} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Refresh Data">
+                <RefreshCw size={18} className={cn("text-slate-600", studentsLoading && "animate-spin")} />
+              </button>
+              <button onClick={() => setSubPage('Notifications')} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center relative hover:bg-slate-100 transition-colors">
             <Bell size={20} className="text-slate-600" />
             {notifications.length > 0 && <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white" />}
           </button>
@@ -676,7 +895,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                       {[
                         { label: 'Attendance', icon: CheckSquare, color: 'bg-blue-500 text-white hover:bg-blue-600', action: () => setSubPage('Attendance') },
                         { label: 'Post Grades', icon: GraduationCap, color: 'bg-orange-500 text-white hover:bg-orange-600', action: () => setShowGradeModal(true) },
-                        { label: 'Planner', icon: Calendar, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => setSubPage('Planner') },
+                        { label: 'Course Progress', icon: BookMarked, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => { loadRescheduleData(); setSubPage('SchemeProgress'); } },
                         { label: 'Reschedule', icon: RefreshCw, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => { loadRescheduleData(); setSubPage('Reschedule'); } },
                       ].map(qa => (
                         <button key={qa.label} onClick={qa.action} className={cn('p-4 rounded-3xl flex flex-col items-center gap-2 transition-all shadow-md', qa.color)}>

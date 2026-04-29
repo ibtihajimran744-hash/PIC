@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Calendar, FileText, ClipboardList, Armchair,
   Eye, PenLine, Award, LogOut, RefreshCw, X, Plus,
   Search, CheckCircle, AlertCircle, Clock, Users,
-  Menu, ChevronRight, Shield, BookOpen, BarChart2
+  Menu, ChevronRight, Shield, BookOpen, BarChart2, History
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
@@ -114,7 +114,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('exam_seating').select('*').order('created_at', { ascending: false }),
       supabase.from('exam_invigilation').select('*').order('created_at', { ascending: false }),
       supabase.from('result_cards').select('*').order('generated_at', { ascending: false }),
-      supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(300),
+      supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(1000),
       supabase.from('students').select('roll_no,full_name,class_section,program,part').neq('status', 'Deleted').order('roll_no'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept').order('full_name'),
       supabase.from('admin_users').select('id,full_name,role').order('full_name'),
@@ -280,9 +280,106 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     showToast('Results published'); loadAll();
   };
 
+  const [selectedStudentResults, setSelectedStudentResults] = useState<any>(null);
+  const [editingGrade, setEditingGrade] = useState<any>(null);
+
   const verifyGrade = async (gradeId: number) => {
-    await supabase.from('grades').update({ is_verified: true, verified_by: adminData.full_name, verified_at: new Date().toISOString() }).eq('id', gradeId);
-    showToast('Grade verified'); loadAll();
+    setSaving(true);
+    try {
+      const { data: grade, error: fetchErr } = await supabase.from('grades').select('*').eq('id', gradeId).single();
+      if (fetchErr) throw fetchErr;
+
+      const { error: updateErr } = await supabase.from('grades').update({ 
+        is_verified: true, 
+        verified_by: adminData.full_name, 
+        verified_at: new Date().toISOString() 
+      }).eq('id', gradeId);
+      
+      if (updateErr) throw updateErr;
+
+      // ── Notify Student ──
+      await supabase.from('notifications').insert([{
+        target_user_id: String(grade.student_roll),
+        target_role: 'STUDENT',
+        title: `🏆 Result Verified: ${grade.chapter_name}`,
+        message: `Your result for ${grade.chapter_name} (${grade.subject}) has been verified. Final Score: ${grade.score}/${grade.total_marks}.`,
+        type: 'result_verified',
+        metadata: { grade_id: gradeId },
+        is_read: false
+      }]);
+
+      showToast('Grade verified and student notified');
+      
+      // Update result_card status for this student/exam/subject
+      await supabase.from('result_cards').update({ 
+        status: 'VERIFIED',
+        updated_at: new Date().toISOString()
+      }).match({ 
+        student_roll: grade.student_roll, 
+        exam_name: grade.chapter_name, 
+        subject: grade.subject 
+      });
+
+      loadAll();
+      
+      // Update local state if needed
+      if (selectedStudentResults) {
+        const studentRoll = selectedStudentResults.student.roll_no;
+        const { data: updatedGrades } = await supabase.from('grades').select('*').eq('student_roll', studentRoll).order('created_at', { ascending: false });
+        setSelectedStudentResults((p: any) => ({ ...p, grades: updatedGrades }));
+      }
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditGrade = async () => {
+    if (!editingGrade) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('grades').update({
+        score: Number(editingGrade.score),
+        total_marks: Number(editingGrade.total_marks),
+        percentage: ((Number(editingGrade.score) / Number(editingGrade.total_marks)) * 100).toFixed(2),
+        grade_letter: getGradeLetter(Number(editingGrade.score), Number(editingGrade.total_marks)),
+        is_verified: false // Re-verify if edited
+      }).eq('id', editingGrade.id);
+
+      if (error) throw error;
+      showToast('Grade updated successfully');
+      setEditingGrade(null);
+      loadAll();
+
+      if (selectedStudentResults) {
+        const studentRoll = selectedStudentResults.student.roll_no;
+        const { data: updatedGrades } = await supabase.from('grades').select('*').eq('student_roll', studentRoll).order('created_at', { ascending: false });
+        setSelectedStudentResults((p: any) => ({ ...p, grades: updatedGrades }));
+      }
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openStudentResults = async (student: any) => {
+    setLoading(true);
+    try {
+      const { data: studentGrades, error } = await supabase
+        .from('grades')
+        .select('*')
+        .eq('student_roll', student.roll_no)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setSelectedStudentResults({ student, grades: studentGrades || [] });
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateScheduleStatus = async (id: number, status: string) => {
@@ -864,35 +961,169 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     <table className="w-full text-sm min-w-[700px]">
                       <thead>
                         <tr style={{ background: '#f8fafc' }}>
-                          {['Student','Roll #','Schedule','Total','Obtained','%','Grade','Position','Status','Published'].map(h => (
+                          {['Student','Roll #','Class','Program','Test Count','Last Result','Action'].map(h => (
                             <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {results.map((r) => {
-                          const st    = students.find(s => s.roll_no === r.student_roll);
-                          const sched = schedules.find(s => s.id === r.exam_schedule_id);
+                        {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase()) || String(s.roll_no).includes(search)).slice(0, 50).map((s) => {
+                          const sGrades = grades.filter(g => g.student_roll === s.roll_no);
+                          const lastGrade = sGrades[0];
                           return (
-                            <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                              <td className="px-4 py-2.5 font-medium text-slate-800">{st?.full_name || '—'}</td>
-                              <td className="px-4 py-2.5 font-black" style={{ color: ACCENT }}>{r.student_roll}</td>
-                              <td className="px-4 py-2.5 text-xs text-slate-500">{sched?.title || `#${r.exam_schedule_id}`}</td>
-                              <td className="px-4 py-2.5 text-slate-600">{r.total_marks}</td>
-                              <td className="px-4 py-2.5 font-black text-slate-800">{r.obtained_marks}</td>
-                              <td className="px-4 py-2.5 text-xs font-bold text-slate-600">{Number(r.percentage).toFixed(1)}%</td>
-                              <td className="px-4 py-2.5"><span className={`font-black ${r.grade === 'A+' || r.grade === 'A' ? 'text-emerald-600' : r.grade === 'F' ? 'text-rose-600' : 'text-blue-600'}`}>{r.grade}</span></td>
-                              <td className="px-4 py-2.5 font-black text-amber-600">#{r.position}</td>
-                              <td className="px-4 py-2.5">{r.is_published ? <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="Published" /> : <Badge c="bg-slate-100 text-slate-500 border-slate-200" label="Draft" />}</td>
-                              <td className="px-4 py-2.5 text-xs text-slate-400">{r.published_at ? new Date(r.published_at).toLocaleDateString('en-PK') : '—'}</td>
+                            <tr key={s.roll_no} className="border-b border-slate-50 hover:bg-slate-50/50">
+                              <td className="px-4 py-2.5 font-medium text-slate-800">{s.full_name}</td>
+                              <td className="px-4 py-2.5 font-black" style={{ color: ACCENT }}>{s.roll_no}</td>
+                              <td className="px-4 py-2.5 text-xs text-slate-500">{s.class_section}</td>
+                              <td className="px-4 py-2.5 text-xs text-slate-500">{s.program}</td>
+                              <td className="px-4 py-2.5 font-black text-slate-700">{sGrades.length}</td>
+                              <td className="px-4 py-2.5">
+                                {lastGrade ? <Badge c="bg-indigo-50 text-indigo-700 border-indigo-200" label={`${lastGrade.grade_letter} (${Math.round(lastGrade.percentage)}%)`} /> : <span className="text-[10px] text-slate-300">No data</span>}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <button onClick={() => openStudentResults(s)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-white" style={{ background: GRADIENT }}>
+                                  <Eye size={12} /> View Results
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
-                        {!results.length && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">No result cards generated yet</td></tr>}
+                        {!students.length && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">No students found</td></tr>}
                       </tbody>
                     </table>
                   </div>
                 </div>
+
+                <AnimatePresence>
+                  {selectedStudentResults && (
+                    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedStudentResults(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+                      <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                        className="relative bg-[#f8fafc] rounded-[2.5rem] w-full max-w-4xl z-10 shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+                        
+                        {/* Header */}
+                        <div className="px-8 py-6 bg-white border-b border-slate-100 flex items-center justify-between shadow-sm">
+                          <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white" style={{ background: GRADIENT }}>
+                              <Award size={28} />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-black text-slate-900">{selectedStudentResults.student.full_name}</h3>
+                              <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Roll: {selectedStudentResults.student.roll_no} • {selectedStudentResults.student.class_section}</p>
+                            </div>
+                          </div>
+                          <button onClick={() => setSelectedStudentResults(null)} className="p-2 rounded-2xl bg-slate-50 text-slate-400 hover:text-slate-600 transition-colors">
+                            <X size={24} />
+                          </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                          {/* Stats Summary */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {[
+                              { l: 'Total Tests', v: selectedStudentResults.grades.length, c: '#4f46e5' },
+                              { l: 'Avg. Percentage', v: `${selectedStudentResults.grades.length > 0 ? (selectedStudentResults.grades.reduce((s: any, g: any) => s + Number(g.percentage || 0), 0) / selectedStudentResults.grades.length).toFixed(1) : 0}%`, c: '#10b981' },
+                              { l: 'Tests Passed', v: selectedStudentResults.grades.filter((g: any) => Number(g.percentage || 0) >= 40).length, c: '#0ea5e9' },
+                              { l: 'Verification Req', v: selectedStudentResults.grades.filter((g: any) => !g.is_verified).length, c: '#f59e0b' }
+                            ].map(s => (
+                              <div key={s.l} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{s.l}</p>
+                                <p className="text-2xl font-black" style={{ color: s.c }}>{s.v}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Historical Results List */}
+                          <div className="space-y-4">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <History size={14} /> Result History & Verification
+                            </h4>
+                            <div className="grid grid-cols-1 gap-3">
+                              {selectedStudentResults.grades.map((grade: any) => (
+                                <div key={grade.id} className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-shadow group">
+                                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div className="flex items-center gap-4 flex-1">
+                                      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0", grade.is_verified ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")}>
+                                        {grade.is_verified ? <CheckCircle size={20} /> : <Clock size={20} />}
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <h5 className="font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{grade.chapter_name}</h5>
+                                          <Badge c="bg-slate-100 text-slate-500 border-slate-200" label={grade.subject} />
+                                        </div>
+                                        <p className="text-xs text-slate-400 font-bold uppercase tracking-tighter mt-0.5">
+                                          Entered on {new Date(grade.created_at).toLocaleDateString('en-PK')} • By {grade.entered_by || 'Teacher'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-6">
+                                      <div className="text-right">
+                                        <p className="text-2xl font-black text-slate-900 leading-none">{grade.score}/{grade.total_marks}</p>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{grade.grade_letter} ({Math.round(grade.percentage)}%)</p>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-2 border-l border-slate-100 pl-6">
+                                        {grade.is_verified ? (
+                                          <div className="flex flex-col items-end">
+                                            <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="VERIFIED" />
+                                            <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-widest">by {grade.verified_by?.split(' ')[0]}</p>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2">
+                                            <button 
+                                              onClick={() => setEditingGrade(grade)}
+                                              className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all">
+                                              <PenLine size={16} />
+                                            </button>
+                                            <button 
+                                              onClick={() => verifyGrade(grade.id)}
+                                              className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all">
+                                              Verify & Notify
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {selectedStudentResults.grades.length === 0 && (
+                                <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400 font-bold">
+                                  No test results found for this student.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
+
+                {/* Edit Grade Modal */}
+                <AnimatePresence>
+                  {editingGrade && (
+                    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingGrade(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+                      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                        className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
+                        <h4 className="text-lg font-black text-slate-900 mb-4">Edit Marks</h4>
+                        <div className="space-y-4">
+                          <FM label="Obtained Marks"><TI type="number" value={editingGrade.score} onChange={(e: any) => setEditingGrade({ ...editingGrade, score: e.target.value })} /></FM>
+                          <FM label="Total Marks"><TI type="number" value={editingGrade.total_marks} onChange={(e: any) => setEditingGrade({ ...editingGrade, total_marks: e.target.value })} /></FM>
+                        </div>
+                        <div className="mt-6 flex gap-3">
+                          <button onClick={() => setEditingGrade(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
+                          <button onClick={handleEditGrade} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
+                            {saving ? 'Saving...' : 'Update'}
+                          </button>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>

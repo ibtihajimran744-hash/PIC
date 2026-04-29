@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
+import { ExaminerPortal } from './ExaminerPortal';
 import { supabase } from '../services/supabase';
 
 interface AdminPortalProps {
@@ -573,6 +574,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [errorMsg, setErrorMsg]     = useState('');
   const [moreOpen, setMoreOpen]     = useState(false);
 const [showAcademicsPortal, setShowAcademicsPortal] = useState(false);
+const [showExaminerPortal, setShowExaminerPortal] = useState(false);
+
 
   // ── Permissions state ──────────────────────────────────────────────────
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
@@ -1999,7 +2002,7 @@ const handlePrintReport = (data: any) => {
       items: [
         { id: 'staff',      label: 'Teachers',     icon: UserCog },
         { id: 'academics',  label: 'Academics Portal', icon: GraduationCap },
-        { id: 'exams',      label: 'Exams Portal', icon: FileText },
+        { id: 'exams', label: 'Examiner Portal', icon: FileText },
         { id: 'leaves',     label: 'Leaves',       icon: Calendar },
         { id: 'scheme',     label: 'Topics/Schedules', icon: BookOpen }
       ]
@@ -2084,6 +2087,15 @@ const handlePrintReport = (data: any) => {
   );
 }
 
+if (showExaminerPortal) {
+  return (
+    <ExaminerPortal
+      adminData={adminData}
+      onLogout={() => setShowExaminerPortal(false)}
+    />
+  );
+}
+
 const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
   const SidebarIcon = isAccountant ? CreditCard : GraduationCap;
 
@@ -2106,8 +2118,18 @@ const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
                 {group.items.map(({ id, label, icon: Icon }) => {
                   const active = tab === id;
                   return (
-                    <motion.button key={id} onClick={() => id === 'academics' ? setShowAcademicsPortal(true) : setTab(id)} whileHover={{ x: 2 }}
-                      className={cn('w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[12px] font-bold transition-all text-left', active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}
+                    <motion.button 
+                      key={id} 
+                      onClick={() => {
+                        if (id === 'academics') setShowAcademicsPortal(true);
+                        else if (id === 'exams') setShowExaminerPortal(true);
+                        else setTab(id);
+                      }} 
+                      whileHover={{ x: 2 }}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[12px] font-bold transition-all text-left', 
+                        active ? 'text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                      )}
                       style={active ? { background: GRADIENT } : {}}>
                       <Icon size={14} /><span className="flex-1">{label}</span>
                     </motion.button>

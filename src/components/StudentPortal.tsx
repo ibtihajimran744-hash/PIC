@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import toast from 'react-hot-toast';
 import {
   CreditCard, Calendar, BarChart3, BookOpen,
   Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
-  Sparkles
+  Sparkles, Zap, ZapOff, ExternalLink, CheckCircle2
 } from 'lucide-react';
 import { EduChatAI } from './EduChatAI';
 import { cn } from '../lib/utils';
@@ -281,6 +282,10 @@ const StatCard = ({ icon:Icon, label, value, sub, accent }: any) => (
 // ═══════════════════════════════════════════════════════════════
 // MAIN PORTAL
 // ═══════════════════════════════════════════════════════════════
+const Badge = ({ c, label }: { c: string; label: string }) => (
+  <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap", c)}>{label}</span>
+);
+
 export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentData }) => {
   const ACCENT = '#3B5BDB';
   const [tab, setTab]     = useState('dashboard');
@@ -295,6 +300,13 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
   const [timetable,     setTimetable]     = useState<any[]>([]);
   const [leaderboard,   setLeaderboard]   = useState<any[]>([]);
   const [courses,       setCourses]       = useState<any[]>([]);
+  const [resources,     setResources]     = useState<any[]>([]);
+  const [quizzes,       setQuizzes]       = useState<any[]>([]);
+  const [quizResults,   setQuizResults]   = useState<any[]>([]);
+  const [showQuizModal, setShowQuizModal] = useState<any>(null);
+  const [selectedResultDetail, setSelectedResultDetail] = useState<any>(null);
+  const [quizAnswers,   setQuizAnswers]   = useState<Record<number, number>>({});
+  const [submittingQuiz, setSubmittingQuiz] = useState(false);
 
   const [dismissedIds,     setDismissedIds]     = useState<Set<string>>(new Set());
   const [feeTimerFocus,    setFeeTimerFocus]    = useState<any>(null);
@@ -366,23 +378,62 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
     setTimetable(ttR.data || []);
     setLeaderboard(lbR.data || []);
 
-    // Load real course progress from computed view
-    const { data: cpData } = await supabase
-      .from('v_student_course_progress')
+    // Load all schemes for this student's class to calculate progress
+    const { data: allSchemes } = await supabase
+      .from('scheme_of_study')
       .select('*')
-      .eq('student_roll', roll)
-      .order('subject');
-    setCourseProgress(cpData || []);
+      .eq('class_section', studentData.class_section);
+
+    if (allSchemes) {
+      const subjects = Array.from(new Set(allSchemes.map(s => s.subject)));
+      const calculatedProgress = subjects.map(sub => {
+        const subSchemes = allSchemes.filter(s => s.subject === sub);
+        const done = subSchemes.filter(s => s.status === 'Completed').length;
+        const total = subSchemes.length;
+        return {
+          subject: sub,
+          progress_pct: total > 0 ? Math.round((done / total) * 100) : 0,
+          completed_topics: done,
+          total_topics: total
+        };
+      });
+      setCourseProgress(calculatedProgress);
+    }
+
+    // Load academic resources and quizzes
+    if (stuR.data?.program_id) {
+      const { data: resData } = await supabase
+        .from('academic_resources')
+        .select('*')
+        .eq('program_id', stuR.data.program_id);
+      if (resData) setResources(resData);
+    }
+
+    const { data: qzData } = await supabase
+      .from('academic_quizzes')
+      .select('*, topic:scheme_of_study(*)');
+    if (qzData) setQuizzes(qzData);
+
+    const { data: resltData } = await supabase
+      .from('quiz_results')
+      .select('*')
+      .eq('student_roll_no', roll);
+    if (resltData) setQuizResults(resltData || []);
 
     setLoading(false);
   }, [studentData.roll_no, studentData.class_section]);
 
   useEffect(() => { loadAll(); }, []);
 
-  const markRead = async (id: string) => {
+  const markRead = async (id: string, type?: string) => {
     await supabase.from('notifications').update({ is_read:true }).eq('id', id);
     setNotifications(prev => prev.map(n => String(n.id)===id ? {...n, is_read:true} : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+
+    if (type === 'grade' || type === 'grade_verified') setTab('results');
+    if (type === 'attendance' || type === 'absence_alert') setTab('attendance');
+    if (['fee_due', 'fee_overdue', 'fee_fine', 'fee_payment'].includes(type || '')) setTab('fees');
+    setNotifPanelOpen(false);
   };
   const markAllRead = async () => {
     await supabase.from('notifications').update({ is_read:true }).eq('target_user_id', String(studentData.roll_no));
@@ -452,6 +503,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
     { id:'attendance',    label:'Attendance',     icon:Calendar },
     { id:'results',       label:'Results',        icon:BarChart3},
     { id:'courses',       label:'My Courses',      icon:BookOpen },
+    { id:'quizzes',       label:'Daily Quizzes',   icon:Zap      },
     { id:'timetable',     label:'Timetable',      icon:BarChart3 },
     { id:'leaderboard',   label:'Leaderboard',    icon:Trophy   },
     { id:'notifications', label:'Notifications',  icon:Bell     },
@@ -463,6 +515,40 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
     courses:'My Courses', timetable:'Class Timetable', leaderboard:'Class Leaderboard',
     notifications:'All Notifications',
     'ai-chat': 'Academic AI Assistant',
+  };
+
+  const handleQuizSubmit = async () => {
+    if (!showQuizModal || Object.keys(quizAnswers).length < showQuizModal.questions.length) {
+      toast.error('Please answer all questions');
+      return;
+    }
+
+    setSubmittingQuiz(true);
+    try {
+      let score = 0;
+      showQuizModal.questions.forEach((q: any, i: number) => {
+        if (quizAnswers[i] === q.c) score++;
+      });
+
+      const { error } = await supabase.from('quiz_results').insert([{
+        quiz_id: showQuizModal.id,
+        student_roll_no: studentData.roll_no,
+        score: score,
+        total_questions: showQuizModal.questions.length,
+        answers: quizAnswers
+      }]);
+
+      if (error) throw error;
+
+      toast.success(`Quiz submitted! Scored ${score}/${showQuizModal.questions.length}`);
+      setQuizResults(prev => [...prev, { quiz_id: showQuizModal.id, score }]);
+      setShowQuizModal(null);
+      setQuizAnswers({});
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSubmittingQuiz(false);
+    }
   };
 
   if (loading) return (
@@ -984,6 +1070,118 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
               </motion.div>
             )}
 
+            {/* ══ QUIZZES ══ */}
+            {tab === 'quizzes' && (
+              <motion.div key="quizzes" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl border border-slate-100 p-6 flex items-center justify-between shadow-sm">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                      <Zap size={20} className="text-amber-500 fill-amber-500" /> Daily Academic Quizzes
+                    </h3>
+                    <p className="text-xs text-slate-400">Complete quizzes based on recently covered topics to earn bonus XP.</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-emerald-600">{quizResults.length}</p>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Completed</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {quizzes.map(qz => {
+                    const result = quizResults.find(r => r.quiz_id === qz.id);
+                    const isAttempted = !!result;
+                    return (
+                      <div key={qz.id} className={cn("bg-white rounded-2xl border p-5 shadow-sm transition-all", isAttempted ? "border-slate-100 opacity-80" : "border-amber-200 hover:border-amber-400 shadow-md")}>
+                        <div className="flex items-start justify-between mb-4">
+                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isAttempted ? "bg-slate-50 text-slate-400" : "bg-amber-50 text-amber-600")}>
+                            <Zap size={18} />
+                          </div>
+                          {isAttempted ? (
+                            <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label={`Score: ${result.score}/${qz.questions?.length || 5}`} />
+                          ) : (
+                            <Badge c="bg-amber-50 text-amber-700 border-amber-200" label={`${qz.points} XP`} />
+                          )}
+                        </div>
+                        <h4 className="font-black text-slate-800 mb-1">{qz.title}</h4>
+                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{qz.topic?.subject} · {qz.topic?.topic}</p>
+                        
+                        {!isAttempted ? (
+                          <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                            onClick={() => setShowQuizModal(qz)}
+                            className="w-full mt-4 py-2.5 rounded-xl text-xs font-black text-white bg-amber-500 shadow-lg shadow-amber-500/20">
+                            Start Quiz
+                          </motion.button>
+                        ) : (
+                          <div className="w-full mt-4 py-2.5 rounded-xl text-xs font-black text-slate-400 bg-slate-50 text-center border border-slate-100 flex items-center justify-center gap-2">
+                             <CheckCircle2 size={12} /> Quiz Completed
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {quizzes.length === 0 && (
+                     <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                        <ZapOff size={32} className="mx-auto text-slate-200 mb-2" />
+                        <p className="text-slate-400 font-bold">No quizzes available for your subjects yet.</p>
+                     </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══ COURSES ══ */}
+            {tab === 'courses' && (
+              <motion.div key="courses" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {courseProgress.map(cp => {
+                     const subjectResources = resources.filter(r => r.subject_id === cp.subject_id);
+                     return (
+                      <div key={cp.subject} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                               <h3 className="text-lg font-black text-slate-900">{cp.subject}</h3>
+                               <p className="text-xs text-slate-400">Section {studentData.class_section} · Syllabus Progress</p>
+                            </div>
+                            <div className="text-right">
+                               <p className="text-2xl font-black text-blue-600">{cp.progress_pct}%</p>
+                            </div>
+                          </div>
+                          
+                          <ProgressBar pct={cp.progress_pct} color="#3B5BDB" />
+                          
+                          <div className="mt-6 space-y-3">
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Available Resources</p>
+                             {subjectResources.length > 0 ? (
+                               <div className="grid grid-cols-1 gap-2">
+                                 {subjectResources.map(res => (
+                                   <a key={res.id} href={res.file_url} target="_blank" rel="noreferrer"
+                                     className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-blue-50 hover:border-blue-200 transition-all group">
+                                     <div className="flex items-center gap-3">
+                                       <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-blue-600 border border-slate-100 group-hover:border-blue-200">
+                                         <Download size={14} />
+                                       </div>
+                                       <div>
+                                         <p className="text-xs font-bold text-slate-700">{res.title}</p>
+                                         <p className="text-[9px] text-slate-400 uppercase font-black">{res.file_type}</p>
+                                       </div>
+                                     </div>
+                                     <ExternalLink size={12} className="text-slate-300 group-hover:text-blue-500" />
+                                   </a>
+                                 ))}
+                               </div>
+                             ) : (
+                               <p className="text-[11px] text-slate-400 italic bg-slate-50 p-3 rounded-xl text-center">No PDFs or Notes uploaded yet by the teacher.</p>
+                             )}
+                          </div>
+                        </div>
+                      </div>
+                     );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
             {/* ══ RESULTS ══ */}
             {tab==='results' && (
               <motion.div key="res" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-3">
@@ -1072,7 +1270,64 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
               </motion.div>
             )}
 
-            {/* ══ TIMETABLE ══ */}
+            {/* ══ QUIZZES ══ */}
+            {tab==='quizzes' && (
+              <motion.div key="quizzes" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                  <div>
+                    <h3 className="font-black text-slate-900">Daily Quizzes</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Test your knowledge to earn XP</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
+                    <Zap size={20} />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {quizzes.map((q, i) => {
+                    const result = quizResults.find(r => r.quiz_id === q.id);
+                    const isTaken = !!result;
+                    return (
+                      <motion.div key={q.id}
+                        initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                        className={cn("bg-white border rounded-[2rem] p-5 shadow-sm flex items-center justify-between", isTaken ? "border-emerald-100" : "border-slate-100")}
+                      >
+                        <div className="flex-1 min-w-0 pr-4">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{q.topic?.subject_name || 'General'}</span>
+                            {isTaken && <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">Score: {result.score}/{q.questions.length}</span>}
+                          </div>
+                          <h4 className="font-black text-slate-900 truncate">{q.topic?.topic || 'Daily Challenge'}</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">5 MCQs • {new Date(q.created_at).toLocaleDateString()}</p>
+                        </div>
+                        {!isTaken ? (
+                          <button 
+                            onClick={() => {
+                              setShowQuizModal(q);
+                              setQuizAnswers({});
+                            }}
+                            className="bg-indigo-600 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex-shrink-0"
+                          >
+                            Start Quiz
+                          </button>
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+                            <CheckCircle2 size={24} />
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                  {quizzes.length === 0 && (
+                    <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                      <ZapOff size={48} className="mx-auto text-slate-100 mb-4" />
+                      <p className="text-slate-400 font-bold">No quizzes available for today.</p>
+                      <p className="text-[11px] text-slate-300 mt-1">Quizzes appear when topics are marked completed.</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* ══ COURSES ══ */}
             {tab==='courses' && (
@@ -1324,6 +1579,32 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
                                 )}
                               </div>
 
+                              {/* Resources for this subject */}
+                              <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                                  📚 Subject Resources
+                                </p>
+                                <div className="space-y-2">
+                                  {resources.filter(r => r.subject_id === cp.subject_id).length === 0 ? (
+                                    <p className="text-[10px] text-slate-400 italic">No resources found for this subject.</p>
+                                  ) : (
+                                    resources.filter(r => r.subject_id === cp.subject_id).map((res, ri) => (
+                                      <a key={res.id} href={res.file_url} target="_blank" rel="noopener noreferrer" 
+                                        className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
+                                        <div className="w-8 h-8 rounded-lg bg-blue-500 text-white flex items-center justify-center">
+                                          <Download size={14} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-bold text-slate-900 truncate">{res.title}</p>
+                                          <p className="text-[10px] text-slate-500">{res.type} • {new Date(res.created_at).toLocaleDateString()}</p>
+                                        </div>
+                                        <ExternalLink size={12} className="text-blue-400 group-hover:text-blue-600 transition-colors" />
+                                      </a>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+
                             </div>
                           </motion.div>
                         )}
@@ -1478,7 +1759,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
                     return (
                       <motion.div key={n.id}
                         initial={{ opacity:0, x:-6 }} animate={{ opacity:1, x:0 }} transition={{ delay:i*0.03 }}
-                        onClick={() => { markRead(String(n.id)); if(isFee) goToFee(n); }}
+                        onClick={() => markRead(String(n.id), n.type)}
                         className="rounded-2xl px-4 py-4 cursor-pointer transition-all hover:scale-[1.005]"
                         style={{
                           background:!n.is_read?(isFee?`rgba(${n.type==='fee_overdue'||n.type==='fee_fine'?'254,242,242':'255,251,235'},1)`:'#EFF6FF'):'#FFFFFF',
@@ -1515,11 +1796,88 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
         </div>
       </main>
 
+      {/* ── QUIZ CHALLENGE MODAL ── */}
+      <AnimatePresence>
+        {showQuizModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !submittingQuiz && setShowQuizModal(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+              className="relative w-full max-w-xl bg-white rounded-[3rem] overflow-hidden shadow-2xl">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 leading-tight">{showQuizModal.topic?.topic}</h3>
+                    <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-bold">{showQuizModal.topic?.subject_name} • Knowledge Check</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xl shadow-amber-500/20">
+                    <Zap size={28} />
+                  </div>
+                </div>
+
+                <div className="space-y-10 mb-10 max-h-[50vh] overflow-y-auto pr-4 custom-scrollbar">
+                  {showQuizModal.questions.map((q: any, i: number) => (
+                    <div key={i} className="space-y-4">
+                      <div className="flex items-start gap-4">
+                        <span className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 flex items-center justify-center font-black text-sm flex-shrink-0">
+                          {i+1}
+                        </span>
+                        <p className="text-lg font-black text-slate-800 leading-relaxed">{q.q}</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 pl-12">
+                        {q.a.map((opt: string, oi: number) => (
+                          <button 
+                            key={oi}
+                            onClick={() => setQuizAnswers(prev => ({ ...prev, [i]: oi }))}
+                            className={cn(
+                              "p-4 rounded-2xl text-left text-sm font-bold transition-all border-2",
+                              quizAnswers[i] === oi 
+                                ? "bg-indigo-50 border-indigo-600 text-indigo-700 shadow-lg shadow-indigo-600/5 scale-[1.02]" 
+                                : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className={cn(
+                                "w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black",
+                                quizAnswers[i] === oi ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-400"
+                              )}>
+                                {String.fromCharCode(65 + oi)}
+                              </span>
+                              {opt}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-4">
+                  <button 
+                    disabled={submittingQuiz}
+                    onClick={() => setShowQuizModal(null)}
+                    className="flex-1 py-4 rounded-[1.5rem] font-black text-slate-400 bg-slate-50 hover:bg-slate-100 transition-all uppercase tracking-widest text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    disabled={submittingQuiz || Object.keys(quizAnswers).length < showQuizModal.questions.length}
+                    onClick={handleQuizSubmit}
+                    className="flex-[2] py-4 rounded-[1.5rem] font-black text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 uppercase tracking-widest text-xs disabled:opacity-50 disabled:shadow-none"
+                  >
+                    {submittingQuiz ? 'Submitting...' : 'Submit Challenge'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50"
         style={{ background:'#FFFFFF', borderTop:'1px solid #E2E8F0', boxShadow:'0 -4px 20px rgba(0,0,0,.08)' }}>
         <div className="flex items-center justify-around px-2 py-2">
-          {([{id:'dashboard',icon:Home},{id:'fees',icon:CreditCard},{id:'courses',icon:BookOpen},{id:'leaderboard',icon:Trophy},{id:'notifications',icon:Bell}] as const).map(({id,icon:Icon}) => {
+          {([{id:'dashboard',icon:Home},{id:'fees',icon:CreditCard},{id:'courses',icon:BookOpen},{id:'quizzes',icon:Zap},{id:'leaderboard',icon:Trophy},{id:'notifications',icon:Bell}] as const).map(({id,icon:Icon}) => {
             const active = tab===id;
             const hasBadge = id==='notifications' && unreadCount>0;
             const hasAlert = id==='fees' && overdueFees.length>0;
@@ -1534,7 +1892,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
                   {hasBadge && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-white text-[8px] font-black flex items-center justify-center" style={{ background:'#C0392B' }}>{unreadCount>9?'9+':unreadCount}</span>}
                 </div>
                 <span className="text-[9px] font-black uppercase tracking-tight">
-                  {id==='dashboard'?'Home':id==='leaderboard'?'Ranks':id==='courses'?'Courses':id.charAt(0).toUpperCase()+id.slice(1)}
+                  {id==='dashboard'?'Home':id==='leaderboard'?'Ranks':id==='courses'?'Courses':id==='quizzes'?'Quiz':id.charAt(0).toUpperCase()+id.slice(1)}
                 </span>
                 {active && <div className="w-1 h-1 rounded-full" style={{ background:ACCENT }}/>}
               </button>
