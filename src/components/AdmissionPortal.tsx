@@ -82,7 +82,7 @@ const Toast = ({ msg, type }: { msg:string; type:'ok'|'err'|'info' }) => (
 );
 
 const EMPTY: any = {
-  applied_for:'Intermediate', program:'ICS Physics', part:1, session:'2026-27',
+  applied_for:'Intermediate', program:'ICS Physics', part:1, session:'2026-28',
   student_name:'', b_form_nic:'', father_name:'', father_nic:'', father_occupation:'',
   student_dob:'', contact_home:'', cell_no:'', whatsapp_no:'', email:'',
   religion:'Islam', gender:'Male', current_address:'',

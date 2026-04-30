@@ -7,7 +7,7 @@ import {
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target,
-  Shirt, Sun, Camera, History as HistoryIcon
+  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
@@ -223,6 +223,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
   const [simpleAmount, setSimpleAmount] = useState('');
   const [simpleDue, setSimpleDue]       = useState('');
   const [simpleDesc, setSimpleDesc]     = useState('');
+  const [installments, setInstallments] = useState(1);
   const [simpleTarget, setSimpleTarget] = useState('all'); // all, section name, or 'single_student'
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [studentSearch, setStudentSearch]     = useState('');
@@ -264,17 +265,26 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
         const chunk = targets.slice(i, i + batchSize);
         
         // 1. Create fee groups (ledger entries)
-        const feeRows = chunk.map(s => ({
-          student_roll: s.roll_no,
-          fees_group: simpleName.trim(),
-          fees_code: 'FEE-' + Math.random().toString(36).substring(7).toUpperCase(),
-          amount: amt,
-          balance: amt,
-          due_date: simpleDue,
-          status: 'Unpaid',
-          paid: 0,
-          description: simpleDesc.trim() || null
-        }));
+        const feeRows: any[] = [];
+        chunk.forEach(s => {
+          const baseAmt = Math.floor(amt / installments);
+          for (let inst = 1; inst <= installments; inst++) {
+            const currentAmt = inst === installments ? amt - (baseAmt * (installments - 1)) : baseAmt;
+            const dueDate = inst === 1 ? simpleDue : new Date(new Date(simpleDue).setMonth(new Date(simpleDue).getMonth() + (inst - 1))).toISOString().split('T')[0];
+            
+            feeRows.push({
+              student_roll: s.roll_no,
+              fees_group: installments > 1 ? `${simpleName.trim()} (Inst ${inst}/${installments})` : simpleName.trim(),
+              fees_code: 'FEE-' + Math.random().toString(36).substring(7).toUpperCase(),
+              amount: currentAmt,
+              balance: currentAmt,
+              due_date: dueDate,
+              status: 'Unpaid',
+              paid: 0,
+              description: simpleDesc.trim() || null
+            });
+          }
+        });
         const { error: fe } = await supabase.from('fee_groups').insert(feeRows);
         if (fe) throw fe;
 
@@ -282,8 +292,8 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
         const noteRows = chunk.map(s => ({
           target_user_id: s.roll_no,
           target_role: 'STUDENT',
-          title: `New Fee: ${simpleName}`,
-          message: `A new fee of PKR ${amt.toLocaleString()} has been added to your ledger. Due: ${simpleDue}`,
+          title: `New Fee: ${simpleName}${installments > 1 ? ` (${installments} Installments)` : ''}`,
+          message: `A new fee of PKR ${amt.toLocaleString()} has been added to your ledger${installments > 1 ? ` in ${installments} monthly installments` : ''}.`,
           type: 'fee_due',
           due_date: simpleDue,
           is_read: false
@@ -351,6 +361,14 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Due Date <span className="text-rose-500">*</span></label>
                 <input type="date" value={simpleDue} onChange={e => setSimpleDue(e.target.value)} className="w-full px-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-black text-slate-900 bg-slate-50/30 transition-all text-lg" />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Installments</label>
+                <select value={installments} onChange={e => setInstallments(Number(e.target.value))} className="w-full px-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-black text-slate-900 bg-slate-50/30 transition-all text-lg appearance-none">
+                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n} Installment{n > 1 ? 's' : ''}</option>)}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-2 font-medium">Fee will be divided equally over {installments} month{installments > 1 ? 's' : ''}.</p>
               </div>
 
               <div className="sm:col-span-2">
@@ -645,6 +663,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [schemeList,      setSchemeList]      = useState<any[]>([]);
   const [allPermissions,  setAllPermissions]  = useState<Record<string, any>>({});
   const [assignableRoles, setAssignableRoles] = useState<string[]>([]);
+  const [selectedStaff,   setSelectedStaff]   = useState<any>(null);
   const [leaveRequests,   setLeaveRequests]   = useState<any[]>([]);
   const [searchQ,         setSearchQ]         = useState('');
   const [filterProgram,   setFilterProgram]   = useState('');
@@ -891,8 +910,6 @@ margin-bottom:4px;
 .logo-box{
 width:62px;
 height:62px;
-border:2px solid #555;
-border-radius:4px;
 display:flex;
 align-items:center;
 justify-content:center;
@@ -1035,10 +1052,10 @@ body{padding:6px 10px;}
 <body>
 
 <div class="header">
-<div class="logo-box">🌐</div>
+<div class="logo-box"><img src="/pic-logo.png" style="width:100%;height:100%;object-fit:contain;"/></div>
 <div class="header-text">
 <div class="college-name">Pak Informatics Group of Colleges</div>
-<div class="header-sub">Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
+<div class="header-sub">Session: 2026-28 &nbsp;&nbsp;&nbsp; Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
 <div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
 </div>
 </div>
@@ -1161,9 +1178,13 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
         </style>
       </head>
       <body>
-        <div class="header">
-          <div><h1>${title}</h1><p style="margin:5px 0 0;color:#64748b;font-weight:700;font-size:0.8rem;">Pak Informatics Group of Colleges</p></div>
-          <div class="meta">Report Date: ${dateStr}</div>
+        <div class="header" style="display:flex;align-items:center;gap:20px;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:20px;">
+          <img src="/pic-logo.png" style="width:60px;height:60px;object-fit:contain;"/>
+          <div>
+            <h1 style="margin:0;font-size:1.5rem;text-transform:uppercase;">${title}</h1>
+            <p style="margin:2px 0 0;color:#64748b;font-weight:700;font-size:0.85rem;">Pak Informatics Group of Colleges · Session 2026-28</p>
+          </div>
+          <div class="meta" style="flex:1;text-align:right;color:#94a3b8;font-size:0.8rem;font-weight:700;">Report Date: ${dateStr}</div>
         </div>
         <table>
           <thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
@@ -1231,9 +1252,12 @@ const handlePrintReport = (data: any) => {
       </head>
       <body>
         <div class="header">
-          <div class="inst-info">
-            <h1>Pak Informatics Group of Colleges</h1>
-            <p>Financial Statement · Original Campus, Gujranwala</p>
+          <div style="display:flex;align-items:center;gap:20px;">
+            <img src="/pic-logo.png" style="width:70px;height:70px;object-fit:contain;"/>
+            <div class="inst-info">
+              <h1>Pak Informatics Group of Colleges</h1>
+              <p>Financial Statement · Session 2026-28 · Head Office, Gujranwala</p>
+            </div>
           </div>
           <div class="report-meta">
             <div class="type">${data.type} Revenue Report</div>
@@ -1384,8 +1408,13 @@ const handlePrintReport = (data: any) => {
   // ── Principal actions ──────────────────────────────────────────────────
   const openStudentDetail = async (student: any) => {
     setSelectedStudent(student); setStudentLoading(true);
-    const { data } = await supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject');
-    setStudentProgress(data || []); setStudentLoading(false);
+    const [prog, fees] = await Promise.all([
+      supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject'),
+      supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('created_at', { ascending: false })
+    ]);
+    setStudentProgress(prog.data || []);
+    // We can reuse the feeGroups logic here by filtering locally or just using what we fetched
+    setStudentLoading(false);
   };
 
   const handleLeave = async (id: string, action: 'Approved' | 'Rejected') => {
@@ -2276,10 +2305,6 @@ const active = tab === id; const badgeN = getBadge(id);
 
             {!isAccountant && tab === 'students' && (
               <motion.div key="stu" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-teal-50 border border-teal-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-                  <BookOpen size={16} className="text-teal-600 flex-shrink-0" />
-                  <p className="text-sm font-bold text-teal-900">Academic view only — fee data is not shown</p>
-                </div>
                 <div className="grid grid-cols-3 gap-3">
                   {[{ l: 'Active', v: stats.totalStu || 0, c: ACCENT }, { l: 'Boys', v: stats.maleStudents || 0, c: '#2563EB' }, { l: 'Girls', v: stats.femaleStudents || 0, c: '#9333EA' }].map(({ l, v, c }) => (
                     <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
@@ -2308,6 +2333,44 @@ const active = tab === id; const badgeN = getBadge(id);
                         <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
                           <span className="text-2xl">{selectedStudent.current_badge?.split(' ')[0] || '🥉'}</span>
                           <div><p className="font-black text-slate-900 text-sm">{selectedStudent.current_badge || '🥉 Newcomer'}</p><p className="text-xs text-slate-400">{(selectedStudent.total_xp || 0).toLocaleString()} XP earned</p></div>
+                        </div>
+
+                        {/* Fee Summary for Principal */}
+                        <div>
+                          <p className="font-black text-slate-900 text-sm mb-3">💰 Fee Summary</p>
+                          {studentLoading ? <div className="flex items-center gap-2 text-slate-400"><Loader2 size={16} className="animate-spin" /><span className="text-sm">Loading...</span></div>
+                            : stuFeeGroups.length === 0 ? <p className="text-sm text-slate-400 italic">No fee records assigned</p>
+                            : (
+                              <div className="space-y-3">
+                                {(() => {
+                                  const totalAmt = stuFeeGroups.reduce((s: number, f: any) => s + (f.amount || 0), 0);
+                                  const totalPd = stuFeeGroups.reduce((s: number, f: any) => s + (f.paid || 0), 0);
+                                  const totalDisc = stuFeeGroups.reduce((s: number, f: any) => s + (f.discount || 0), 0);
+                                  const balance = totalAmt - totalPd - totalDisc;
+                                  const paidPct = totalAmt > 0 ? Math.round((totalPd / totalAmt) * 100) : 0;
+                                  
+                                  return (
+                                    <>
+                                      <div className="grid grid-cols-3 gap-3">
+                                        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</p>
+                                          <p className="text-sm font-black text-slate-900">{PKR(totalAmt)}</p>
+                                        </div>
+                                        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Paid</p>
+                                          <p className="text-sm font-black text-emerald-700">{PKR(totalPd)}</p>
+                                        </div>
+                                        <div className="bg-rose-50 rounded-xl p-3 border border-rose-100">
+                                          <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1">Balance</p>
+                                          <p className="text-sm font-black text-rose-700">{PKR(balance)}</p>
+                                        </div>
+                                      </div>
+                                      <ProgressBar pct={paidPct} color={paidPct >= 100 ? '#059669' : '#0D9488'} label="Payment Progress" sub={`${paidPct}% of total fees cleared`} />
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            )}
                         </div>
                       </div>
                     </motion.div>
@@ -2344,11 +2407,101 @@ const active = tab === id; const badgeN = getBadge(id);
               </motion.div>
             )}
 
-            {!isAccountant && tab === 'academics' && (
-  <motion.div key="acad" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-    {(() => { setShowAcademicsPortal(true); return null; })()}
-  </motion.div>
-)}
+            {!isAccountant && tab === 'staff' && (
+              <motion.div key="staff" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="bg-white rounded-2xl px-4 py-2 border border-slate-100 flex items-center gap-2">
+                    <Users size={16} className="text-slate-400" />
+                    <p className="text-sm font-bold text-slate-800">{staffList.length} Personnel</p>
+                  </div>
+                  {isSuperAdmin && (
+                    <button onClick={() => setShowAssignModal(true)} className="px-4 py-2 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
+                      Add Portal User
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {staffList.map((s: any) => (
+                    <motion.div key={s.id} whileHover={{ y: -2 }} className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white text-lg" style={{ background: `hsl(${(s.id.length * 45) % 360},65%,45%)` }}>
+                          {s.full_name?.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-black text-slate-900 truncate">{s.full_name}</p>
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{s.role}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                        <p className="text-xs text-slate-500 font-mono">@{s.username}</p>
+                        {isSuperAdmin && <button onClick={() => { setSelectedStaff(s); setShowAssignModal(true); }} className="text-xs font-bold text-blue-600 hover:underline">Manage Access →</button>}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+                
+                {/* Guest Account Info for Verification */}
+                <div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-6 mt-8">
+                  <div className="flex items-center gap-3 mb-4">
+                    <ShieldCheck size={20} className="text-indigo-600" />
+                    <h4 className="font-black text-indigo-900 uppercase tracking-widest text-sm">Guest Verification Accounts</h4>
+                  </div>
+                  <p className="text-sm text-indigo-700 mb-4 font-medium">Use these credentials for Google Play Console verification or testing:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {[
+                      { role: 'Principal', user: 'principal_guest', pass: 'picguest123' },
+                      { role: 'Accountant', user: 'accountant_guest', pass: 'picguest123' },
+                      { role: 'Teacher', user: 'teacher_guest', pass: 'picguest123' },
+                      { role: 'Examiner', user: 'examiner_guest', pass: 'picguest123' }
+                    ].map(g => (
+                      <div key={g.role} className="bg-white rounded-2xl p-4 border border-indigo-100">
+                        <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">{g.role}</p>
+                        <p className="text-xs font-bold text-slate-700">Username: <span className="font-mono text-indigo-600">{g.user}</span></p>
+                        <p className="text-xs font-bold text-slate-700">Password: <span className="font-mono text-indigo-600">{g.pass}</span></p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {!isAccountant && tab === 'permissions' && (
+              <motion.div key="perms" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 mb-4">
+                  <div className="flex items-center gap-3">
+                    <Lock size={18} className="text-amber-600" />
+                    <p className="text-sm font-bold text-amber-900">Role-based Access Control (RBAC)</p>
+                  </div>
+                  <p className="text-xs text-amber-700 mt-2">Modify the global permissions for each designated role. Changes apply to all users assigned that specific role.</p>
+                </div>
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest text-left border-b border-slate-100">
+                        <th className="px-6 py-3">Portal Role</th>
+                        <th className="px-6 py-3">Permission Level</th>
+                        <th className="px-6 py-3">Special Rights</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {Object.keys(allPermissions).map(role => (
+                        <tr key={role} className={cn("hover:bg-slate-50 transition-all", isSuperAdmin ? "cursor-pointer" : "")}>
+                          <td className="px-6 py-4 font-black text-slate-900">{role}</td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                              {role === 'Director' ? 'Owner' : role === 'Principal' ? 'Admin' : 'Standard'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-medium text-slate-500">
+                             {role === 'Director' ? 'Global Override' : 'Restricted to Module Access'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
 
             {(isAccountant || isSuperAdmin) && tab === 'fee-groups' && (
               <FeeGroupsTab adminData={adminData} GRADIENT={GRADIENT} ACCENT={ACCENT} showToast={showToast} showErr={showErr} PKR={PKR} students={students} />
@@ -2859,7 +3012,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                     applied_for:        f.applied_for        || 'Intermediate',
                                     program:            f.program            || 'ICS Physics',
                                     part:               f.part               || 1,
-                                    session:            f.session            || '2026-27',
+                                    session:            f.session            || '2026-28',
                                     student_name:       f.student_name       || '',
                                     b_form_nic:         f.b_form_nic         || '',
                                     father_name:        f.father_name        || '',
@@ -2934,7 +3087,7 @@ const active = tab === id; const badgeN = getBadge(id);
                       </div>
                       <div className="text-center md:text-right">
                         <p className="text-2xl font-black uppercase tracking-wide" style={{ color: FA }}>Admission Form</p>
-                        <p className="text-sm text-slate-500 mt-1">Session: <strong>2026–27</strong></p>
+                        <p className="text-sm text-slate-500 mt-1">Session: <strong>2026-28</strong></p>
                         <div className="mt-2 w-20 h-24 border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-[9px] text-slate-400 font-bold ml-auto overflow-hidden relative group">
                           {admForm._localPhotoPreview ? (
                             <img src={admForm._localPhotoPreview} className="w-full h-full object-cover" />
@@ -3626,13 +3779,13 @@ const active = tab === id; const badgeN = getBadge(id);
 </head><body>
   <div class="header">
     <div class="header-top">
-      <img src="data:image/jpeg;base64,${LOGO_B64}" class="logo" alt="Logo"/>
+      <img src="/pic-logo.png" class="logo" alt="Logo"/>
       <div class="college-name">Pak Informatics Group of Colleges</div>
     </div>
     <div class="address">Original Campus, Gujranwala | Ph: 0300-0642973</div>
     <div class="address">PIC Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
     <div class="report-title">Fees Collection Report</div>
-    <div class="report-sub">(Search Type: ${fromFmt} To ${toFmt})</div>
+    <div class="report-sub">Session: 2026-28 &nbsp; | &nbsp; (Search Type: ${fromFmt} To ${toFmt})</div>
   </div>
   <table>
     <thead>
@@ -4223,8 +4376,16 @@ const active = tab === id; const badgeN = getBadge(id);
               className="relative bg-white rounded-3xl w-full max-w-2xl overflow-hidden z-10 max-h-[90vh] flex flex-col" style={{ boxShadow: '0 40px 100px rgba(0,0,0,0.25)' }}>
               <div className="h-1" style={{ background: GRADIENT }} />
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-                <div><h3 className="font-black text-slate-900">Admission Form Details</h3><p className="text-xs font-bold mt-0.5" style={{ color: ACCENT }}>{preview.form_no}</p></div>
-                <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-slate-50 p-1 flex items-center justify-center">
+                    <img src="/pic-logo.png" className="w-full h-full object-contain" alt="College Logo" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 leading-none">Admission Form Details</h3>
+                    <p className="text-[10px] font-black uppercase tracking-widest mt-1.5" style={{ color: ACCENT }}>{preview.form_no} · Session 2026-28</p>
+                  </div>
+                </div>
+                <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
                 {preview.status === 'Pending' && (

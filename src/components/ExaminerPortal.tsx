@@ -93,7 +93,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [search,  setSearch]  = useState('');
   const [studentSearch, setStudentSearch] = useState({ name: '', roll: '', class: '' });
 
-  const [schedForm, setSchedForm] = useState<any>({ title: '', exam_type: 'Mid-Term', session: '2026-27', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
+  const [schedForm, setSchedForm] = useState<any>({ title: '', exam_type: 'Mid-Term', session: '2026-28', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
   const [examForm,  setExamForm]  = useState<any>({ title: '', class_section: '', subject: '', date: '', total_marks: 100, exam_type: 'Chapter Test', chapter_name: '', teacher_id: '' });
   const [seatForm,  setSeatForm]  = useState<any>({ exam_name: '', student_roll: '', room_no: '', seat_no: '', date: '', class_name: '', full_name: '' });
   const [invigiForm,setInvigiForm]= useState<any>({ exam_name: '', teacher_name: '', class_name: '', room_no: '', exam_date: '' });
@@ -321,6 +321,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [selectedStudentResults, setSelectedStudentResults] = useState<any>(null);
   const [editingGrade, setEditingGrade] = useState<any>(null);
+  const [editingResultCard, setEditingResultCard] = useState<any>(null);
 
   const verifyGrade = async (gradeId: number) => {
     setSaving(true);
@@ -396,6 +397,29 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         const { data: updatedGrades } = await supabase.from('grades').select('*').eq('student_roll', studentRoll).order('created_at', { ascending: false });
         setSelectedStudentResults((p: any) => ({ ...p, grades: updatedGrades }));
       }
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditResultCard = async () => {
+    if (!editingResultCard) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('result_cards').update({
+        obtained_marks: Number(editingResultCard.obtained_marks),
+        total_marks: Number(editingResultCard.total_marks),
+        percentage: ((Number(editingResultCard.obtained_marks) / Number(editingResultCard.total_marks)) * 100).toFixed(2),
+        grade: getGradeLetter(Number(editingResultCard.obtained_marks), Number(editingResultCard.total_marks)),
+        updated_at: new Date().toISOString()
+      }).eq('id', editingResultCard.id);
+
+      if (error) throw error;
+      showToast('Result card updated successfully');
+      setEditingResultCard(null);
+      loadAll();
     } catch (e: any) {
       showToast(e.message, false);
     } finally {
@@ -1131,9 +1155,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                                 {lastGrade ? <Badge c="bg-indigo-50 text-indigo-700 border-indigo-200" label={`${lastGrade.grade_letter} (${Math.round(lastGrade.percentage)}%)`} /> : <span className="text-[10px] text-slate-300">No data</span>}
                               </td>
                               <td className="px-4 py-2.5">
-                                <button onClick={() => openStudentResults(s)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-white" style={{ background: GRADIENT }}>
-                                  <Eye size={12} /> View Results
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => openStudentResults(s)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-white" style={{ background: GRADIENT }}>
+                                    <Eye size={12} /> View
+                                  </button>
+                                  {results.find(r => r.student_roll === s.roll_no) && (
+                                    <button onClick={() => setEditingResultCard(results.find(r => r.student_roll === s.roll_no))} className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                                      <PenLine size={13} />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1219,25 +1250,29 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                                       </div>
                                       
                                       <div className="flex items-center gap-2 border-l border-slate-100 pl-6">
-                                        {grade.is_verified ? (
-                                          <div className="flex flex-col items-end">
-                                            <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="VERIFIED" />
-                                            <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-widest">by {grade.verified_by?.split(' ')[0]}</p>
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center gap-2">
-                                            <button 
-                                              onClick={() => setEditingGrade(grade)}
-                                              className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all">
-                                              <PenLine size={16} />
-                                            </button>
+                                        <div className="flex items-center gap-2">
+                                          {grade.is_verified && (
+                                            <div className="flex flex-col items-end mr-2">
+                                              <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="VERIFIED" />
+                                              <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-widest">by {grade.verified_by?.split(' ')[0]}</p>
+                                            </div>
+                                          )}
+                                          
+                                          <button 
+                                            onClick={() => setEditingGrade(grade)}
+                                            className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all"
+                                            title="Edit Result">
+                                            <PenLine size={16} />
+                                          </button>
+
+                                          {!grade.is_verified && (
                                             <button 
                                               onClick={() => verifyGrade(grade.id)}
                                               className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all">
                                               Verify & Notify
                                             </button>
-                                          </div>
-                                        )}
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
@@ -1272,6 +1307,34 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                           <button onClick={() => setEditingGrade(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
                           <button onClick={handleEditGrade} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
                             {saving ? 'Saving...' : 'Update'}
+                          </button>
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
+                {/* Edit Result Card Modal */}
+                <AnimatePresence>
+                  {editingResultCard && (
+                    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingResultCard(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+                      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                        className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600"><Award size={20} /></div>
+                          <div>
+                            <h4 className="text-lg font-black text-slate-900 leading-none">Edit Final Result</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Roll #{editingResultCard.student_roll}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <FM label="Obtained Marks (Final)"><TI type="number" value={editingResultCard.obtained_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, obtained_marks: e.target.value })} /></FM>
+                          <FM label="Total Marks (Final)"><TI type="number" value={editingResultCard.total_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, total_marks: e.target.value })} /></FM>
+                        </div>
+                        <div className="mt-6 flex gap-3">
+                          <button onClick={() => setEditingResultCard(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
+                          <button onClick={handleEditResultCard} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
+                            {saving ? 'Saving...' : 'Update Card'}
                           </button>
                         </div>
                       </motion.div>
