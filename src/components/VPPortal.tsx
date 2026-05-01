@@ -6,7 +6,7 @@ import {
   DollarSign, Receipt, Tag, FileText, UserCheck, Loader2,
   ChevronDown, AlertTriangle, Eye, Printer, RefreshCcw,
   ToggleLeft, ToggleRight, UserPlus, Trash2, CreditCard,
-  TrendingUp, Home, ClipboardList, Key
+  TrendingUp, Home, ClipboardList, Key, GraduationCap, Plus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
@@ -54,6 +54,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 const TABS_VP = [
   { id: 'dashboard',    label: 'Dashboard',    icon: Home },
   { id: 'permissions',  label: 'Permissions',  icon: Shield },
+  { id: 'sessions',     label: 'Sessions',     icon: GraduationCap },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'staff',        label: 'Staff',        icon: Users },
   { id: 'leaves',       label: 'Leaves',       icon: Calendar },
@@ -63,6 +64,7 @@ const TABS_VP = [
 const TABS_DIR = [
   { id: 'dashboard',    label: 'Dashboard',    icon: Home },
   { id: 'permissions',  label: 'Permissions',  icon: Shield },
+  { id: 'sessions',     label: 'Sessions',     icon: GraduationCap },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'staff',        label: 'Staff',        icon: Users },
   { id: 'leaves',       label: 'Leaves',       icon: Calendar },
@@ -114,6 +116,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [permissions, setPermissions]     = useState<Record<string, any>>({});
   const [income, setIncome]               = useState<any[]>([]);
   const [expenses, setExpenses]           = useState<any[]>([]);
+  const [sessions, setSessions]           = useState<any[]>([]);
 
   // UI state
   const [editPermRole, setEditPermRole]   = useState<{ role: string; perms: Record<string, boolean> } | null>(null);
@@ -124,6 +127,8 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [staffSearch, setStaffSearch]     = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('');
   const [confirmReverse, setConfirmReverse] = useState<any>(null);
+  const [sessionForm, setSessionForm]     = useState({ name: '', is_active: true });
+  const [sessionLoading, setSessionLoading] = useState(false);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3500); };
   const showErr   = (msg: string) => { setErrMsg(msg); setTimeout(() => setErrMsg(''), 4000); };
@@ -138,6 +143,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       { data: permData },
       { data: incData },
       { data: expData },
+      { data: sessData },
     ] = await Promise.all([
       supabase.from('admin_users').select('*').order('full_name'),
       supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
@@ -146,6 +152,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('role_permissions').select('*'),
       supabase.from('income').select('*').order('income_date', { ascending: false }).limit(100),
       supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(100),
+      supabase.from('academic_sessions').select('*').order('created_at', { ascending: false }),
     ]);
     setStaff(staffData || []);
     setTransactions(txData || []);
@@ -153,6 +160,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     setLeaveRequests(leaveData || []);
     setIncome(incData || []);
     setExpenses(expData || []);
+    setSessions(sessData || []);
 
     // Build permissions map
     const permMap: Record<string, any> = {};
@@ -237,6 +245,28 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       showToast(`✅ Leave ${status}`);
     } catch (e: any) { showErr(e.message || 'Failed'); }
     finally { setLeaveSaving(null); }
+  };
+
+  const createSession = async () => {
+    if (!sessionForm.name) { showErr('Session name required'); return; }
+    setSessionLoading(true);
+    try {
+      const { error } = await supabase.from('academic_sessions').insert([sessionForm]);
+      if (error) throw error;
+      showToast('✅ New academic session created');
+      setSessionForm({ name: '', is_active: true });
+      const { data } = await supabase.from('academic_sessions').select('*').order('created_at', { ascending: false });
+      setSessions(data || []);
+    } catch (e: any) { showErr(e.message || 'Failed to create session'); }
+    finally { setSessionLoading(false); }
+  };
+
+  const toggleSession = async (id: string, active: boolean) => {
+    try {
+      await supabase.from('academic_sessions').update({ is_active: active }).eq('id', id);
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, is_active: active } : s));
+      showToast(`✅ Session ${active ? 'activated' : 'deactivated'}`);
+    } catch (e: any) { showErr(e.message || 'Update failed'); }
   };
 
   // ── Computed ───────────────────────────────────────────────────────────
@@ -683,6 +713,71 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                       <span className="font-black text-rose-600">{PKR(e.amount)}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ════ SESSIONS ════ */}
+          {tab === 'sessions' && (
+            <motion.div key="sessions" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Create Session */}
+                <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm h-fit">
+                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2">
+                    <Plus size={18} className="text-emerald-500" /> Create Academic Session
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Session Name</label>
+                      <input 
+                        value={sessionForm.name} 
+                        onChange={e => setSessionForm({ ...sessionForm, name: e.target.value })}
+                        placeholder="e.g. 2026-27"
+                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-purple-400 transition-all"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700">Initial Status</p>
+                        <p className="text-[10px] text-slate-400">Mark as active session immediately</p>
+                      </div>
+                      <Toggle value={sessionForm.is_active} onChange={v => setSessionForm({ ...sessionForm, is_active: v })} accent={ACCENT} />
+                    </div>
+                    <motion.button 
+                      whileTap={{ scale: 0.97 }} 
+                      onClick={createSession} 
+                      disabled={sessionLoading}
+                      className="w-full py-3.5 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 disabled:opacity-50"
+                      style={{ background: GRADIENT }}>
+                      {sessionLoading ? <Loader2 size={16} className="animate-spin" /> : 'Create Session'}
+                    </motion.button>
+                  </div>
+                </div>
+
+                {/* List Sessions */}
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-6 py-4 border-b border-slate-100">
+                    <h3 className="font-black text-slate-900">Academic Sessions</h3>
+                  </div>
+                  <div className="divide-y divide-slate-50 max-h-[400px] overflow-y-auto">
+                    {sessions.map((s, i) => (
+                      <motion.div key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                        className="flex items-center justify-between px-6 py-4 hover:bg-slate-50/50">
+                        <div>
+                          <p className="font-black text-slate-800 tracking-tight">{s.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(s.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', s.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400')}>
+                            {s.is_active ? 'ACTIVE' : 'INACTIVE'}
+                          </span>
+                          <Toggle value={s.is_active} onChange={v => toggleSession(s.id, v)} accent={ACCENT} />
+                        </div>
+                      </motion.div>
+                    ))}
+                    {sessions.length === 0 && <p className="p-8 text-center text-slate-400 text-sm">No sessions defined</p>}
+                  </div>
                 </div>
               </div>
             </motion.div>

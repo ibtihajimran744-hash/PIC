@@ -714,6 +714,8 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [ledgerSection,   setLedgerSection]   = useState('');
   const [ledgerStatus,    setLedgerStatus]    = useState('');
   const [selectedLedgerRoll, setSelectedLedgerRoll] = useState<number | null>(null);
+  const [feeFilter,       setFeeFilter]       = useState('All');
+  const [selectedFeeIds,  setSelectedFeeIds]  = useState<number[]>([]);
 
   const [distProgram, setDistProgram] = useState('');
   const [distPart,    setDistPart]    = useState(1);
@@ -795,90 +797,104 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
     const txs = Array.isArray(tx) ? tx : [tx];
     if (txs.length === 0) { showErr('No fee selected'); return; }
     
+    if (!txs || txs.length === 0) {
+      const emptyIframe = document.createElement('iframe');
+      emptyIframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;';
+      document.body.appendChild(emptyIframe);
+      emptyIframe.contentWindow!.document.open();
+      emptyIframe.contentWindow!.document.write('<html><body style="font-family:sans-serif;text-align:center;padding-top:100px"><h2>No fee record found</h2><button onclick="window.close()">Close</button></body></html>');
+      emptyIframe.contentWindow!.document.close();
+      return;
+    }
+
     // Use the first transaction to find the student
     const firstTx = txs[0];
-    const student = students.find(s => String(s.roll_no) === String(firstTx.student_roll_link));
+    const roll = firstTx.student_roll_link || firstTx.student_roll;
+    if (!roll) { showErr('Could not identify student identifier'); return; }
     
-    const stuFees = feeGroups.filter(g => String(g.student_roll) === String(firstTx.student_roll_link));
+    const student = students.find(s => String(s.roll_no) === String(roll));
+    const stuFees = txs;
 
-  const totalAmount = stuFees.reduce((s, g) => s + (g.amount || 0), 0);
-  const totalPaid   = stuFees.reduce((s, g) => s + (g.paid || 0), 0);
-  const totalFine   = stuFees.reduce((s, g) => s + (g.fine || 0), 0);
-  const totalDiscount = stuFees.reduce((s, g) => s + (g.discount || 0), 0);
+    const totalAmount = stuFees.reduce((s, g) => s + (g.amount || 0), 0);
+    const totalPaid   = stuFees.reduce((s, g) => s + (g.paid || 0), 0);
+    const totalFine   = stuFees.reduce((s, g) => s + (g.fine || 0), 0);
+    const totalDiscount = stuFees.reduce((s, g) => s + (g.discount || 0), 0);
 
-  const totalBalance = stuFees.reduce((s, g) => {
-    const amount = g.amount || 0;
-    const paid = g.paid || 0;
-    const fine = g.fine || 0;
-    const discount = g.discount || 0;
-
-    const balance = Math.max(0, amount + fine - paid - discount);
-    return s + balance;
-  }, 0);
-
-  const dateStr = new Date().toLocaleDateString('en-PK', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
-  const fmt = (n: number) => `PKR${(n ?? 0).toLocaleString('en-PK')}`;
-
-  const fmtDate = (d: string) =>
-    d
-      ? new Date(d)
-          .toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          })
-          .replace(/\//g, '-')
-      : '-';
-
-  const feeRows = stuFees
-    .map(f => {
-
-      const history: any[] = f.payment_history ?? [];
-      const payments = history.length > 0 ? history : [null];
-
-      const amount = f.amount || 0;
-      const paid = f.paid || 0;
-      const fine = f.fine || 0;
-      const discount = f.discount || 0;
+    const totalBalance = stuFees.reduce((s, g) => {
+      const amount = g.amount || 0;
+      const paid = g.paid || 0;
+      const fine = g.fine || 0;
+      const discount = g.discount || 0;
 
       const balance = Math.max(0, amount + fine - paid - discount);
+      return s + balance;
+    }, 0);
 
-      return payments
-        .map((p: any, pi: number) => `
-      <tr>
+    const dateStr = new Date().toLocaleDateString('en-PK', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
 
-        ${
-          pi === 0
-            ? `
-          <td rowspan="${payments.length}" style="vertical-align:top">${f.fees_group ?? '-'}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.fees_code ?? '-'}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${fmtDate(f.due_date)}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${balance === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID'}</td>
-          <td rowspan="${payments.length}" style="vertical-align:top;text-align:right">${fmt(amount)}</td>
-        `
-            : ''
-        }
+    const fmt = (n: number) => `PKR${(n ?? 0).toLocaleString('en-PK')}`;
 
-        <td style="text-align:center">${p?.payment_id ?? '-'}</td>
-        <td style="text-align:center">${p?.method ?? '-'}</td>
-        <td style="text-align:center">${p ? fmtDate(p.date) : '-'}</td>
-        <td style="text-align:right">${fmt(p?.amount ?? 0)}</td>
-        <td style="text-align:right">${fmt(fine)}</td>
-        <td style="text-align:right">${fmt(discount)}</td>
-        <td style="text-align:right"><strong>${fmt(balance)}</strong></td>
+    const fmtDate = (d: string) =>
+      d
+        ? new Date(d)
+            .toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
+            .replace(/\//g, '-')
+        : '-';
 
-      </tr>
-    `)
-        .join('');
-    })
-    .join('');
+    const logoUrl = window.location.origin + '/pic-logo.png';
 
-  const html = `<!DOCTYPE html>
+    const feeRows = stuFees
+      .map(f => {
+
+        const history: any[] = f.payment_history ?? [];
+        const payments = history.length > 0 ? history : [null];
+
+        const amount = f.amount || 0;
+        const paid = f.paid || 0;
+        const fine = f.fine || 0;
+        const discount = f.discount || 0;
+
+        const balance = Math.max(0, amount + fine - paid - discount);
+
+        return payments
+          .map((p: any, pi: number) => `
+        <tr>
+
+          ${
+            pi === 0
+              ? `
+            <td rowspan="${payments.length}" style="vertical-align:top">${f.fees_group ?? '-'}</td>
+            <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${f.fees_code ?? '-'}</td>
+            <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${fmtDate(f.due_date)}</td>
+            <td rowspan="${payments.length}" style="vertical-align:top;text-align:center">${balance === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID'}</td>
+            <td rowspan="${payments.length}" style="vertical-align:top;text-align:right">${fmt(amount)}</td>
+          `
+              : ''
+          }
+
+          <td style="text-align:center">${p?.payment_id ?? '-'}</td>
+          <td style="text-align:center">${p?.method ?? '-'}</td>
+          <td style="text-align:center">${p ? fmtDate(p.date) : '-'}</td>
+          <td style="text-align:right">${fmt(p?.amount ?? 0)}</td>
+          <td style="text-align:right">${fmt(fine)}</td>
+          <td style="text-align:right">${fmt(discount)}</td>
+          <td style="text-align:right"><strong>${fmt(balance)}</strong></td>
+
+        </tr>
+      `)
+          .join('');
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8"/>
@@ -1014,7 +1030,6 @@ margin-bottom:1px;
 
 .urdu{
 font-family:'Noto Nastaliq Urdu', serif;
-direction:rtl;
 font-size:9.5pt;
 margin-top:4px;
 }
@@ -1052,7 +1067,7 @@ body{padding:6px 10px;}
 <body>
 
 <div class="header">
-<div class="logo-box"><img src="/pic-logo.png" style="width:100%;height:100%;object-fit:contain;"/></div>
+<div class="logo-box"><img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/></div>
 <div class="header-text">
 <div class="college-name">Pak Informatics Group of Colleges</div>
 <div class="header-sub">Session: 2026-28 &nbsp;&nbsp;&nbsp; Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
@@ -1113,7 +1128,7 @@ ${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee
 <div class="notes">
 <p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
 <p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
-<p class="urdu">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
+<p class="urdu" style="direction:rtl;">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
 </div>
 
 <div class="payment-title">ONLINE PAYMENT DETAILS:</div>
@@ -1179,7 +1194,7 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
       </head>
       <body>
         <div class="header" style="display:flex;align-items:center;gap:20px;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:20px;">
-          <img src="/pic-logo.png" style="width:60px;height:60px;object-fit:contain;"/>
+          <img src="${window.location.origin}/pic-logo.png" style="width:60px;height:60px;object-fit:contain;"/>
           <div>
             <h1 style="margin:0;font-size:1.5rem;text-transform:uppercase;">${title}</h1>
             <p style="margin:2px 0 0;color:#64748b;font-weight:700;font-size:0.85rem;">Pak Informatics Group of Colleges · Session 2026-28</p>
@@ -1253,7 +1268,7 @@ const handlePrintReport = (data: any) => {
       <body>
         <div class="header">
           <div style="display:flex;align-items:center;gap:20px;">
-            <img src="/pic-logo.png" style="width:70px;height:70px;object-fit:contain;"/>
+            <img src="${window.location.origin}/pic-logo.png" style="width:70px;height:70px;object-fit:contain;"/>
             <div class="inst-info">
               <h1>Pak Informatics Group of Colleges</h1>
               <p>Financial Statement · Session 2026-28 · Head Office, Gujranwala</p>
@@ -1413,7 +1428,7 @@ const handlePrintReport = (data: any) => {
       supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('created_at', { ascending: false })
     ]);
     setStudentProgress(prog.data || []);
-    // We can reuse the feeGroups logic here by filtering locally or just using what we fetched
+    setStuFeeGroups(fees.data || []);
     setStudentLoading(false);
   };
 
@@ -2614,16 +2629,43 @@ const active = tab === id; const badgeN = getBadge(id);
 
               if (selectedLedgerRoll) {
                 const s = students.find(x => x.roll_no === selectedLedgerRoll);
-                const sFees = feeGroups.filter(g => String(g.student_roll) === String(selectedLedgerRoll));
+                const sFees = (stuFeeGroups.length > 0 ? stuFeeGroups : feeGroups.filter(g => String(g.student_roll) === String(selectedLedgerRoll)));
+                
+                const filteredFees = sFees.filter(g => {
+                  if (feeFilter === 'Paid') return g.status === 'Paid';
+                  if (feeFilter === 'Unpaid') return g.status !== 'Paid';
+                  return true;
+                });
+
                 if (s) {
                    return (
                      <motion.div key="full-ledger" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                        <div className="flex items-center justify-between">
-                          <button onClick={() => setSelectedLedgerRoll(null)} className="flex items-center gap-2 text-sm font-black text-slate-500 hover:text-slate-900 transition-all">
+                          <button onClick={() => { setSelectedLedgerRoll(null); setFeeFilter('All'); setSelectedFeeIds([]); }} className="flex items-center gap-2 text-sm font-black text-slate-500 hover:text-slate-900 transition-all">
                             ← Back to Students List
                           </button>
                           <div className="flex gap-2">
-                            <button onClick={() => handlePrint(sFees)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-xs font-black"><Printer size={14} /> Print Ledger</button>
+                             <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
+                               {['All', 'Paid', 'Unpaid'].map(f => (
+                                 <button key={f} onClick={() => { setFeeFilter(f); setSelectedFeeIds([]); }}
+                                   className={cn('px-4 py-1.5 rounded-lg text-[10px] font-black transition-all', 
+                                     feeFilter === f ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700')}>
+                                   {f}
+                                 </button>
+                               ))}
+                             </div>
+                             <button onClick={() => {
+                                  if (selectedFeeIds.length === 0 && filteredFees.length === 0) {
+                                    handlePrint([]); // Should show No Rec Found
+                                    return;
+                                  }
+                                  const toPrint = selectedFeeIds.length > 0 
+                                    ? sFees.filter(f => selectedFeeIds.includes(f.id)) 
+                                    : filteredFees;
+                                  handlePrint(toPrint);
+                                }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-xs font-black active:scale-95 transition-all">
+                               <Printer size={14} /> {selectedFeeIds.length > 0 ? `Print Selected (${selectedFeeIds.length})` : 'Print Ledger'}
+                             </button>
                           </div>
                        </div>
 
@@ -2661,11 +2703,27 @@ const active = tab === id; const badgeN = getBadge(id);
                            <div className="space-y-4">
                               <div className="flex items-center justify-between mb-2">
                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileText size={12} /> Detailed Statement</p>
+                                 {selectedFeeIds.length > 0 && (
+                                   <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full animate-pulse">
+                                     {selectedFeeIds.length} items selected for printing
+                                   </p>
+                                 )}
                               </div>
                               <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                                  <table className="w-full text-xs">
                                     <thead className="bg-slate-50 border-b border-slate-100">
                                        <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                          <th className="px-4 py-4 text-center">
+                                            <input 
+                                              type="checkbox" 
+                                              checked={filteredFees.length > 0 && selectedFeeIds.length === filteredFees.length} 
+                                              onChange={(e) => {
+                                                if (e.target.checked) setSelectedFeeIds(filteredFees.map(f => f.id));
+                                                else setSelectedFeeIds([]);
+                                              }}
+                                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                          </th>
                                           <th className="px-6 py-4 text-left">Fee Category</th>
                                           <th className="px-6 py-4 text-left">Status</th>
                                           <th className="px-6 py-4 text-right">Amount</th>
@@ -2676,8 +2734,19 @@ const active = tab === id; const badgeN = getBadge(id);
                                        </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                       {sFees.map(g => (
-                                         <tr key={g.id} className="hover:bg-slate-50 transition-all">
+                                       {filteredFees.map(g => (
+                                         <tr key={g.id} className={cn('hover:bg-slate-50 transition-all', selectedFeeIds.includes(g.id) ? 'bg-indigo-50/30' : '')}>
+                                            <td className="px-4 py-4 text-center">
+                                              <input 
+                                                type="checkbox" 
+                                                checked={selectedFeeIds.includes(g.id)} 
+                                                onChange={(e) => {
+                                                  if (e.target.checked) setSelectedFeeIds(prev => [...prev, g.id]);
+                                                  else setSelectedFeeIds(prev => prev.filter(id => id !== g.id));
+                                                }}
+                                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                              />
+                                            </td>
                                             <td className="px-6 py-4">
                                                <p className="font-black text-slate-800">{g.fees_group}</p>
                                                <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{g.fees_code}</p>
@@ -2710,6 +2779,18 @@ const active = tab === id; const badgeN = getBadge(id);
                                             </td>
                                          </tr>
                                        ))}
+                                       {filteredFees.length === 0 && (
+                                         <tr>
+                                           <td colSpan={8} className="py-20 text-center">
+                                             <div className="flex flex-col items-center gap-2">
+                                               <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                                                 <Receipt size={32} />
+                                               </div>
+                                               <p className="text-slate-500 font-bold">No fee record found for this filter</p>
+                                             </div>
+                                           </td>
+                                         </tr>
+                                       )}
                                     </tbody>
                                  </table>
                               </div>
@@ -2809,8 +2890,14 @@ const active = tab === id; const badgeN = getBadge(id);
                                  <td className="px-5 py-3 font-bold text-emerald-600">{PKR(s.paid_amount)}</td>
                                  <td className="px-5 py-3 font-black text-rose-600">{PKR(totalOut)}</td>
                                  <td className="px-5 py-3">
-                                   <button onClick={() => setSelectedLedgerRoll(s.roll_no)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-200" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
-                                     <Eye size={12} /> View Ledger
+                                   <button onClick={async () => { 
+                                     setSelectedLedgerRoll(s.roll_no);
+                                     setStuFeeLoading(true);
+                                     const { data } = await supabase.from('fee_groups').select('*').eq('student_roll', s.roll_no).order('created_at', { ascending: false });
+                                     setStuFeeGroups((data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) + (g.fine || 0) - (g.paid || 0) - (g.discount || 0) })));
+                                     setStuFeeLoading(false);
+                                   }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-200" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                                     {stuFeeLoading && selectedLedgerRoll === s.roll_no ? <Loader2 size={12} className="animate-spin" /> : <><Eye size={12} /> View Ledger</>}
                                    </button>
                                  </td>
                                </motion.tr>
