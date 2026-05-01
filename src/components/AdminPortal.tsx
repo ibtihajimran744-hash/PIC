@@ -693,6 +693,8 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [preview,      setPreview]      = useState<any>(null);
   const [selectedAccStu,  setSelectedAccStu]  = useState<any>(null);
   const [stuFeeGroups,    setStuFeeGroups]    = useState<any[]>([]);
+  const [stuFeeFilter,    setStuFeeFilter]    = useState<'All'|'Paid'|'Unpaid'>('All');
+  const [selectedFeeGroups, setSelectedFeeGroups] = useState<Set<string>>(new Set());
   const [stuFeeLoading,   setStuFeeLoading]   = useState(false);
   const [collectModal,    setCollectModal]    = useState<any>(null);
   const [deleteId,        setDeleteId]        = useState<string | null>(null);
@@ -703,6 +705,8 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [finDesc, setFinDesc]         = useState('');
   const [salaryModal, setSalaryModal] = useState<any>(null);
   const [salaryForm, setSalaryForm]   = useState<{fine: number; bonus: number; deductions: number; notes: string; method: string}>({ fine: 0, bonus: 0, deductions: 0, notes: '', method: 'Cash' });
+  const [expenseHeaders, setExpenseHeaders] = useState<any[]>([]);
+  const [newExpenseHeader, setNewExpenseHeader] = useState('');
   const [finCategory, setFinCategory] = useState('');
   const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
@@ -1388,6 +1392,8 @@ const handlePrintReport = (data: any) => {
       setFeeGroups((s2.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
       setTransactions(s3.data || []);
       setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
+      const { data: ehData } = await supabase.from('expense_headers').select('*').order('name');
+      setExpenseHeaders(ehData || []);
       setAdmForms(s7.data || []); setTeachers(s9.data || []); setSalaries(s10.data || []);
       if (s8.data?.[0]) setNextRoll(s8.data[0].roll_no + 1);
     } catch (e: any) {
@@ -1483,6 +1489,8 @@ const handlePrintReport = (data: any) => {
     const isSelected = selectedAccStu?.roll_no === student.roll_no;
     if (isSelected) { setSelectedAccStu(null); setStuFeeGroups([]); return; }
     setSelectedAccStu(student);
+    setStuFeeFilter('All');
+    setSelectedFeeGroups(new Set());
     setStuFeeLoading(true);
     const [progress, fees] = await Promise.all([
       supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject'),
@@ -1869,6 +1877,34 @@ const handlePrintReport = (data: any) => {
     finally { setSaving(false); }
   };
 
+  const loadExpenseHeaders = async () => {
+    const { data } = await supabase.from('expense_headers').select('*').order('name');
+    setExpenseHeaders(data || []);
+  };
+
+  const saveExpenseHeader = async () => {
+    if (!newExpenseHeader.trim()) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('expense_headers').insert([{ name: newExpenseHeader.trim(), created_by: adminData.full_name }]);
+      if (error) throw error;
+      setNewExpenseHeader('');
+      showToast('✅ Expense tag created');
+      await loadExpenseHeaders();
+    } catch (e: any) { showErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteExpenseHeader = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this tag?')) return;
+    try {
+      const { error } = await supabase.from('expense_headers').delete().eq('id', id);
+      if (error) throw error;
+      showToast('✅ Expense tag deleted');
+      await loadExpenseHeaders();
+    } catch (e: any) { showErr(e.message); }
+  };
+
   const saveFinancialRecord = async () => {
   const amt = Number(finAmount);
   if (!amt || amt <= 0) { showErr('Enter a valid amount'); return; }
@@ -2037,6 +2073,7 @@ const handlePrintReport = (data: any) => {
         { id: 'fee-ledger',   label: 'Fee Ledger',   icon: DollarSign },
         { id: 'transactions', label: 'Transactions', icon: Receipt },
         { id: 'income',       label: 'Income Mgmt',  icon: BarChart3 },
+        { id: 'expense-header', label: 'Expense Headers', icon: Tag },
         { id: 'expenses',     label: 'Expenses',     icon: Minus },
         { id: 'salaries',     label: 'Teacher Salaries', icon: UserCheck }
       ]
@@ -2092,7 +2129,7 @@ const handlePrintReport = (data: any) => {
     { id: 'transactions',  label: 'Transactions',  icon: Receipt },
     { id: 'salaries',      label: 'Salaries',      icon: UserCheck },
     { id: 'admissions',    label: 'Admissions',    icon: FileText },
-    { id: 'sections',      label: 'Sections',      icon: Layers },
+    { id: 'expense-header', label: 'Expense Header', icon: Tag },
     { id: 'new-admission', label: 'New Admission', icon: UserPlus },
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
     { id: 'students',      label: 'Students',      icon: Users },
@@ -2115,7 +2152,7 @@ const handlePrintReport = (data: any) => {
     students: 'Student Records', academics: 'Academic Overview',
     leaves: 'Leave Requests', admissions: 'Admissions',
     'new-admission': 'New Admission Form', 'fee-ledger': 'Fee Ledger',
-    'sections': 'Section Manager',
+    'expense-header': 'Expense Header Management',
     'fee-groups': 'Fee Groups', transactions: 'Transactions',
     discounts: 'Discount Requests', reports: 'Financial Reports',
     salaries: 'Teacher Salaries',
@@ -2998,51 +3035,41 @@ const active = tab === id; const badgeN = getBadge(id);
               </motion.div>
             )}
 
-            {/* ════ ACCOUNTANT SECTIONS ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'sections' && (
-              <motion.div key="sec-mgr" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl overflow-hidden relative">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><Layers size={120} /></div>
-                  <div className="relative z-10 text-center mb-8">
-                    <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 border border-blue-100 shadow-sm"><Layers size={28} /></div>
-                    <h2 className="text-2xl font-black text-slate-900">Auto-Section Distribution</h2>
-                    <p className="text-sm text-slate-500 font-medium">Distribute students into sections based on program & part</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-                    <F label="Program"><TS value={distProgram} onChange={e => setDistProgram(e.target.value)}><option value="">Select program...</option>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></F>
-                    <F label="Part / Year"><TS value={distPart} onChange={e => setDistPart(Number(e.target.value))}><option value={1}>Part 1 (First Year)</option><option value={2}>Part 2 (Second Year)</option></TS></F>
-                    <F label="No. of Sections"><TI type="number" min={1} max={10} value={distCount} onChange={(e: any) => setDistCount(Number(e.target.value))} /></F>
-                    <F label="Target Gender Group"><TS value={distGender} onChange={(e: any) => setDistGender(e.target.value)}><option value="Any">General Distribution</option><option value="Male">Boys Sections Only</option><option value="Female">Girls Sections Only</option></TS></F>
+            {/* ════ EXPENSE HEADERS ════ */}
+            {(isAccountant || isSuperAdmin) && tab === 'expense-header' && (
+              <motion.div key="exp-hd" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-xl mx-auto space-y-6">
+                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl overflow-hidden">
+                  <div className="text-center mb-8">
+                    <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><Tag size={28} /></div>
+                    <h2 className="text-2xl font-black text-slate-900">Expense Headlines / Tags</h2>
+                    <p className="text-sm text-slate-500 font-medium">Create fixed categories for proper expense classification</p>
                   </div>
 
-                  <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 mb-8">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-white rounded-xl shadow-sm"><Search size={16} className="text-blue-500" /></div>
-                      <div>
-                        <p className="text-xs font-black text-blue-900 uppercase tracking-widest mb-1">Preview</p>
-                        <p className="text-[11px] text-blue-700/80 font-bold leading-relaxed">
-                          Students in <span className="text-blue-900 font-black">{distProgram || '—'}</span> (Part {distPart}) 
-                          {distGender !== 'Any' && <span> [{distGender}s only]</span>} will be divided into 
-                          <span className="text-blue-900 font-black"> {distCount} groups</span> (A, B, C...).
-                          Students will be sorted by merit (Matric %) for balanced academic strength across sections.
-                        </p>
-                      </div>
+                  <div className="flex gap-3 mb-8">
+                    <TI placeholder="e.g. Electricity, Rent, Salary..." value={newExpenseHeader} onChange={(e: any) => setNewExpenseHeader(e.target.value)} />
+                    <button 
+                      onClick={saveExpenseHeader}
+                      disabled={saving || !newExpenseHeader.trim()}
+                      className="px-6 py-3 rounded-xl bg-slate-900 text-white font-black text-sm active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 size={16} className="animate-spin" /> : 'Add Tag'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Existing Tags ({expenseHeaders.length})</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {expenseHeaders.map(h => (
+                        <div key={h.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group">
+                          <span className="font-bold text-slate-700 text-sm">{h.name}</span>
+                          <button onClick={() => deleteExpenseHeader(h.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 p-1">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
                     </div>
+                    {expenseHeaders.length === 0 && <p className="text-center py-10 text-slate-400 text-sm italic">No expense tags defined yet</p>}
                   </div>
-
-                  <motion.button 
-                    whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
-                    disabled={saving || !distProgram} onClick={distributeSections}
-                    className="w-full py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-xl shadow-blue-500/20"
-                    style={{ background: GRADIENT }}>
-                    {saving ? <><Loader2 size={16} className="animate-spin" /> Distributing Students...</> : <><RefreshCw size={16} /> Run Distribution</>}
-                  </motion.button>
-                </div>
-
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center border border-slate-200 text-slate-400"><BookOpen size={18} /></div>
-                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed"><strong>Note:</strong> This tool will overwrite existing section assignments for the selected students. Use it with caution during initial class setup.</p>
                 </div>
               </motion.div>
             )}
@@ -3584,19 +3611,47 @@ const active = tab === id; const badgeN = getBadge(id);
 
                           {/* Fee Summary (read-only view) */}
                           <div>
-                            <div className="flex items-center justify-between mb-3">
-                              <p className="font-black text-slate-900 text-sm">💰 Fee Summary</p>
-                              <div className="flex gap-3 text-[10px] font-bold text-slate-400">
-                                <span>Paid: <strong className="text-emerald-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.paid || 0), 0))}</strong></span>
-                                <span>Due: <strong className="text-rose-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.balance || 0), 0))}</strong></span>
+                            <div className="flex flex-col gap-3 mb-4">
+                              <div className="flex items-center justify-between">
+                                <p className="font-black text-slate-900 text-sm">💰 Fee Summary</p>
+                                <div className="flex gap-3 text-[10px] font-bold text-slate-400">
+                                  <span>Paid: <strong className="text-emerald-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.paid || 0), 0))}</strong></span>
+                                  <span>Due: <strong className="text-rose-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.balance || 0), 0))}</strong></span>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                                  {(['All', 'Paid', 'Unpaid'] as const).map(f => (
+                                    <button key={f} onClick={() => setStuFeeFilter(f)} className={cn('px-3 py-1.5 rounded-lg text-[10px] font-black transition-all', stuFeeFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>{f}</button>
+                                  ))}
+                                </div>
+                                
+                                {selectedFeeGroups.size > 0 && (
+                                  <motion.button initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} onClick={() => setShowVoucherModal(stuFeeGroups.filter(g => selectedFeeGroups.has(g.id)))}
+                                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black hover:bg-slate-800 transition-all shadow-lg shadow-slate-200">
+                                    <Printer size={12} /> Print Selected ({selectedFeeGroups.size})
+                                  </motion.button>
+                                )}
                               </div>
                             </div>
+
                             {stuFeeGroups.length === 0
                               ? <p className="text-sm text-slate-400 italic">No fee records assigned yet</p>
                               : (
                                 <div className="space-y-2">
-                                  {stuFeeGroups.map(g => (
-                                    <div key={g.id} className={cn('flex items-center justify-between px-4 py-3 rounded-xl border', g.status === 'Paid' ? 'bg-emerald-50/50 border-emerald-100' : g.status === 'Partial' ? 'bg-amber-50/50 border-amber-100' : 'bg-rose-50/30 border-rose-100')}>
+                                  {stuFeeGroups.filter(g => {
+                                    if (stuFeeFilter === 'Paid') return g.status === 'Paid';
+                                    if (stuFeeFilter === 'Unpaid') return g.status === 'Unpaid' || g.status === 'Partial';
+                                    return true;
+                                  }).map(g => (
+                                    <div key={g.id} className={cn('flex items-center gap-3 px-4 py-3 rounded-xl border transition-all', g.status === 'Paid' ? 'bg-emerald-50/50 border-emerald-100' : g.status === 'Partial' ? 'bg-amber-50/50 border-amber-100' : 'bg-rose-50/30 border-rose-100')}>
+                                      <input type="checkbox" checked={selectedFeeGroups.has(g.id)} onChange={() => {
+                                        const next = new Set(selectedFeeGroups);
+                                        if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
+                                        setSelectedFeeGroups(next);
+                                      }} className="w-4 h-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                      
                                       <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <p className="text-sm font-black text-slate-900">{g.fees_group}</p>
@@ -3612,12 +3667,17 @@ const active = tab === id; const badgeN = getBadge(id);
                                       </div>
                                       <div className="flex flex-col items-end gap-2 ml-3 flex-shrink-0">
                                         <span className="font-black text-sm" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>{PKR(g.balance || 0)}</span>
-                                        {g.status !== 'Paid' && g.balance > 0 && (
-                                          <button onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
-                                            className="px-3 py-1 rounded-lg text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center gap-1">
-                                            <DollarSign size={10} /> Collect
+                                        <div className="flex gap-2">
+                                          <button onClick={() => setShowVoucherModal([g])} className="p-1.5 bg-white text-slate-400 rounded-lg border border-slate-200 hover:text-blue-600 hover:border-blue-200 transition-all">
+                                            <Printer size={12} />
                                           </button>
-                                        )}
+                                          {g.status !== 'Paid' && g.balance > 0 && (
+                                            <button onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '' }); }}
+                                              className="px-3 py-1 rounded-lg text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center gap-1">
+                                              <DollarSign size={10} /> Collect
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
                                   ))}
@@ -4117,8 +4177,16 @@ const active = tab === id; const badgeN = getBadge(id);
                  ))}
                </div>
                <div>
-                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Description</label>
-                 <TI placeholder={finType === 'Income' ? "e.g. Donation, Library Fund" : "e.g. Electricity Bill, Stationery"} value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)} />
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Category / Headline</label>
+                  {finType === 'Expense' ? (
+                    <TS value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)}>
+                      <option value="">Select Headline...</option>
+                      {expenseHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+                      <option value="Other">Other</option>
+                    </TS>
+                  ) : (
+                    <TI placeholder={finType === 'Income' ? "e.g. Donation, Library Fund" : "e.g. Electricity Bill, Stationery"} value={finCategory} onChange={(e: any) => setFinCategory(e.target.value)} />
+                  )}
                </div>
                <div className="grid grid-cols-2 gap-4">
                  <div>
