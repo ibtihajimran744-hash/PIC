@@ -7,11 +7,12 @@ import {
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target,
-  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine
+  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine, Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
 import { ExaminerPortal } from './ExaminerPortal';
+import { AIStudyAssistant } from './AIStudyAssistant';
 import { supabase } from '../services/supabase';
 
 interface AdminPortalProps {
@@ -713,6 +714,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 10));
   const [reportTo, setReportTo]     = useState(new Date().toISOString().slice(0, 10));
   const [showFinModal, setShowFinModal] = useState(false);
+  const [showVoucherModal, setShowVoucherModal] = useState<any>(null);
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '', discount: '' });
   const [ledgerProgram,   setLedgerProgram]   = useState('');
   const [ledgerSection,   setLedgerSection]   = useState('');
@@ -2134,6 +2136,7 @@ const handlePrintReport = (data: any) => {
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
     { id: 'students',      label: 'Students',      icon: Users },
     { id: 'reports',       label: 'Reports',       icon: BarChart3 },
+    { id: 'ai-assistant',  label: 'AI Study',      icon: Sparkles },
   ];
 
   const NAV            = isAccountant ? ACCOUNTANT_NAV : PRINCIPAL_NAV;
@@ -2155,7 +2158,7 @@ const handlePrintReport = (data: any) => {
     'expense-header': 'Expense Header Management',
     'fee-groups': 'Fee Groups', transactions: 'Transactions',
     discounts: 'Discount Requests', reports: 'Financial Reports',
-    salaries: 'Teacher Salaries',
+    salaries: 'Teacher Salaries', 'ai-assistant': 'AI Study Assistant',
     staff: 'Staff & Role Management', permissions: 'Permission Control', scheme: 'Scheme of Study',
   };
 
@@ -4162,6 +4165,12 @@ const active = tab === id; const badgeN = getBadge(id);
               );
             })()}
 
+            {tab === 'ai-assistant' && (
+              <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                <AIStudyAssistant userRole="Admin" userName={adminData.full_name} />
+              </motion.div>
+            )}
+
       {/* ════ ACCOUNTANT FINANCIAL ENTRY (New Tab) ════ */}
       {isAccountant && tab === 'manage-financials' && (
         <motion.div key="fin-man" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-xl mx-auto">
@@ -4385,7 +4394,19 @@ const active = tab === id; const badgeN = getBadge(id);
 
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Category / Reason</label>
-                    <input value={finCategory} onChange={e => setFinCategory(e.target.value)} placeholder="e.g. Utility Bills, General Stationary…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all" />
+                    {finType === 'Expense' ? (
+                      <select 
+                        value={finCategory} 
+                        onChange={(e: any) => setFinCategory(e.target.value)}
+                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all bg-white"
+                      >
+                        <option value="">Select Category...</option>
+                        {expenseHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+                        <option value="Other">Other</option>
+                      </select>
+                    ) : (
+                      <input value={finCategory} onChange={e => setFinCategory(e.target.value)} placeholder="e.g. Donation, Library Fund…" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all" />
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

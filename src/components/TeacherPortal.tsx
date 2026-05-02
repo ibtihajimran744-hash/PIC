@@ -8,6 +8,7 @@ import {
   BookMarked, BookCheck
 } from 'lucide-react';
 import { EduChatAI } from './EduChatAI';
+import { AIStudyAssistant } from './AIStudyAssistant';
 import { cn } from '../lib/utils';
 import { 
   Student, Teacher, getChapters, addChapter, Chapter, Grade, addGrades,
@@ -1141,7 +1142,14 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                 </motion.div>
               )}
 
-              {/* ── AI CHAT ── */}
+              {/* ── AI STUDY ASSISTANT ── */}
+              {activeTab === 'AI Study Assistant' && (
+                <motion.div key="ai-study" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+                  <AIStudyAssistant userRole="Teacher" userName={teacherData?.full_name || 'Teacher'} />
+                </motion.div>
+              )}
+
+              {/* ── AI CHAT (Legacy) ── */}
               {activeTab === 'AI Assistant' && (
                 <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
                   <EduChatAI />
@@ -1255,7 +1263,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           { id: 'Students', icon: Users },
     { id: 'Grading', icon: CheckSquare },
     { id: 'Leaderboard', icon: Trophy },
-    { id: 'AI Assistant', icon: Sparkles, label: 'Study AI' },
+    { id: 'AI Study Assistant', icon: Sparkles, label: 'Study AI' },
     { id: 'Profile', icon: User }
   ].map(tab => (
     <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubPage(null); }} className={cn("flex flex-col items-center gap-1 transition-all shrink-0 px-2", activeTab === tab.id ? "text-[#2D3494]" : "text-slate-400")}>
