@@ -4,11 +4,9 @@ import {
   Users, Bell, LogOut, Plus, Calendar, LayoutDashboard, Search,
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
-  CheckCircle2, User, RefreshCw, AlertCircle, Loader2, Sparkles,
+  CheckCircle2, User, RefreshCw, AlertCircle, Loader2,
   BookMarked, BookCheck
 } from 'lucide-react';
-import { EduChatAI } from './EduChatAI';
-import { AIStudyAssistant } from './AIStudyAssistant';
 import { cn } from '../lib/utils';
 import { 
   Student, Teacher, getChapters, addChapter, Chapter, Grade, addGrades,
@@ -1141,20 +1139,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                 </motion.div>
               )}
-
-              {/* ── AI STUDY ASSISTANT ── */}
-              {activeTab === 'AI Study Assistant' && (
-                <motion.div key="ai-study" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                  <AIStudyAssistant userRole="Teacher" userName={teacherData?.full_name || 'Teacher'} />
-                </motion.div>
-              )}
-
-              {/* ── AI CHAT (Legacy) ── */}
-              {activeTab === 'AI Assistant' && (
-                <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                  <EduChatAI />
-                </motion.div>
-              )}
             </>
           )}
         </AnimatePresence>
@@ -1261,11 +1245,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
         {[
           { id: 'Home', icon: LayoutDashboard },
           { id: 'Students', icon: Users },
-    { id: 'Grading', icon: CheckSquare },
-    { id: 'Leaderboard', icon: Trophy },
-    { id: 'AI Study Assistant', icon: Sparkles, label: 'Study AI' },
-    { id: 'Profile', icon: User }
-  ].map(tab => (
+          { id: 'Grading', icon: CheckSquare },
+          { id: 'Leaderboard', icon: Trophy },
+          { id: 'Profile', icon: User }
+        ].map(tab => (
     <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubPage(null); }} className={cn("flex flex-col items-center gap-1 transition-all shrink-0 px-2", activeTab === tab.id ? "text-[#2D3494]" : "text-slate-400")}>
       <div className={cn("p-2 rounded-2xl transition-all", activeTab === tab.id ? "bg-blue-50" : "")}><tab.icon size={22} /></div>
       <span className={cn("text-[8px] font-black uppercase transition-opacity", activeTab === tab.id ? "opacity-100" : "opacity-0")}>{(tab as any).label || tab.id}</span>

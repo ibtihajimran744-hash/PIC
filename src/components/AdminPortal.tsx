@@ -7,12 +7,11 @@ import {
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target,
-  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine, Sparkles
+  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
 import { ExaminerPortal } from './ExaminerPortal';
-import { AIStudyAssistant } from './AIStudyAssistant';
 import { supabase } from '../services/supabase';
 
 interface AdminPortalProps {
@@ -1347,17 +1346,19 @@ const handlePrintReport = (data: any) => {
       setTeachers(s9.data || []); setSalaries(s10.data || []);
 
       if (isSuperAdmin) {
-        const [sf1, sf2, sf3, sf4, sf5, sf8] = await Promise.all([
+        const [sf1, sf2, sf3, sf4, sf5, sf8, sf11] = await Promise.all([
           supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
           supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
           supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
           supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(100),
           supabase.from('income').select('*').order('income_date', { ascending: false }).limit(100),
           supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
+          supabase.from('expense_headers').select('*').order('name'),
         ]);
         setFeeGroups((sf1.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
         setTransactions(sf2.data || []); setDiscounts(sf3.data || []);
         setExpenses(sf4.data || []); setIncome(sf5.data || []);
+        setExpenseHeaders(sf11.data || []);
         if (sf8.data?.[0]) setNextRoll(sf8.data[0].roll_no + 1);
       }
     } catch (e: any) {
@@ -2136,7 +2137,6 @@ const handlePrintReport = (data: any) => {
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
     { id: 'students',      label: 'Students',      icon: Users },
     { id: 'reports',       label: 'Reports',       icon: BarChart3 },
-    { id: 'ai-assistant',  label: 'AI Study',      icon: Sparkles },
   ];
 
   const NAV            = isAccountant ? ACCOUNTANT_NAV : PRINCIPAL_NAV;
@@ -2158,7 +2158,7 @@ const handlePrintReport = (data: any) => {
     'expense-header': 'Expense Header Management',
     'fee-groups': 'Fee Groups', transactions: 'Transactions',
     discounts: 'Discount Requests', reports: 'Financial Reports',
-    salaries: 'Teacher Salaries', 'ai-assistant': 'AI Study Assistant',
+    salaries: 'Teacher Salaries',
     staff: 'Staff & Role Management', permissions: 'Permission Control', scheme: 'Scheme of Study',
   };
 
@@ -4164,12 +4164,6 @@ const active = tab === id; const badgeN = getBadge(id);
               </motion.div>
               );
             })()}
-
-            {tab === 'ai-assistant' && (
-              <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                <AIStudyAssistant userRole="Admin" userName={adminData.full_name} />
-              </motion.div>
-            )}
 
       {/* ════ ACCOUNTANT FINANCIAL ENTRY (New Tab) ════ */}
       {isAccountant && tab === 'manage-financials' && (

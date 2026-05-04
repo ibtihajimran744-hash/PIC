@@ -5,10 +5,8 @@ import {
   CreditCard, Calendar, BarChart3, BookOpen,
   Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
-  Sparkles, Zap, ZapOff, ExternalLink, CheckCircle2
+  Zap, ZapOff, ExternalLink, CheckCircle2
 } from 'lucide-react';
-import { EduChatAI } from './EduChatAI';
-import { AIStudyAssistant } from './AIStudyAssistant';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 
@@ -526,7 +524,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
   const NAV = [
     { id:'dashboard',     label:'Home',          icon:Home     },
-    { id:'ai-study',      label:'Study AI',      icon:Sparkles },
     { id:'fees',          label:'My Fees',        icon:CreditCard},
     { id:'attendance',    label:'Attendance',     icon:Calendar },
     { id:'results',       label:'Results',        icon:BarChart3},
@@ -539,11 +536,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
   const PAGE_TITLES: Record<string,string> = {
     dashboard:'My Dashboard', fees:'Fee Status & Timers',
-    'ai-study':'AI Study Assistant',
     attendance:'Attendance Record', results:'My Results',
     courses:'My Courses', timetable:'Class Timetable', leaderboard:'Class Leaderboard',
     notifications:'All Notifications',
-    'ai-chat': 'Academic AI Assistant',
   };
 
   const handleQuizSubmit = async () => {
@@ -719,20 +714,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
         <div className="p-4 md:p-7 pb-28 md:pb-7">
           <AnimatePresence mode="wait">
-
-            {/* ══ AI STUDY ASSISTANT ══ */}
-            {tab === 'ai-study' && (
-              <motion.div key="ai-study" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                <AIStudyAssistant userRole="Student" userName={studentData.full_name} courseFilter={studentData.class_section} />
-              </motion.div>
-            )}
-
-            {/* ══ AI CHAT ══ */}
-            {tab === 'ai-chat' && (
-              <motion.div key="ai" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                <EduChatAI />
-              </motion.div>
-            )}
 
             {/* ══ DASHBOARD ══ */}
             {tab==='dashboard' && (
