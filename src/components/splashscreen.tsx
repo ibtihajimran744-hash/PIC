@@ -35,7 +35,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinished }) => {
             className="flex flex-col items-center gap-6"
           >
             <img
-              src="/pic-logo.png"
+              src={window.location.origin + "/pic-logo.png"}
               alt="Pak Informatics College"
               className="w-44 h-44 object-contain drop-shadow-sm"
               onError={(e) => {

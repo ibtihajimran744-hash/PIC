@@ -29,6 +29,7 @@ const getTheme = (role: string) => {
 };
 
 // ── Accountant constants ──────────────────────────────────────────────────
+
 const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com','Summer Camp'];
 const BOARDS   = ['BISE Gujranwala','BISE Lahore','BISE Faisalabad','BISE Rawalpindi','BISE Multan','BISE Sargodha','BISE Sahiwal','Federal Board','Other'];
 const PKR      = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
@@ -854,7 +855,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
             .replace(/\//g, '-')
         : '-';
 
-    const logoUrl = window.location.origin + '/pic-logo.png';
+    const logoUrl = LOGO_BASE64;
 
     const feeRows = stuFees
       .map(f => {
@@ -1199,7 +1200,7 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
       </head>
       <body>
         <div class="header" style="display:flex;align-items:center;gap:20px;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:20px;">
-          <img src="${window.location.origin}/pic-logo.png" style="width:60px;height:60px;object-fit:contain;"/>
+          <img src="${LOGO_BASE64}" style="width:60px;height:60px;object-fit:contain;"/>
           <div>
             <h1 style="margin:0;font-size:1.5rem;text-transform:uppercase;">${title}</h1>
             <p style="margin:2px 0 0;color:#64748b;font-weight:700;font-size:0.85rem;">Pak Informatics Group of Colleges · Session 2026-28</p>
@@ -1273,7 +1274,7 @@ const handlePrintReport = (data: any) => {
       <body>
         <div class="header">
           <div style="display:flex;align-items:center;gap:20px;">
-            <img src="${window.location.origin}/pic-logo.png" style="width:70px;height:70px;object-fit:contain;"/>
+            <img src="${LOGO_BASE64}" style="width:70px;height:70px;object-fit:contain;"/>
             <div class="inst-info">
               <h1>Pak Informatics Group of Colleges</h1>
               <p>Financial Statement · Session 2026-28 · Head Office, Gujranwala</p>
@@ -3884,7 +3885,7 @@ const active = tab === id; const badgeN = getBadge(id);
               const grandFine    = reportTx.reduce((s, t) => s + Number(t.fine_amount   || 0), 0);
               const grandTotal   = reportTx.reduce((s, t) => s + Number(t.amount_paid   || 0), 0);
 
-              const LOGO_B64 = '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';
+              const LOGO_B64 = LOGO_BASE64;
 
               const printReport = () => {
                 const fromFmt = new Date(reportFrom).toLocaleDateString('en-PK', { day:'2-digit', month:'2-digit', year:'numeric' });
@@ -3929,7 +3930,7 @@ const active = tab === id; const badgeN = getBadge(id);
 </head><body>
   <div class="header">
     <div class="header-top">
-      <img src="/pic-logo.png" class="logo" alt="Logo"/>
+      <img src="${LOGO_BASE64}" class="logo" alt="Logo"/>
       <div class="college-name">Pak Informatics Group of Colleges</div>
     </div>
     <div class="address">Original Campus, Gujranwala | Ph: 0300-0642973</div>
@@ -4548,7 +4549,7 @@ const active = tab === id; const badgeN = getBadge(id);
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-xl bg-slate-50 p-1 flex items-center justify-center">
-                    <img src="/pic-logo.png" className="w-full h-full object-contain" alt="College Logo" />
+                    <img src={LOGO_BASE64} className="w-full h-full object-contain" alt="College Logo" />
                   </div>
                   <div>
                     <h3 className="font-black text-slate-900 leading-none">Admission Form Details</h3>
