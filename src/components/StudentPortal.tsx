@@ -5,7 +5,7 @@ import {
   CreditCard, Calendar, BarChart3, BookOpen,
   Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
-  Zap, ZapOff, ExternalLink, CheckCircle2
+  Zap, ZapOff, ExternalLink, CheckCircle2, FileText
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';

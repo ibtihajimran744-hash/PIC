@@ -146,7 +146,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       { data: sc }, { data: tc }, { data: tp }, { data: st }, { data: cp }, 
       { data: tt }, { data: an }, { data: ms }, { data: gr }, { data: at }, 
       { data: exS }, { data: cls }, { data: sess }, { data: progs }, { data: subjs },
-      { data: qrz }
+      { data: qrz }, { data: nRes }
     ] = await Promise.all([
       supabase.from('scheme_of_study').select('*').order('created_at', { ascending: false }),
       supabase.from('teachers').select('*').order('full_name'),

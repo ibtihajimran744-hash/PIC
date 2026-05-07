@@ -781,6 +781,123 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     printWindow.document.close();
   };
 
+  const printRollSlip = (slip: any) => {
+    const st = students.find(x => x.roll_no === slip.student_roll);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const content = `
+      <html>
+        <head>
+          <title>Roll No Slip - ${slip.student_roll}</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1e293b; display: flex; justify-content: center; }
+            .slip { width: 350px; border: 2px solid #e2e8f0; border-radius: 20px; padding: 25px; position: relative; background: white; }
+            .header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+            .logo { width: 50px; height: 50px; object-fit: contain; }
+            .college-name { font-size: 16px; font-weight: 900; color: #1e1b4b; margin: 0; }
+            .slip-title { font-size: 12px; font-weight: 900; color: #4f46e5; text-transform: uppercase; margin-top: 2px; }
+            .info-box { border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 15px 0; margin: 15px 0; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; }
+            .label { font-weight: 900; color: #94a3b8; text-transform: uppercase; font-size: 9px; }
+            .value { font-weight: 700; color: #1e293b; }
+            .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+            .date { font-size: 9px; color: #94a3b8; font-weight: 700; }
+            .signature { border-top: 1px solid #e2e8f0; width: 100px; text-align: center; font-size: 9px; padding-top: 5px; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <div class="slip">
+            <div class="header">
+              <img src="${LOGO_BASE64}" class="logo" />
+              <div>
+                <h1 class="college-name">${BRANDING.name}</h1>
+                <p class="slip-title">Roll No Slip: ${slip.exam_type}</p>
+              </div>
+            </div>
+            <div class="info-box">
+              <div class="row"><span class="label">Candidate Name</span><span class="value">${st?.full_name || 'Candidate'}</span></div>
+              <div class="row"><span class="label">Roll Number</span><span class="value" style="color: #4f46e5;">${slip.student_roll}</span></div>
+              <div class="row"><span class="label">Year / Session</span><span class="value">${slip.exam_year}</span></div>
+              <div class="row"><span class="label">Hall / Seat</span><span class="value">${slip.hall_no} / ${slip.seat_no}</span></div>
+              <div class="row"><span class="label">Exam Center</span><span class="value">${slip.exam_center}</span></div>
+            </div>
+            <div class="footer">
+              <span class="date">Dated: ${new Date(slip.generated_at).toLocaleDateString()}</span>
+              <div class="signature">Controller Exam</div>
+            </div>
+          </div>
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
+  const printAllRollSlips = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const slipsHtml = rollSlips.map(slip => {
+      const st = students.find(x => x.roll_no === slip.student_roll);
+      return `
+        <div class="slip">
+          <div class="header">
+            <img src="${LOGO_BASE64}" class="logo" />
+            <div>
+              <h1 class="college-name">${BRANDING.name}</h1>
+              <p class="slip-title">Roll No Slip: ${slip.exam_type}</p>
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="row"><span class="label">Candidate Name</span><span class="value">${st?.full_name || 'Candidate'}</span></div>
+            <div class="row"><span class="label">Roll Number</span><span class="value" style="color: #4f46e5;">${slip.student_roll}</span></div>
+            <div class="row"><span class="label">Year / Session</span><span class="value">${slip.exam_year}</span></div>
+            <div class="row"><span class="label">Hall / Seat</span><span class="value">${slip.hall_no} / ${slip.seat_no}</span></div>
+            <div class="row"><span class="label">Exam Center</span><span class="value">${slip.exam_center}</span></div>
+          </div>
+          <div class="footer">
+            <span class="date">Dated: ${new Date(slip.generated_at).toLocaleDateString()}</span>
+            <div class="signature">Controller Exam</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const content = `
+      <html>
+        <head>
+          <title>All Roll No Slips</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; padding: 20px; color: #1e293b; }
+            .slip { width: 350px; border: 2px solid #e2e8f0; border-radius: 20px; padding: 25px; margin: 10px; display: inline-block; vertical-align: top; page-break-inside: avoid; background: white; }
+            .header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+            .logo { width: 50px; height: 50px; object-fit: contain; }
+            .college-name { font-size: 16px; font-weight: 900; color: #1e1b4b; margin: 0; }
+            .slip-title { font-size: 12px; font-weight: 900; color: #4f46e5; text-transform: uppercase; margin-top: 2px; }
+            .info-box { border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 15px 0; margin: 15px 0; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; }
+            .label { font-weight: 900; color: #94a3b8; text-transform: uppercase; font-size: 9px; }
+            .value { font-weight: 700; color: #1e293b; }
+            .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+            .date { font-size: 9px; color: #94a3b8; font-weight: 700; }
+            .signature { border-top: 1px solid #e2e8f0; width: 100px; text-align: center; font-size: 9px; padding-top: 5px; font-weight: 700; }
+            @media print { .slip { page-break-inside: avoid; } }
+          </style>
+        </head>
+        <body>
+          <div style="display: flex; flex-wrap: wrap; justify-content: center;">
+            ${slipsHtml}
+          </div>
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
   const upcomingExams    = schedules.filter(s => s.status === 'Upcoming').length;
   const ongoingExams     = schedules.filter(s => s.status === 'Ongoing').length;
   const unverifiedGrades = grades.filter(g => !g.is_verified).length;
@@ -1621,7 +1738,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="font-black text-slate-900 flex items-center gap-2"><UserSquare size={18} style={{ color: ACCENT }} /> Roll Number Slips Generator</h3>
                     <div className="flex gap-2">
-                       <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-black text-slate-600 flex items-center gap-2 hover:bg-slate-100">
+                       <button onClick={printAllRollSlips} className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-black text-slate-600 flex items-center gap-2 hover:bg-slate-100">
                          <Printer size={14} /> Print All Slips
                        </button>
                     </div>
@@ -1663,7 +1780,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                           </div>
                           <div className="flex items-center justify-between">
                              <p className="text-[8px] font-bold text-slate-400">Generated: {new Date(slip.generated_at).toLocaleDateString()}</p>
-                             <button className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600"><Printer size={12} /></button>
+                             <button onClick={() => printRollSlip(slip)} className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600"><Printer size={12} /></button>
                           </div>
                        </div>
                      );
