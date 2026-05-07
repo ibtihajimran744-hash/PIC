@@ -4,9 +4,11 @@ import {
   LayoutDashboard, Calendar, FileText, ClipboardList, Armchair,
   Eye, PenLine, Award, LogOut, RefreshCw, X, Plus,
   Search, CheckCircle, AlertCircle, Clock, Users,
-  Menu, ChevronRight, Shield, BookOpen, BarChart2, History
+  Menu, ChevronRight, Shield, BookOpen, BarChart2, History,
+  Upload, UserSquare, UserCheck, Inbox, Printer, Trash2, Megaphone, FileImage, Download
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { BRANDING, LOGO_BASE64 } from '../lib/constants';
 
 interface Props {
   onLogout: () => void;
@@ -18,15 +20,20 @@ const GRADIENT = 'linear-gradient(135deg,#4F46E5,#7C3AED)';
 
 const PKR = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 
-type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results';
+type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results' | 'upload' | 'rollslips' | 'dutychart' | 'paperperforma' | 'reportcards';
 
 const TABS = [
-  { id: 'dashboard',    label: 'Dashboard',      icon: LayoutDashboard },
-  { id: 'schedules',    label: 'Exam Schedules', icon: Calendar },
-  { id: 'seating',      label: 'Seating Plans',  icon: Armchair },
-  { id: 'invigilation', label: 'Invigilation',   icon: Eye },
-  { id: 'grades',       label: 'Grade Entry',    icon: PenLine },
-  { id: 'results',      label: 'Result Cards',   icon: Award },
+  { id: 'dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
+  { id: 'schedules',      label: 'Exam Schedules', icon: Calendar },
+  { id: 'seating',        label: 'Seating Plans',  icon: Armchair },
+  { id: 'invigilation',   label: 'Invigilation',   icon: Eye },
+  { id: 'grades',         label: 'Grade Entry',    icon: PenLine },
+  { id: 'results',        label: 'Result Cards',   icon: Award },
+  { id: 'upload',         label: 'Upload Docs',    icon: Upload },
+  { id: 'rollslips',      label: 'Roll No Slips',  icon: UserSquare },
+  { id: 'dutychart',      label: 'Duty Chart',     icon: UserCheck },
+  { id: 'paperperforma',  label: 'Paper Performa', icon: Inbox },
+  { id: 'reportcards',    label: 'Report Cards',   icon: Printer },
 ];
 
 const EXAM_TYPES = ['Mid-Term','Final','Unit Test','Mock','Board','Chapter Test','Quiz','Assignment'];
@@ -85,6 +92,11 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [students,     setStudents]     = useState<any[]>([]);
   const [teachers,     setTeachers]     = useState<any[]>([]);
   const [adminUsers,   setAdminUsers]   = useState<any[]>([]);
+  const [uploadedDocs, setUploadedDocs] = useState<any[]>([]);
+  const [rollSlips,    setRollSlips]    = useState<any[]>([]);
+  const [dutyChart,    setDutyChart]    = useState<any[]>([]);
+  const [performaList, setPerformaList] = useState<any[]>([]);
+  const [examNotifs,   setExamNotifs]   = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
@@ -98,12 +110,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [seatForm,  setSeatForm]  = useState<any>({ exam_name: '', student_roll: '', room_no: '', seat_no: '', date: '', class_name: '', full_name: '' });
   const [invigiForm,setInvigiForm]= useState<any>({ exam_name: '', teacher_name: '', class_name: '', room_no: '', exam_date: '' });
   const [gradeForm, setGradeForm] = useState<any>({ exam_id: '', student_roll: '', subject: '', score: '', total_marks: 100, grade_letter: '', remarks: '' });
+  const [docForm,   setDocForm]   = useState<any>({ title: '', category: 'General', visible_to: ['All'], file: null });
+  const [slipForm,  setSlipForm]  = useState<any>({ exam_type: 'Mid-Term', template: null, year: '2026' });
+  const [dutyForm,  setDutyForm]  = useState<any>({ teacher_id: '', exam_date: '', exam_type: 'Mid-Term', room_no: '', shift: 'Morning', assigned_class: '' });
+  const [perfForm,  setPerfForm]  = useState<any>({ teacher_id: '', subject: '', class_section: '', exam_date: '', bundle_count: 0 });
 
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }] = await Promise.all([
+    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }] = await Promise.all([
       supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
       supabase.from('exams').select('*').order('date', { ascending: false }),
       supabase.from('exam_seating').select('*').order('created_at', { ascending: false }),
@@ -113,7 +129,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('students').select('roll_no,full_name,class_section,program,part').neq('status', 'Deleted').order('roll_no'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept').order('full_name'),
       supabase.from('admin_users').select('id,full_name,role').order('full_name'),
+      supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Examiner},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6),
+      supabase.from('roll_number_slips').select('*').order('generated_at', { ascending: false }),
+      supabase.from('duty_chart').select('*').order('exam_date', { ascending: false }),
+      supabase.from('paper_receiving_performa').select('*').order('created_at', { ascending: false }),
+      supabase.from('exam_notifications').select('*').order('created_at', { ascending: false }),
     ]);
+
+    setUploadedDocs(ud || []); setRollSlips(rs || []); setDutyChart(dc || []); setPerformaList(pl || []); setExamNotifs(en || []);
 
     let scData = sc || [];
     let grData = gr || [];
@@ -427,6 +450,146 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     }
   };
 
+  const uploadDocument = async () => {
+    if (!docForm.file || !docForm.title) { showToast('Title and file required', false); return; }
+    setSaving(true);
+    try {
+      const file = docForm.file;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `exam-docs/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage.from('exam-docs').upload(filePath, file);
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('exam-docs').getPublicUrl(filePath);
+
+      const { error } = await supabase.from('uploaded_documents').insert([{
+        title: docForm.title,
+        category: docForm.category,
+        file_url: publicUrl,
+        file_name: file.name,
+        file_type: fileExt,
+        visible_to: docForm.visible_to,
+        uploaded_by: adminData.full_name,
+        uploader_role: 'EXAMINER'
+      }]);
+
+      if (error) throw error;
+      showToast('Document uploaded and broadcasted');
+      setDocForm({ title: '', category: 'General', visible_to: ['All'], file: null });
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const deleteDocument = async (id: number) => {
+    if (!window.confirm('Are you sure?')) return;
+    try {
+      await supabase.from('uploaded_documents').delete().eq('id', id);
+      showToast('Document deleted');
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+  };
+
+  const generateRollSlips = async () => {
+    setSaving(true);
+    try {
+      const rolls = students.map((s, i) => ({
+        student_roll: s.roll_no,
+        exam_type: slipForm.exam_type,
+        exam_year: slipForm.year,
+        exam_center: BRANDING.name,
+        hall_no: Math.floor(i / 30) + 1,
+        seat_no: (i % 30) + 1,
+        generated_by: adminData.full_name,
+        is_published: false
+      }));
+
+      const { error } = await supabase.from('roll_number_slips').insert(rolls);
+      if (error) throw error;
+      showToast(`${rolls.length} Roll number slips generated`);
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const saveDuty = async () => {
+    if (!dutyForm.teacher_id || !dutyForm.exam_date) { showToast('Complete duty form', false); return; }
+    setSaving(true);
+    try {
+      const teacher = teachers.find(t => String(t.id) === String(dutyForm.teacher_id));
+      const { error } = await supabase.from('duty_chart').insert([{
+        teacher_id: Number(dutyForm.teacher_id),
+        teacher_name: teacher?.full_name || 'Teacher',
+        exam_date: dutyForm.exam_date,
+        exam_type: dutyForm.exam_type,
+        room_no: dutyForm.room_no,
+        duty_shift: dutyForm.shift,
+        assigned_class: dutyForm.assigned_class,
+        status: 'Assigned'
+      }]);
+      if (error) throw error;
+
+      await supabase.from('exam_notifications').insert([{
+        teacher_id: Number(dutyForm.teacher_id),
+        title: 'New Exam Duty Assigned',
+        message: `You have exam duty on ${dutyForm.exam_date} in Room ${dutyForm.room_no} (${dutyForm.shift}).`,
+        type: 'DUTY',
+        is_read: false
+      }]);
+
+      showToast('Duty assigned and teacher notified');
+      setDutyForm({ teacher_id: '', exam_date: '', exam_type: 'Mid-Term', room_no: '', shift: 'Morning', assigned_class: '' });
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const savePerforma = async () => {
+    if (!perfForm.teacher_id || !perfForm.subject) { showToast('Complete performa form', false); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('paper_receiving_performa').insert([{
+        teacher_id: Number(perfForm.teacher_id),
+        subject: perfForm.subject,
+        class_section: perfForm.class_section,
+        exam_date: perfForm.exam_date,
+        bundle_count: perfForm.bundle_count,
+        status: 'Pending'
+      }]);
+      if (error) throw error;
+
+      await supabase.from('exam_notifications').insert([{
+        teacher_id: Number(perfForm.teacher_id),
+        title: 'Paper Performa Required',
+        message: `Please submit paper performa for ${perfForm.subject} on ${perfForm.exam_date}.`,
+        type: 'PERFORMA',
+        is_read: false
+      }]);
+
+      showToast('Performa request sent to teacher');
+      setPerfForm({ teacher_id: '', subject: '', class_section: '', exam_date: '', bundle_count: 0 });
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const confirmPaperReceived = async (id: number) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('paper_receiving_performa').update({ 
+        status: 'Received', 
+        is_received: true, 
+        received_at: new Date().toISOString() 
+      }).eq('id', id);
+      if (error) throw error;
+      showToast('Paper receipt confirmed');
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
   const openStudentResults = async (student: any) => {
     setLoading(true);
     try {
@@ -457,9 +620,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     const content = `
       <html>
         <head>
-          <title>Seating Plan - PIC Campus</title>
+          <title>Seating Plan - ${BRANDING.name}</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #1e293b; }
+            .header-info { text-align: center; margin-bottom: 20px; }
+            .branding { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px; }
+            .logo { width: 80px; height: 80px; object-fit: contain; }
+            .college-name { font-size: 32px; font-weight: 900; margin: 0; color: #1e1b4b; }
+            .address { font-size: 12px; color: #64748b; margin-top: 5px; }
             .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #4f46e5; padding-bottom: 20px; }
             h1 { margin: 0; color: #1e1b4b; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
             .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; font-weight: bold; color: #64748b; }
@@ -472,8 +640,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           </style>
         </head>
         <body>
+          <div class="header-info">
+            <div class="branding">
+              <img src="${LOGO_BASE64}" class="logo" />
+              <h1 class="college-name">${BRANDING.name}</h1>
+            </div>
+            <p class="address">${BRANDING.address} | ${BRANDING.phone}</p>
+          </div>
           <div class="header">
-            <h1>Punjab International College</h1>
             <p style="margin: 5px 0 0; font-weight: bold; color: #4f46e5;">Official Examination Seating Plan</p>
             <div class="meta">
               <span>Date: ${new Date().toLocaleDateString('en-PK')}</span>
@@ -508,7 +682,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             </tbody>
           </table>
           <div class="footer">
-            Generated by ${adminData.full_name} • PIC Examination Department
+            Generated by ${adminData.full_name} • ${BRANDING.name} Examination Department
           </div>
           <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body>
@@ -536,9 +710,12 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           <style>
             body { font-family: 'Segoe UI', sans-serif; padding: 40px; color: #1e293b; background: white; }
             .card { border: 4px double #4f46e5; padding: 30px; position: relative; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+            .header-info { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+            .branding { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 10px; }
+            .logo { width: 70px; height: 70px; object-fit: contain; }
             .school-name { font-size: 28px; font-weight: 900; color: #1e1b4b; margin: 0; }
-            .title { font-size: 16px; font-weight: 700; color: #4f46e5; margin-top: 5px; text-transform: uppercase; letter-spacing: 2px; }
+            .address { font-size: 11px; color: #64748b; margin-top: 5px; }
+            .title { font-size: 16px; font-weight: 700; color: #4f46e5; margin-top: 10px; text-transform: uppercase; letter-spacing: 2px; }
             .student-info { display: flex; justify-content: gap; margin-bottom: 30px; font-size: 14px; }
             .info-item { flex: 1; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
             .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
@@ -550,13 +727,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; width: 250px; border-radius: 10px; }
             .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
             .final-total { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 10px; font-weight: 900; font-size: 18px; color: #4f46e5; }
-            .seal { position: absolute; bottom: 40px; left: 40px; opacity: 0.1; transform: rotate(-15deg); }
           </style>
         </head>
         <body>
           <div class="card">
-            <div class="header">
-              <h1 class="school-name">PUNJAB INTERNATIONAL COLLEGE</h1>
+            <div class="header-info">
+              <div class="branding">
+                <img src="${LOGO_BASE64}" class="logo" />
+                <h1 class="school-name">${BRANDING.name}</h1>
+              </div>
+              <p class="address">${BRANDING.address} | ${BRANDING.phone}</p>
               <p class="title">OFFICIAL RESULT CARD</p>
             </div>
             <div class="student-info">
@@ -778,6 +958,33 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   <StatCard label="Total Exams"        value={exams.length}     sub="Created this session"              color="#0891b2"    icon={FileText} />
                   <StatCard label="Unverified Grades"  value={unverifiedGrades} sub="Needs verification"                color="#D97706"    icon={PenLine} />
                   <StatCard label="Published Results"  value={publishedResults} sub="Result cards published"            color="#059669"    icon={Award} />
+                </div>
+
+                {/* Notices & Documents */}
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><Megaphone size={16} style={{ color: ACCENT }} /> Notices & Documents</h3>
+                    <button onClick={() => setTab('upload')} className="text-xs font-bold hover:underline" style={{ color: ACCENT }}>Manage Docs →</button>
+                  </div>
+                  <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {uploadedDocs.slice(0, 4).map(doc => (
+                      <div key={doc.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between group">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-indigo-500 shadow-sm">
+                            {doc.file_type === 'pdf' ? <FileText size={18} /> : <FileImage size={18} />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-slate-800">{doc.title}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{doc.category} • {new Date(doc.created_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all">
+                          <Download size={14} />
+                        </a>
+                      </div>
+                    ))}
+                    {!uploadedDocs.length && <p className="col-span-full py-6 text-center text-slate-400 font-bold italic">No documents broadcasted yet.</p>}
+                  </div>
                 </div>
 
                 {/* Recent exams */}
@@ -1341,6 +1548,291 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     </div>
                   )}
                 </AnimatePresence>
+              </motion.div>
+            )}
+
+            {/* ══════════ DOCUMENT UPLOAD ══════════ */}
+            {tab === 'upload' && (
+              <motion.div key="upload" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Upload size={18} style={{ color: ACCENT }} /> Upload & Broadcast Document</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                    <FM label="Document Title" req><TI value={docForm.title} onChange={(e: any) => setDocForm((p: any) => ({ ...p, title: e.target.value }))} placeholder="e.g. Annual Exam DateSheet" /></FM>
+                    <FM label="Category" req>
+                      <TS value={docForm.category} onChange={(e: any) => setDocForm((p: any) => ({ ...p, category: e.target.value }))}>
+                        {['Exam', 'Result', 'Notice', 'General'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Visible To" req>
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {['Students', 'Teachers', 'Principal', 'All'].map(v => (
+                          <label key={v} className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={docForm.visible_to.includes(v)} onChange={(e: any) => {
+                              const list = e.target.checked ? [...docForm.visible_to, v] : docForm.visible_to.filter((x: any) => x !== v);
+                              setDocForm((p: any) => ({ ...p, visible_to: list }));
+                            }} className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600" />
+                            <span className="text-[10px] font-bold text-slate-600">{v}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </FM>
+                    <FM label="Choose File" req>
+                      <input type="file" onChange={(e: any) => setDocForm((p: any) => ({ ...p, file: e.target.files?.[0] || null }))} className="text-xs text-slate-500 file:bg-indigo-50 file:text-indigo-600 file:border-none file:rounded-lg file:px-3 file:py-1.5 file:font-black file:mr-3 cursor-pointer" />
+                    </FM>
+                    <button onClick={uploadDocument} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                      {saving ? 'Uploading...' : 'Upload & Broadcast'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {uploadedDocs.map(doc => (
+                    <motion.div layout key={doc.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
+                          {doc.file_type === 'pdf' ? <FileText size={24} /> : <FileImage size={24} />}
+                        </div>
+                        <button onClick={() => deleteDocument(doc.id)} className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all opacity-0 group-hover:opacity-100">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <h4 className="font-black text-slate-800 mb-1 truncate">{doc.title}</h4>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{doc.category} • {doc.file_type?.toUpperCase()}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex -space-x-1">
+                          {doc.visible_to?.map((v: any) => (
+                            <div key={v} className="px-2 py-0.5 rounded-full border border-white bg-slate-100 text-[8px] font-black text-slate-500 shadow-sm">{v}</div>
+                          ))}
+                        </div>
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] font-black text-indigo-600 hover:underline">
+                          <Download size={12} /> View/Download
+                        </a>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══════════ ROLL NO SLIPS ══════════ */}
+            {tab === 'rollslips' && (
+              <motion.div key="rollslips" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><UserSquare size={18} style={{ color: ACCENT }} /> Roll Number Slips Generator</h3>
+                    <div className="flex gap-2">
+                       <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-black text-slate-600 flex items-center gap-2 hover:bg-slate-100">
+                         <Printer size={14} /> Print All Slips
+                       </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <FM label="Exam Type" req>
+                      <TS value={slipForm.exam_type} onChange={(e: any) => setSlipForm((p: any) => ({ ...p, exam_type: e.target.value }))}>
+                        {EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Year" req><TI value={slipForm.year} onChange={(e: any) => setSlipForm((p: any) => ({ ...p, year: e.target.value }))} /></FM>
+                    <FM label="Upload Slip Background (Template)">
+                      <input type="file" className="text-[10px]" />
+                    </FM>
+                    <button onClick={generateRollSlips} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                      {saving ? 'Generating...' : 'Bulk Generate Slips'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {rollSlips.slice(0, 12).map(slip => {
+                     const st = students.find(x => x.roll_no === slip.student_roll);
+                     return (
+                       <div key={slip.id} className="bg-white border-2 border-slate-100 rounded-3xl p-6 relative overflow-hidden group">
+                          <div className="absolute right-0 top-0 w-24 h-24 bg-indigo-50/50 rounded-full -translate-y-12 translate-x-12" />
+                          <div className="flex items-center gap-3 mb-4">
+                             <img src={LOGO_BASE64} className="w-8 h-8 object-contain" />
+                             <div>
+                               <p className="text-[8px] font-black text-slate-400 uppercase leading-none">{BRANDING.name}</p>
+                               <p className="text-[10px] font-black text-indigo-600 uppercase mt-0.5">Roll No Slip: {slip.exam_type}</p>
+                             </div>
+                          </div>
+                          <div className="space-y-2 border-y border-slate-50 py-4 my-4">
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Candidate</span><span className="text-xs font-black text-slate-800">{st?.full_name || 'Student'}</span></div>
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Roll Number</span><span className="text-xs font-black text-indigo-600">{slip.student_roll}</span></div>
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Hall / Seat</span><span className="text-xs font-black text-slate-800">{slip.hall_no} / {slip.seat_no}</span></div>
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Exam Center</span><span className="text-xs font-black text-slate-800">{slip.exam_center}</span></div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                             <p className="text-[8px] font-bold text-slate-400">Generated: {new Date(slip.generated_at).toLocaleDateString()}</p>
+                             <button className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600"><Printer size={12} /></button>
+                          </div>
+                       </div>
+                     );
+                   })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══════════ DUTY CHART ══════════ */}
+            {tab === 'dutychart' && (
+              <motion.div key="dutychart" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><UserCheck size={18} style={{ color: ACCENT }} /> Assign Examination Duty</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
+                    <FM label="Teacher" req>
+                      <TS value={dutyForm.teacher_id} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, teacher_id: e.target.value }))}>
+                        <option value="">Select...</option>
+                        {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Exam Date" req><TI type="date" value={dutyForm.exam_date} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, exam_date: e.target.value }))} /></FM>
+                    <FM label="Exam Type" req>
+                      <TS value={dutyForm.exam_type} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, exam_type: e.target.value }))}>
+                        {EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Shift" req>
+                      <TS value={dutyForm.shift} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, shift: e.target.value }))}>
+                        {['Morning', 'Evening', 'Night'].map(s => <option key={s} value={s}>{s}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Room No" req><TI value={dutyForm.room_no} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, room_no: e.target.value }))} /></FM>
+                    <button onClick={saveDuty} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                      {saving ? 'Assigning...' : 'Assign Duty'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+                   <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          {['Teacher','Date','Type','Room','Shift','Status','Reported At'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dutyChart.map(duty => (
+                          <tr key={duty.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 font-black text-slate-800">{duty.teacher_name}</td>
+                            <td className="px-6 py-4 font-bold text-slate-600">{duty.exam_date}</td>
+                            <td className="px-6 py-4"><Badge c="bg-indigo-50 text-indigo-700 border-indigo-100" label={duty.exam_type} /></td>
+                            <td className="px-6 py-4 font-black text-slate-500">{duty.room_no}</td>
+                            <td className="px-6 py-4 font-bold text-slate-500">{duty.duty_shift}</td>
+                            <td className="px-6 py-4">
+                               <Badge c={duty.status === 'Reported' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} label={duty.status} />
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-400 font-bold">{duty.reported_at ? new Date(duty.reported_at).toLocaleTimeString() : 'Pending'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                   </table>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══════════ PAPER PERFORMA ══════════ */}
+            {tab === 'paperperforma' && (
+              <motion.div key="paperperforma" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                   <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Inbox size={18} style={{ color: ACCENT }} /> Paper Receiving Performa Management</h3>
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                      <FM label="Assign to Teacher" req>
+                        <TS value={perfForm.teacher_id} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, teacher_id: e.target.value }))}>
+                          <option value="">Select...</option>
+                          {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                        </TS>
+                      </FM>
+                      <FM label="Subject" req><TI value={perfForm.subject} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, subject: e.target.value }))} /></FM>
+                      <FM label="Class/Section" req><TI value={perfForm.class_section} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
+                      <FM label="Exam Date" req><TI type="date" value={perfForm.exam_date} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, exam_date: e.target.value }))} /></FM>
+                      <button onClick={savePerforma} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                        {saving ? 'Saving...' : 'Request Performa'}
+                      </button>
+                   </div>
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+                   <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          {['Subject','Class','Teacher','Date','Bundles','Status','Action'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {performaList.map(perf => {
+                          const teacher = teachers.find(t => t.id === perf.teacher_id);
+                          return (
+                            <tr key={perf.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-4 font-black text-slate-800">{perf.subject}</td>
+                              <td className="px-6 py-4 font-bold text-slate-500">{perf.class_section}</td>
+                              <td className="px-6 py-4 font-bold text-slate-600">{teacher?.full_name || 'Teacher'}</td>
+                              <td className="px-6 py-4 text-slate-500">{perf.exam_date}</td>
+                              <td className="px-6 py-4 font-black">{perf.bundle_count}</td>
+                              <td className="px-6 py-4"><Badge c={perf.status === 'Received' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} label={perf.status} /></td>
+                              <td className="px-6 py-4">
+                                {perf.status !== 'Received' && (
+                                  <button onClick={() => confirmPaperReceived(perf.id)} className="text-xs font-black text-indigo-600 hover:underline">Confirm Receipt</button>
+                                )}
+                                {perf.status === 'Received' && <span className="text-[10px] font-bold text-emerald-500">Confirmed at {new Date(perf.received_at).toLocaleDateString()}</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                   </table>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══════════ REPORT CARDS (ENHANCED) ══════════ */}
+            {tab === 'reportcards' && (
+              <motion.div key="reportcards" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
+                   <div>
+                     <h3 className="font-black text-slate-900 flex items-center gap-2"><Award size={20} style={{ color: ACCENT }} /> Detailed Student Report Cards</h3>
+                     <p className="text-xs text-slate-400 font-medium mt-1">Generate, Verify and Print comprehensive report cards with college branding.</p>
+                   </div>
+                   <button onClick={() => generateResultCards(schedules[0]?.id)} disabled={saving} className="px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20" style={{ background: GRADIENT }}>
+                     {saving ? 'Processing...' : 'Auto-Generate All Cards'}
+                   </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase())).slice(0, 50).map(s => {
+                     const studentGrades = grades.filter(g => g.student_roll === s.roll_no);
+                     const totalTests = studentGrades.length;
+                     const avgPct = totalTests > 0 ? Number(studentGrades.reduce((sum, g) => sum + Number(g.percentage), 0) / totalTests).toFixed(1) : 0;
+                     return (
+                       <motion.div whileHover={{ y: -5 }} key={s.roll_no} className="bg-white rounded-3xl border-2 border-slate-100 p-6 shadow-sm hover:border-indigo-200 transition-all">
+                          <div className="flex items-center gap-3 mb-6">
+                             <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center font-black text-indigo-600 text-lg">
+                               {s.full_name?.charAt(0)}
+                             </div>
+                             <div>
+                               <h4 className="font-black text-slate-800 leading-none">{s.full_name}</h4>
+                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">Roll: {s.roll_no} • {s.class_section}</p>
+                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 mb-6">
+                             <div className="bg-slate-50 p-3 rounded-2xl">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Avg Score</p>
+                                <p className="text-xl font-black text-indigo-600 leading-none">{avgPct}%</p>
+                             </div>
+                             <div className="bg-slate-50 p-3 rounded-2xl">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Tests</p>
+                                <p className="text-xl font-black text-slate-800 leading-none">{totalTests}</p>
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <button onClick={() => openStudentResults(s)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-black shadow-lg shadow-indigo-200">View Details</button>
+                             <button onClick={() => {
+                               setSelectedStudentResults({ student: s, grades: studentGrades });
+                               setTimeout(printResultCard, 100);
+                             }} className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-indigo-200 transition-all"><Printer size={16} /></button>
+                          </div>
+                       </motion.div>
+                     );
+                   })}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

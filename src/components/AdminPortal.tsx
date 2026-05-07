@@ -14,6 +14,10 @@ import { AcademicsPortal } from './AcademicsPortal';
 import { ExaminerPortal } from './ExaminerPortal';
 import { supabase } from '../services/supabase';
 
+const FileImage = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+);
+
 interface AdminPortalProps {
   onLogout: () => void;
   adminData: { id: string; full_name: string; role: string; username: string };
@@ -589,6 +593,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [tab, setTab]               = useState('dashboard');
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [loading, setLoading]       = useState(true);
+  const [notices, setNotices]       = useState<any[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [savedMsg, setSavedMsg]     = useState('');
   const [errorMsg, setErrorMsg]     = useState('');
@@ -1328,7 +1333,7 @@ const handlePrintReport = (data: any) => {
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
     try {
-      const [s1, s2, s3, s4, s5, s6, s9, s10] = await Promise.all([
+      const [s1, s2, s3, s4, s5, s6, s9, s10, sN] = await Promise.all([
         supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,total_xp,current_badge,total_package,paid_amount').order('class_section').order('full_name'),
         supabase.from('academics_class_summary').select('*'),
         supabase.from('admin_notifications').select('*').in('target_role', ['Principal', 'VP', 'Director']).order('created_at', { ascending: false }).limit(30),
@@ -1337,6 +1342,7 @@ const handlePrintReport = (data: any) => {
         supabase.from('leave_requests').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('teachers').select('*').order('full_name'),
         supabase.from('teacher_salaries').select('*').order('payment_date', { ascending: false }).limit(100),
+        supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Principal},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6)
       ]);
       const studs   = s1.data || [];
       const present = (s5.data || []).filter((a: any) => a.status === 'Present').length;
@@ -1346,6 +1352,7 @@ const handlePrintReport = (data: any) => {
       setStudents(studs); setClassSummary(s2.data || []); setNotifications(s3.data || []);
       setAdmForms(s4.data || []); setLeaveRequests(s6.data || []);
       setTeachers(s9.data || []); setSalaries(s10.data || []);
+      setNotices(sN.data || []);
 
       if (isSuperAdmin) {
         const [sf1, sf2, sf3, sf4, sf5, sf8, sf11] = await Promise.all([
@@ -1381,7 +1388,7 @@ const handlePrintReport = (data: any) => {
         if (pData) setUserPermissions(pData.permissions || []);
       }
 
-      const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10] = await Promise.all([
+      const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, sN] = await Promise.all([
         supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
         supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
         supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
@@ -1392,11 +1399,13 @@ const handlePrintReport = (data: any) => {
         supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
         supabase.from('teachers').select('*').order('full_name'),
         supabase.from('teacher_salaries').select('*').order('payment_date', { ascending: false }).limit(100),
+        supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Accountant},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6)
       ]);
       setStudents(s1.data || []);
       setFeeGroups((s2.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
       setTransactions(s3.data || []);
       setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
+      setNotices(sN.data || []);
       const { data: ehData } = await supabase.from('expense_headers').select('*').order('name');
       setExpenseHeaders(ehData || []);
       setAdmForms(s7.data || []); setTeachers(s9.data || []); setSalaries(s10.data || []);
@@ -2306,6 +2315,31 @@ const active = tab === id; const badgeN = getBadge(id);
                     ))}
                   </div>
                 </div>
+
+                {/* Notices & Documents */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                       <FileText size={16} className="text-teal-600" /> Recent Notices & Documents
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {notices.map(doc => (
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" 
+                        className="bg-white border border-slate-100 rounded-[2rem] p-5 flex items-center gap-4 shadow-sm hover:border-teal-200 transition-all group">
+                        <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center group-hover:scale-110 transition-all">
+                          {doc.file_type === 'pdf' ? <FileText size={22} /> : <FileImage size={22} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-black text-slate-800 text-sm truncate">{doc.title}</p>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">{doc.category} · {new Date(doc.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  {notices.length === 0 && <div className="p-12 text-center text-slate-400 text-sm bg-white rounded-[2rem] border border-dashed border-slate-200">No recent notices found</div>}
+                </div>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <StatCard icon={Users}         label="Total Students" value={stats.totalStu || 0}    sub={`${stats.maleStudents || 0}M · ${stats.femaleStudents || 0}F`} color="bg-teal-50 text-teal-600" />
                   <StatCard icon={UserCheck}     label="Present Today"  value={`${stats.attPct || 0}%`} sub={`${stats.present || 0} present`} color="bg-emerald-50 text-emerald-600" />
@@ -2577,6 +2611,31 @@ const active = tab === id; const badgeN = getBadge(id);
                     ))}
                   </div>
                 </div>
+
+                {/* Notices & Documents */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                       <FileText size={16} className="text-blue-600" /> Recent Notices & Documents
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {notices.map(doc => (
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" 
+                        className="bg-white border border-slate-100 rounded-[2rem] p-5 flex items-center gap-4 shadow-sm hover:border-blue-200 transition-all group">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-all">
+                          {doc.file_type === 'pdf' ? <FileText size={22} /> : <FileImage size={22} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-black text-slate-800 text-sm truncate">{doc.title}</p>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">{doc.category} · {new Date(doc.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  {notices.length === 0 && <div className="p-12 text-center text-slate-400 text-sm bg-white rounded-[2rem] border border-dashed border-slate-200">No recent notices found</div>}
+                </div>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <StatCard icon={DollarSign}  label="Balance Due"       value={PKR(totalBalance)} sub="Across all students"     color="bg-rose-50 text-rose-600"     alert={totalBalance > 0} />
                   <StatCard icon={Receipt}     label="Today's Revenue"   value={PKR(todayRevenue)} sub={`${todayTx.length} txns`} color="bg-emerald-50 text-emerald-600" />

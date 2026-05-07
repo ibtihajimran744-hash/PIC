@@ -11,6 +11,10 @@ import { supabase } from '../services/supabase';
 import { AcademicSession, AcademicProgram, AcademicSubject, AcademicResource, SchemeEntry, AcademicQuiz, QuizResult } from '../services/academicManagement';
 import toast, { Toaster } from 'react-hot-toast';
 
+const FileImage = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+);
+
 interface Props {
   onLogout?: () => void;
   onBack?: () => void;
@@ -96,6 +100,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [activeSession, setActiveSession] = useState<any>(null);
   const [sessions,       setSessions]       = useState<any[]>([]);
+  const [notices,        setNotices]        = useState<any[]>([]);
   const [activePrograms, setActivePrograms] = useState<any[]>([]);
   const [allSubjects,    setAllSubjects]    = useState<any[]>([]);
   const [quizAnalytics,  setQuizAnalytics]  = useState<any>(null);
@@ -159,12 +164,14 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('academic_programs').select('*').order('created_at', { ascending: false }),
       supabase.from('subjects').select('*').order('name'),
       supabase.from('quiz_results').select('*'),
+      supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Academics},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6)
     ]);
     setSchemes(sc || []); setTeachers(tc || []); setTeacherProfs(tp || []);
     setStudents(st || []); setCourseProgress(cp || []); setTimetable(tt || []);
     setAnnouncements(an || []); setMessages(ms || []); setGrades(gr || []); setAttendance(at || []);
     setExamSchedules(exS || []); setClasses(cls || []);
     setSessions(sess || []); setActivePrograms(progs || []); setAllSubjects(subjs || []);
+    setNotices(nRes || []);
     
     const active = sess?.find(s => s.is_active);
     setActiveSession(active);
@@ -710,6 +717,30 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   <StatCard label="Quiz Attempts"    value={quizAnalytics?.total_attempts || 0} sub="Participated students"   color="#0891B2" icon={CheckCircle} />
                   <StatCard label="Scheme Entries"    value={totalSchemes}   sub={`${[...new Set(schemes.map(s => s.subject))].length} subjects`} color="#7C3AED" icon={BookMarked} />
                   <StatCard label="Overall Progress"  value={`${(courseProgress.reduce((acc, c) => acc + (c.progress_pct || 0), 0) / (courseProgress.length || 1)).toFixed(0)}%`} sub="Syllabus coverage" color="#D97706" icon={TrendingUp} />
+                </div>
+
+                {/* Notices & Documents */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                       <FileText size={16} className="text-emerald-600" /> Recent Notices & Documents
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {notices.map(doc => (
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" 
+                        className="bg-white border border-slate-100 rounded-[2rem] p-5 flex items-center gap-4 shadow-sm hover:border-emerald-200 transition-all group">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-all">
+                          {doc.file_type === 'pdf' ? <FileText size={22} /> : <FileImage size={22} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-black text-slate-800 text-sm truncate">{doc.title}</p>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">{doc.category} · {new Date(doc.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  {notices.length === 0 && <div className="p-12 text-center text-slate-400 text-sm bg-white rounded-[2rem] border border-dashed border-slate-200">No recent notices found</div>}
                 </div>
 
                 {/* Attendance overview */}

@@ -278,6 +278,10 @@ const StatCard = ({ icon:Icon, label, value, sub, accent }: any) => (
   </motion.div>
 );
 
+const FileImage = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+);
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN PORTAL
 // ═══════════════════════════════════════════════════════════════
@@ -329,6 +333,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
   const [expandedCourse,  setExpandedCourse]  = useState<string | null>(null);
   const [schemeEntries,   setSchemeEntries]   = useState<Record<string, any[]>>({});
   const [schemeLoading,   setSchemeLoading]   = useState<string | null>(null);
+  const [notices,         setNotices]         = useState<any[]>([]);
 
   // Animated progress bar component
   const ProgressBar = ({ pct, color='#3B5BDB', label, sub, animated=true }: { pct:number; color?:string; label?:string; sub?:string; animated?:boolean }) => {
@@ -356,7 +361,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
   const loadAll = useCallback(async () => {
     setLoading(true);
     const roll = studentData.roll_no;
-    const [stuR, fgR, instR, notifR, gradeR, attR, ttR, lbR] = await Promise.all([
+    const [stuR, fgR, instR, notifR, gradeR, attR, ttR, lbR, noticeRes] = await Promise.all([
       supabase.from('students').select('*').eq('roll_no', roll).single(),
       supabase.from('fee_groups').select('*').eq('student_roll', roll).order('due_date'),
       supabase.from('instalment_schedules').select('*').eq('student_roll', roll).order('instalment_no'),
@@ -365,6 +370,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
       supabase.from('attendance').select('*').eq('student_roll', roll).order('date',{ ascending:false }).limit(60),
       supabase.from('timetable').select('*').eq('class_section', studentData.class_section).order('day_of_week').order('start_time'),
       supabase.from('students').select('roll_no,full_name,total_xp,current_badge').eq('class_section', studentData.class_section).order('total_xp',{ ascending:false }).limit(20),
+      supabase.from('uploaded_documents').select('*')
+        .or(`visible_to.cs.{Students},visible_to.cs.{All}`)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
     ]);
     setStudent(stuR.data);
     setFeeGroups(fgR.data || []);
@@ -376,6 +385,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
     setAttendance(attR.data || []);
     setTimetable(ttR.data || []);
     setLeaderboard(lbR.data || []);
+    setNotices(noticeRes.data || []);
 
     // Guest/Verification Fallback
     if (!fgR.data?.length) {
@@ -765,6 +775,28 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
                     sub={`${grades.filter(g=>g.is_verified).length} verified`} accent={ACCENT}/>
                   <StatCard icon={BookOpen} label="Overdue Fines" value={PKR(totalFine)}
                     sub={totalFine>0?'Pay now to stop':'No fines'} accent={totalFine>0?'#D97706':'#059669'}/>
+                </div>
+
+                {/* Notices & Documents */}
+                <div className="space-y-3">
+                  <p className="font-black text-slate-900 text-sm flex items-center gap-2">
+                    <FileText size={15} className="text-purple-600" /> Recent Notices & Documents
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {notices.slice(0, 4).map(doc => (
+                      <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" 
+                        className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:border-purple-200 transition-all group">
+                        <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-all">
+                          {doc.file_type === 'pdf' ? <FileText size={18} /> : <FileImage size={18} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-black text-slate-800 text-sm truncate">{doc.title}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{doc.category} · {new Date(doc.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  {notices.length === 0 && <div className="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200">No recent notices</div>}
                 </div>
 
                 {/* Overdue fee alerts */}

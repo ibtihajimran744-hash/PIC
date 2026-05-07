@@ -5,7 +5,7 @@ import {
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
   CheckCircle2, User, RefreshCw, AlertCircle, Loader2,
-  BookMarked, BookCheck
+  BookMarked, BookCheck, UserCheck, Inbox, FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { 
@@ -61,6 +61,14 @@ function formatTime(timeStr: string): { time: string; period: string } {
   return { time: `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`, period };
 }
 
+const Badge = ({ c, label }: { c: string, label: string }) => (
+  <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-black uppercase border", c)}>{label}</span>
+);
+
+const FileImage = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+);
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherData, assignedStudents: initialAssignedStudents }) => {
   const [activeTab, setActiveTab] = useState('Home');
@@ -103,6 +111,12 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [newGradeChapter, setNewGradeChapter] = useState('');
   const [studentScores, setStudentScores] = useState<Record<number, number>>({});
 
+  // ── Exam Management state ────────────────────────────────────────────────
+  const [duties, setDuties] = useState<any[]>([]);
+  const [performaRequests, setPerformaRequests] = useState<any[]>([]);
+  const [notices, setNotices] = useState<any[]>([]);
+  const [loadingExams, setLoadingExams] = useState(false);
+
   // ── Reschedule state ──────────────────────────────────────────────────────
   const [schemeEntries, setSchemeEntries] = useState<SchemeEntry[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
@@ -112,6 +126,58 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [proposedDate, setProposedDate] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [submittingReschedule, setSubmittingReschedule] = useState(false);
+
+  const loadExamManagement = async () => {
+    if (!teacherData) return;
+    setLoadingExams(true);
+    try {
+      const [dutyRes, perfRes, noticeRes] = await Promise.all([
+        supabase.from('duty_chart').select('*').eq('teacher_id', teacherData.id).order('exam_date', { ascending: false }),
+        supabase.from('paper_receiving_performa').select('*').eq('teacher_id', teacherData.id).order('created_at', { ascending: false }),
+        supabase.from('uploaded_documents').select('*')
+          .or(`visible_to.cs.{Teachers},visible_to.cs.{All}`)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+      ]);
+      setDuties(dutyRes.data || []);
+      setPerformaRequests(perfRes.data || []);
+      setNotices(noticeRes.data || []);
+    } finally {
+      setLoadingExams(false);
+    }
+  };
+
+  const handleReportPresent = async (dutyId: string) => {
+    try {
+      const { error } = await supabase.from('duty_chart').update({
+        status: 'Reported',
+        reported_at: new Date().toISOString()
+      }).eq('id', dutyId);
+      if (error) throw error;
+      toast.success('Reported present successfully');
+      loadExamManagement();
+    } catch (err) {
+      toast.error('Failed to report presence');
+    }
+  };
+
+  const handleConfirmPaper = async (perfId: string) => {
+    try {
+      const { error } = await supabase.from('paper_receiving_performa').update({
+        status: 'Confirmed',
+        confirmed_at: new Date().toISOString()
+      }).eq('id', perfId);
+      if (error) throw error;
+      toast.success('Paper receipt confirmed');
+      loadExamManagement();
+    } catch (err) {
+      toast.error('Failed to confirm paper receipt');
+    }
+  };
+
+  useEffect(() => {
+    loadExamManagement();
+  }, [teacherData]);
 
   // ── Students ───────────────────────────────────────────────────────────────
   const fetchStudents = async () => {
@@ -859,6 +925,119 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </motion.div>
         );
 
+      // ── Exam Management ─────────────────────────────────────────────────────
+      case 'ExamManagement':
+        return (
+          <motion.div key="exam-mgmt" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"><ChevronLeft size={20} /></button>
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Exam Management</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Duty charts and paper receiving</p>
+              </div>
+            </div>
+
+            {loadingExams ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
+            ) : (
+              <div className="space-y-8">
+                {/* Duty Chart */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <UserCheck size={14} className="text-indigo-500" /> Assigned invigilation Duties
+                  </h4>
+                  {duties.length === 0 ? (
+                    <div className="bg-white border border-dashed border-slate-200 p-8 rounded-[2rem] text-center text-slate-400 font-bold">No duties assigned</div>
+                  ) : (
+                    duties.map(duty => (
+                      <div key={duty.id} className="bg-white border border-slate-100 rounded-[2rem] p-5 flex items-center gap-4 shadow-sm">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                          <Clock size={24} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-black text-slate-900 text-sm">{duty.exam_type} - {duty.duty_shift}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Room: {duty.room_no} · Date: {new Date(duty.exam_date).toLocaleDateString()}</p>
+                          {duty.reported_at && <p className="text-[9px] text-emerald-500 font-bold mt-1">Reported at {new Date(duty.reported_at).toLocaleTimeString()}</p>}
+                        </div>
+                        {duty.status === 'Pending' ? (
+                          <button
+                            onClick={() => handleReportPresent(duty.id)}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 transition-all shadow-md"
+                          >
+                            Report Present
+                          </button>
+                        ) : (
+                          <Badge c="bg-emerald-50 text-emerald-600 border-emerald-100" label="Reported" />
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Paper Receiving */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <Inbox size={14} className="text-amber-500" /> Paper Receiving Requests
+                  </h4>
+                  {performaRequests.length === 0 ? (
+                    <div className="bg-white border border-dashed border-slate-200 p-8 rounded-[2rem] text-center text-slate-400 font-bold">No paper requests</div>
+                  ) : (
+                    performaRequests.map(req => (
+                      <div key={req.id} className="bg-white border border-slate-100 rounded-[2rem] p-5 flex items-center gap-4 shadow-sm">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                          <FileSpreadsheet size={24} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-black text-slate-900 text-sm">{req.subject} - {req.exam_type}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{req.class_section} · Total: {req.total_papers}</p>
+                          {req.confirmed_at && <p className="text-[9px] text-emerald-500 font-bold mt-1">Confirmed at {new Date(req.confirmed_at).toLocaleTimeString()}</p>}
+                        </div>
+                        {req.status === 'Pending' ? (
+                          <button
+                            onClick={() => handleConfirmPaper(req.id)}
+                            className="px-4 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-all shadow-md"
+                          >
+                            Confirm Receipt
+                          </button>
+                        ) : (
+                          <Badge c="bg-emerald-50 text-emerald-600 border-emerald-100" label="Confirmed" />
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Notices & Documents */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <FileText size={14} className="text-purple-500" /> Notices & Documents
+                  </h4>
+                  <div className="grid grid-cols-1 gap-3">
+                    {notices.map(doc => (
+                      <a 
+                        key={doc.id} 
+                        href={doc.file_url} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:border-purple-200 transition-all group"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-all">
+                          {doc.file_type === 'pdf' ? <FileText size={18} /> : <FileImage size={18} />}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-800 text-sm truncate">{doc.title}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">{doc.category} · {new Date(doc.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </a>
+                    ))}
+                    {notices.length === 0 && <div className="bg-white border border-dashed border-slate-200 p-8 rounded-2xl text-center text-slate-400">No recent notices</div>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        );
+
       default: return null;
     }
   };
@@ -928,9 +1107,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                     <div className="grid grid-cols-2 gap-4">
                       {[
                         { label: 'Attendance', icon: CheckSquare, color: 'bg-blue-500 text-white hover:bg-blue-600', action: () => setSubPage('Attendance') },
+                        { label: 'Exam Duty', icon: UserCheck, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => setSubPage('ExamManagement') },
                         { label: 'Post Grades', icon: GraduationCap, color: 'bg-orange-500 text-white hover:bg-orange-600', action: () => setShowGradeModal(true) },
                         { label: 'Course Progress', icon: BookMarked, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => { loadRescheduleData(); setSubPage('SchemeProgress'); } },
-                        { label: 'Reschedule', icon: RefreshCw, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => { loadRescheduleData(); setSubPage('Reschedule'); } },
                       ].map(qa => (
                         <button key={qa.label} onClick={qa.action} className={cn('p-4 rounded-3xl flex flex-col items-center gap-2 transition-all shadow-md', qa.color)}>
                           <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-sm"><qa.icon size={20} /></div>
