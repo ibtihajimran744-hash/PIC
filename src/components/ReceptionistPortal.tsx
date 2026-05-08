@@ -234,7 +234,7 @@ export const ReceptionistPortal: React.FC<{
       }]);
       if (error) throw error;
       showToast('Call logged');
-      setCallForm({ caller_name: '', phone: '', purpose: '', status: 'Inbound' });
+      setCallForm({ caller_name: '', phone: '', purpose: '', status: 'Inbound', notes: '' });
       refreshData();
     } catch (err) {
       showToast('Action failed', 'error');
@@ -251,7 +251,7 @@ export const ReceptionistPortal: React.FC<{
       }]);
       if (error) throw error;
       showToast('Complaint filed');
-      setComplaintForm({ title: '', description: '', priority: 'Medium', type: 'General' });
+      setComplaintForm({ title: '', description: '', priority: 'Medium', type: 'General', complainant_name: '', contact: '' });
       refreshData();
     } catch (err) {
       showToast('Action failed', 'error');
@@ -268,7 +268,7 @@ export const ReceptionistPortal: React.FC<{
       }]);
       if (error) throw error;
       showToast('Item recorded');
-      setLostFoundForm({ item_name: '', description: '', location: '', type: 'Lost' });
+      setLostFoundForm({ item_name: '', description: '', location: '', type: 'Lost', date_found: new Date().toISOString().split('T')[0] });
       refreshData();
     } catch (err) {
       showToast('Action failed', 'error');

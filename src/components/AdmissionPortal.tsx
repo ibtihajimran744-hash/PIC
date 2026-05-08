@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   UserPlus, Users, Search, X, GraduationCap, LogOut,
   RefreshCw, Plus, Loader2, CheckCircle, AlertTriangle,
-  FileText, Database, Eye, Save
+  FileText, Database, Eye, Save, UserCheck
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { cn } from '../lib/utils';
@@ -82,6 +82,9 @@ const Toast = ({ msg, type }: { msg:string; type:'ok'|'err'|'info' }) => (
 );
 
 const EMPTY: any = {
+  student_roll_no: '',
+  include_summer_camp: false,
+  include_uniform: false,
   applied_for:'Intermediate', program:'ICS Physics', part:1, session:'2026-28',
   student_name:'', b_form_nic:'', father_name:'', father_nic:'', father_occupation:'',
   student_dob:'', contact_home:'', cell_no:'', whatsapp_no:'', email:'',
@@ -193,6 +196,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
         installments:      Number(form.installments),
         suggested_section: sec,
         suggested_class:   cls,
+        student_roll_no:   Number(form.student_roll_no) || null,
         status:'Pending', synced_to_db:false,
         created_by:adminData.full_name,
         form_no:'',
@@ -242,9 +246,9 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
       const username=`stu_${roll}`, password=`PIC${roll}`;
       const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
       
-      let totalPackage = 0;
-      if (studentType === 'Summer Camp') totalPackage = 7000;
-      else totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
+      let totalPackage = (Number(f.fee_package) || 0);
+      if (f.include_summer_camp) totalPackage += 7000;
+      if (f.include_uniform) totalPackage += 1000;
 
       // Additional Fees (Optional)
       for (const [key, details] of Object.entries(f.extra_fees || {})) {
@@ -280,6 +284,13 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
         ];
       } else {
         // Regular or Transfer
+        if (f.include_summer_camp) {
+          ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
+        }
+        if (f.include_uniform) {
+          ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
+        }
+
         const pkgAmt = Number(f.fee_package) || 0;
         const instCount = f.installments || 1;
         const perInst = Math.floor(pkgAmt / instCount);
@@ -489,8 +500,8 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                   <div className="px-6 md:px-8 py-6 space-y-6">
 
-                    {/* Row 1: Form No / Session */}
-                    <div className="grid grid-cols-2 gap-4 pb-5 border-b border-slate-100">
+                    {/* Row 1: Form No / Session / Manual Roll (if accountant) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-5 border-b border-slate-100">
                       <F label="Form No.">
                         <div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black text-[#c0392b]">Auto-assigned</div>
                       </F>
@@ -499,13 +510,43 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           <option>2026-27</option><option>2025-26</option>
                         </TS>
                       </F>
+                      <F label="Manual Roll Assignment">
+                         <input 
+                           type="number" 
+                           placeholder="Enter Roll No" 
+                           value={form.student_roll_no} 
+                           onChange={e => set('student_roll_no', e.target.value)}
+                           className="w-full border-b-2 border-slate-200 focus:border-[#c0392b] bg-transparent px-1 py-1.5 text-sm font-black text-blue-600 outline-none transition-colors"
+                         />
+                      </F>
+                      <F label="Include Summer Camp Fee">
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                          <input type="checkbox" checked={form.include_summer_camp} onChange={e => set('include_summer_camp', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-[#c0392b]" />
+                          <span className="text-xs font-bold text-slate-600 italic">Add 7,000 charges</span>
+                        </label>
+                      </F>
+                      <F label="Include Uniform Fee">
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                          <input type="checkbox" checked={form.include_uniform} onChange={e => set('include_uniform', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-[#c0392b]" />
+                          <span className="text-xs font-bold text-slate-600 italic">Add 1,000 charges</span>
+                        </label>
+                      </F>
                     </div>
 
                     {/* Applied For */}
                     <div className="pb-5 border-b border-slate-100 space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <F label="Student Type" req>
-                          <TS value={form.student_type} onChange={e=>set('student_type',e.target.value)}>
+                          <TS value={form.student_type} onChange={e=>{
+                            const val = e.target.value;
+                            setForm((p:any)=>({
+                              ...p, 
+                              student_type:val,
+                              include_summer_camp: val === 'Summer Camp',
+                              fee_package: val === 'Summer Camp' ? 0 : 8000,
+                              installments: val === 'Summer Camp' ? 1 : 3
+                            }));
+                          }}>
                             <option>Regular</option>
                             <option>Summer Camp</option>
                             <option>Transfer</option>
@@ -903,8 +944,10 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           <div className="flex gap-2 flex-shrink-0">
                             <button onClick={()=>{
                                 setConfirming(f);
+                                setManualRoll(f.student_roll_no || '');
                             }} className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Eye size={12}/> View & Confirm</button>
                             <motion.button whileTap={{scale:0.95}} disabled={saving} onClick={()=>{
+                                if (f.student_roll_no) setManualRoll(f.student_roll_no);
                                 confirmToDatabase(f, []);
                             }}
                               className="flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-black text-white disabled:opacity-50"
@@ -976,6 +1019,37 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                           </div>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 shadow-sm">
+                       <h4 className="text-[11px] font-black uppercase tracking-widest text-amber-700 mb-3">Additional Components</h4>
+                       <div className="space-y-2">
+                         <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-50 transition-colors">
+                           <input type="checkbox" checked={confirming.include_summer_camp} onChange={e => {
+                             setConfirming({...confirming, include_summer_camp: e.target.checked});
+                           }} className="w-4 h-4 rounded border-amber-300 text-amber-600" />
+                           <div className="flex-1">
+                             <p className="text-[11px] font-black text-slate-900">Include Summer Camp Fee</p>
+                             <p className="text-[9px] text-slate-500 font-bold">Rs. 7,000 will be added</p>
+                           </div>
+                         </label>
+                         <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-50 transition-colors">
+                           <input type="checkbox" checked={confirming.include_uniform} onChange={e => {
+                             setConfirming({...confirming, include_uniform: e.target.checked});
+                           }} className="w-4 h-4 rounded border-amber-300 text-amber-600" />
+                           <div className="flex-1">
+                             <p className="text-[11px] font-black text-slate-900">Include Uniform Fee</p>
+                             <p className="text-[9px] text-slate-500 font-bold">Rs. 1,000 will be added</p>
+                           </div>
+                         </label>
+                       </div>
+                       <div className="mt-4 pt-3 border-t border-amber-200">
+                          <div className="flex justify-between items-center bg-white px-3 py-2 rounded-xl border border-amber-300 shadow-sm">
+                             <span className="text-[10px] font-black uppercase text-amber-700">Calculated Final Package</span>
+                             <span className="text-sm font-black text-amber-900">{PKR((Number(confirming.fee_package)||0) + (confirming.include_summer_camp?7000:0) + (confirming.include_uniform?1000:0))}</span>
+                          </div>
+                          <p className="text-[9px] text-amber-500 font-bold italic mt-2 text-center">Note: This is the total amount including optional fees.</p>
+                       </div>
                     </div>
                   </div>
                 )}

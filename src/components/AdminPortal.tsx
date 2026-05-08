@@ -64,6 +64,9 @@ const getSuggestedSection = (pct: number, gender: string) => {
   if (pct >= 85) return `A-${g}`; if (pct >= 70) return `B-${g}`; return `C-${g}`;
 };
 const EMPTY_FORM: any = {
+  student_roll_no: '',
+  include_summer_camp: false,
+  include_uniform: false,
   applied_for:'Intermediate', program:'ICS Physics', part:1, session:'2026-28',
   student_name:'', b_form_nic:'', father_name:'', father_nic:'', father_occupation:'',
   student_dob:'', contact_home:'', cell_no:'', whatsapp_no:'', email:'',
@@ -1377,7 +1380,7 @@ const handlePrintReport = (data: any) => {
         setTransactions(sf2.data || []); setDiscounts(sf3.data || []);
         setExpenses(sf4.data || []); setIncome(sf5.data || []);
         setExpenseHeaders(sf11.data || []);
-        if (sf8.data?.[0]) setNextRoll(sf8.data[0].roll_no + 1);
+
       }
     } catch (e: any) {
       showErr("Data failed to load.");
@@ -1418,7 +1421,7 @@ const handlePrintReport = (data: any) => {
       const { data: ehData } = await supabase.from('expense_headers').select('*').order('name');
       setExpenseHeaders(ehData || []);
       setAdmForms(s7.data || []); setTeachers(s9.data || []); setSalaries(s10.data || []);
-      if (s8.data?.[0]) setNextRoll(s8.data[0].roll_no + 1);
+
     } catch (e: any) {
       showErr("Data failed to load. Please check your connection.");
       console.error(e);
@@ -1530,6 +1533,7 @@ const handlePrintReport = (data: any) => {
     setSaving(true);
     const editingId = admForm._editingId;
     const payload = {
+      student_roll_no:    Number(admForm.student_roll_no) || null,
       applied_for:        admForm.applied_for,
       program:            admForm.program,
       part:               admForm.part,
@@ -1655,11 +1659,9 @@ const handlePrintReport = (data: any) => {
 
       const username = `stu_${roll}`, password = `PIC${roll}`;
 
-      let totalPackage = 0;
-      if (studentType === 'Summer Camp') totalPackage = 7000;
-      else {
-          totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
-      }
+      let totalPackage = (Number(f.fee_package) || 0);
+      if (f.include_summer_camp) totalPackage += 7000;
+      if (f.include_uniform) totalPackage += 1000;
 
       const { error: se } = await supabase.from('students').insert([{
         roll_no: roll, full_name: f.student_name, father_name: f.father_name,
@@ -1693,12 +1695,10 @@ const handlePrintReport = (data: any) => {
               });
           }
 
-          const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
-          if (!exSC) {
+          if (f.include_summer_camp) {
               ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
           }
-          const { data: exUN } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Uniform Fee').maybeSingle();
-          if (!exUN) {
+          if (f.include_uniform) {
               ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
           }
       }
@@ -2661,11 +2661,15 @@ const active = tab === id; const badgeN = getBadge(id);
                           <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 font-black text-xs flex items-center justify-center flex-shrink-0">{f.student_name?.charAt(0)}</div>
                           <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900 truncate">{f.student_name}</p><p className="text-[11px] text-slate-400 truncate">{f.program} Part {f.part} · {f.form_no}</p></div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
+                                if (f.student_roll_no) setManualRoll(f.student_roll_no);
+                                confirmToDatabase(f);
+                            }} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                               {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} OK
                             </motion.button>
                             <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
                                 setPreview(f);
+                                setManualRoll(f.student_roll_no || '');
                                 setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
                             }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
                           </div>
@@ -3190,6 +3194,7 @@ const active = tab === id; const badgeN = getBadge(id);
                               <div className="flex gap-1.5">
                                 <button onClick={() => {
                                     setPreview(f);
+                                    setManualRoll(f.student_roll_no || '');
                                     setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
                                 }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
@@ -3336,21 +3341,35 @@ const active = tab === id; const badgeN = getBadge(id);
                               )}
                             </TS>
                           </F>
-                          <F label="Student Type"><TS value={admForm.student_type} onChange={e => setF('student_type', e.target.value)}><option>Regular</option><option>Summer Camp</option><option>Transfer</option></TS></F>
+                          <F label="Student Type"><TS value={admForm.student_type} onChange={e => {
+                                const val = e.target.value;
+                                setF('student_type', val);
+                                if (val === 'Summer Camp') {
+                                  setF('include_summer_camp', true);
+                                  setF('fee_package', 0);
+                                  setF('num_installments', 1);
+                                } else {
+                                  setF('include_summer_camp', false);
+                                  setF('fee_package', 8000);
+                                }
+                          }}><option>Regular</option><option>Summer Camp</option><option>Transfer</option></TS></F>
                         </div>
                       </div>
                       <div className="pb-5 border-b border-slate-100 space-y-4">
                         <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Personal Details</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Student's Roll Number (Manual)" req><TI type="number" placeholder="Enter Roll Number" value={admForm.student_roll_no} onChange={e => setF('student_roll_no', e.target.value)} /></F>
                           <F label="Student's Name" req><TI placeholder="Full name as per B-Form" value={admForm.student_name} onChange={e => setF('student_name', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <F label="B Form / NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.b_form_nic} onChange={e => setF('b_form_nic', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <F label="Father's Name" req><TI placeholder="Father's full name" value={admForm.father_name} onChange={e => setF('father_name', e.target.value)} /></F>
-                          <F label="Father's NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.father_nic} onChange={e => setF('father_nic', e.target.value)} /></F>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <F label="Father's NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.father_nic} onChange={e => setF('father_nic', e.target.value)} /></F>
                           <F label="Father's Occupation"><TI placeholder="Business / Service / etc." value={admForm.father_occupation} onChange={e => setF('father_occupation', e.target.value)} /></F>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <F label="Student's D.O.B"><TI type="date" value={admForm.student_dob} onChange={e => setF('student_dob', e.target.value)} /></F>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -3486,9 +3505,23 @@ const active = tab === id; const badgeN = getBadge(id);
                                 </div>
                               </div>
                             )}
-                            <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
-                              <p className="text-xs text-orange-700 font-bold flex items-center gap-2 italic">
-                                <AlertTriangle size={14} className="text-orange-500"/> Note: Summer Camp Fee (7,000) and Uniform Fee (1,000) will be added automatically.
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <F label="Include Summer Camp Fee">
+                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                                  <input type="checkbox" checked={admForm.include_summer_camp} onChange={e => setF('include_summer_camp', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600" />
+                                  <span className="text-xs font-bold text-slate-600 italic">Add 7,000 charges</span>
+                                </label>
+                              </F>
+                              <F label="Include Uniform Fee">
+                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                                  <input type="checkbox" checked={admForm.include_uniform} onChange={e => setF('include_uniform', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600" />
+                                  <span className="text-xs font-bold text-slate-600 italic">Add 1,000 charges</span>
+                                </label>
+                              </F>
+                            </div>
+                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                              <p className="text-xs text-slate-500 font-bold flex items-center gap-2 italic">
+                                <AlertTriangle size={14} className="text-slate-400"/> Note: Selected optional fees will be added to the student's final package.
                               </p>
                             </div>
                           </div>
@@ -4670,22 +4703,37 @@ const active = tab === id; const badgeN = getBadge(id);
 
                   {preview.status === 'Pending' && (
                     <div className="bg-amber-50 rounded-2xl p-5 mb-4 border border-amber-100">
-                       <p className="text-sm font-black text-amber-700 text-center">Standard Enrollment Fees</p>
-                       <ul className="mt-3 space-y-2">
-                         <li className="flex justify-between items-center text-xs font-bold text-amber-600 px-3 py-2 bg-white rounded-lg border border-amber-200">
-                           <span>Summer Camp Fee</span>
-                           <span>{PKR(7000)}</span>
-                         </li>
-                         <li className="flex justify-between items-center text-xs font-bold text-amber-600 px-3 py-2 bg-white rounded-lg border border-amber-200">
-                           <span>Uniform Fee</span>
-                           <span>{PKR(1000)}</span>
-                         </li>
-                         <li className="flex justify-between items-center text-xs font-black text-amber-800 px-3 py-2 bg-amber-100 rounded-lg border border-amber-300 mt-2">
-                           <span>Total Enrollment Package</span>
-                           <span>{PKR(8000)}</span>
-                         </li>
-                       </ul>
-                       <p className="text-[10px] text-amber-500 mt-3 italic text-center font-bold">These fees will be automatically generated in the student's ledger upon confirmation.</p>
+                       <p className="text-sm font-black text-amber-700 text-center">Additional Options</p>
+                       <div className="mt-4 space-y-3">
+                         <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-100/30 transition-colors">
+                           <input type="checkbox" checked={preview.include_summer_camp} onChange={e => {
+                             const updated = {...preview, include_summer_camp: e.target.checked};
+                             setPreview(updated);
+                             setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
+                           }} className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+                           <div className="flex-1">
+                             <p className="text-xs font-black text-slate-900">Include Summer Camp Fee</p>
+                             <p className="text-[10px] text-slate-500 font-bold">Rs. 7,000 will be added</p>
+                           </div>
+                         </label>
+                         <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-100/30 transition-colors">
+                           <input type="checkbox" checked={preview.include_uniform} onChange={e => {
+                              const updated = {...preview, include_uniform: e.target.checked};
+                              setPreview(updated);
+                              setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
+                           }} className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+                           <div className="flex-1">
+                             <p className="text-xs font-black text-slate-900">Include Uniform Fee</p>
+                             <p className="text-[10px] text-slate-500 font-bold">Rs. 1,000 will be added</p>
+                           </div>
+                         </label>
+                       </div>
+                       <div className="mt-4 pt-3 border-t border-amber-200">
+                          <div className="flex justify-between items-center bg-white px-3 py-2 rounded-xl border border-amber-300">
+                            <span className="text-[10px] font-black uppercase text-amber-700">Calculated Package</span>
+                            <span className="text-sm font-black text-amber-900">{PKR((Number(preview.fee_package)||0) + (preview.include_summer_camp?7000:0) + (preview.include_uniform?1000:0))}</span>
+                          </div>
+                       </div>
                     </div>
                   )}
 
