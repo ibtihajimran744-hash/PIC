@@ -12,6 +12,7 @@ import {
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
 import { ExaminerPortal } from './ExaminerPortal';
+import { ReceptionistPortal } from './ReceptionistPortal';
 import { supabase } from '../services/supabase';
 
 const FileImage = ({ size }: { size: number }) => (
@@ -587,6 +588,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
 // ════════════════════════════════════════════════════════════════════════════
 export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData }) => {
   const isAccountant = adminData.role === 'Accountant' || adminData.role === 'VP';
+  const isReceptionist = adminData.role === 'Receptionist';
   const isSuperAdmin = ['Director', 'VP', 'Principal'].includes(adminData.role);
   const { ACCENT, GRADIENT } = getTheme(adminData.role);
 
@@ -2172,6 +2174,10 @@ const handlePrintReport = (data: any) => {
     salaries: 'Teacher Salaries',
     staff: 'Staff & Role Management', permissions: 'Permission Control', scheme: 'Scheme of Study',
   };
+
+  if (isReceptionist) {
+    return <ReceptionistPortal adminData={adminData} onLogout={onLogout} />;
+  }
 
   if (showAcademicsPortal) {
   return (
