@@ -695,7 +695,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [income,       setIncome]       = useState<any[]>([]);
   const [salaries,     setSalaries]     = useState<any[]>([]);
   const [teachers,     setTeachers]     = useState<any[]>([]);
-  const [nextRoll,     setNextRoll]     = useState(2628001);
+  const [manualRoll,     setManualRoll]     = useState('');
   const [discSaving,   setDiscSaving]   = useState<string | null>(null);
   const [instDates,      setInstDates]      = useState<string[]>([]);
   const [saving,         setSaving]         = useState(false);
@@ -1632,51 +1632,43 @@ const handlePrintReport = (data: any) => {
        // Initialize if not already
        setInstDates(Array(f.installments || 3).fill(new Date().toISOString().split('T')[0]));
     }
+    
+    if (!manualRoll) {
+      showErr('Please assign a roll number manually.');
+      return;
+    }
+
     setSaving(true);
     try {
       const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
-      let roll = f.student_roll_no;
+      let roll = Number(manualRoll);
 
-      if (!roll) {
-        const now = new Date();
-      const joinYear = now.getFullYear(); 
-      const endYear  = joinYear + 2;     
-      const prefix   = Number(`${String(joinYear).slice(2)}${String(endYear).slice(2)}`); 
-      const { data: lastRollData } = await supabase
-        .from('students')
-        .select('roll_no')
-        .gte('roll_no', prefix * 1000)
-        .lt('roll_no', (prefix + 1) * 1000)
-        .order('roll_no', { ascending: false })
-        .limit(1);
-      const lastRoll = lastRollData?.[0]?.roll_no ?? (prefix * 1000);
-      const seq = (lastRoll % 1000) + 1; 
-          const roll_val = prefix * 1000 + seq;  
-          roll = roll_val;
-          const username = `stu_${roll}`, password = `PIC${roll}`;
-
-          let totalPackage = 0;
-          if (studentType === 'Summer Camp') totalPackage = 7000;
-          else {
-              totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
-          }
-
-          const { error: se } = await supabase.from('students').insert([{
-            roll_no: roll, full_name: f.student_name, father_name: f.father_name,
-            gender: f.gender, program: f.program, part: f.part,
-            class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
-            total_package: totalPackage, paid_amount: 0, status: 'Active',
-            username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
-          }]);
-          if (se) throw se;
-      } else {
-          // Update existing
-          let totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
-          await supabase.from('students').update({
-              total_package: totalPackage,
-              status: 'Active'
-          }).eq('roll_no', roll);
+      if (isNaN(roll)) {
+        throw new Error('Invalid Roll Number. Please enter a valid number.');
       }
+
+      // Check if roll number already exists
+      const { data: exRoll } = await supabase.from('students').select('roll_no').eq('roll_no', roll).maybeSingle();
+      if (exRoll) {
+        throw new Error(`Roll Number ${roll} is already assigned to another student.`);
+      }
+
+      const username = `stu_${roll}`, password = `PIC${roll}`;
+
+      let totalPackage = 0;
+      if (studentType === 'Summer Camp') totalPackage = 7000;
+      else {
+          totalPackage = (Number(f.fee_package) || 0) + 7000 + 1000;
+      }
+
+      const { error: se } = await supabase.from('students').insert([{
+        roll_no: roll, full_name: f.student_name, father_name: f.father_name,
+        gender: f.gender, program: f.program, part: f.part,
+        class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
+        total_package: totalPackage, paid_amount: 0, status: 'Active',
+        username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
+      }]);
+      if (se) throw se;
 
       let ledgerFees: any[] = [];
       const today = new Date().toISOString().split('T')[0];
@@ -1761,7 +1753,9 @@ const handlePrintReport = (data: any) => {
         accountant_confirmed_at: new Date().toISOString(),
       }).eq('id', f.id);
       showToast(`✅ ${f.student_name} enrolled → Roll #${roll}`);
-      setPreview(null); refresh();
+      setPreview(null);
+      setManualRoll('');
+      refresh();
     } catch (e: any) { showErr(e.message || 'Failed'); }
     finally { setSaving(false); }
   };
@@ -4640,7 +4634,7 @@ const active = tab === id; const badgeN = getBadge(id);
       <AnimatePresence>
         {preview && isAccountant && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPreview(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setPreview(null); setManualRoll(''); }} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}
               className="relative bg-white rounded-3xl w-full max-w-2xl overflow-hidden z-10 max-h-[90vh] flex flex-col" style={{ boxShadow: '0 40px 100px rgba(0,0,0,0.25)' }}>
               <div className="h-1" style={{ background: GRADIENT }} />
@@ -4654,10 +4648,27 @@ const active = tab === id; const badgeN = getBadge(id);
                     <p className="text-[10px] font-black uppercase tracking-widest mt-1.5" style={{ color: ACCENT }}>{preview.form_no} · Session 2026-28</p>
                   </div>
                 </div>
-                <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
+                <button onClick={() => { setPreview(null); setManualRoll(''); }} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-2">
-                {preview.status === 'Pending' && (
+                  {preview.status === 'Pending' && (
+                    <div className="bg-sky-50 rounded-2xl p-5 mb-4 border border-sky-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <UserCheck size={16} className="text-sky-600" />
+                        <h4 className="text-[11px] font-black uppercase tracking-widest text-sky-700">Assign Roll Number (Manual)</h4>
+                      </div>
+                      <input 
+                        type="number" 
+                        value={manualRoll} 
+                        onChange={(e) => setManualRoll(e.target.value)}
+                        placeholder="Enter manual roll number..."
+                        className="w-full px-4 py-3 bg-white rounded-xl border border-sky-200 text-sm font-black text-slate-900 outline-none focus:border-sky-500 ring-2 ring-transparent focus:ring-sky-500/10 transition-all shadow-sm"
+                      />
+                      <p className="text-[9px] text-sky-500 mt-2 italic font-bold">Important: Provide a unique roll number. Auto-generation is disabled.</p>
+                    </div>
+                  )}
+
+                  {preview.status === 'Pending' && (
                     <div className="bg-amber-50 rounded-2xl p-5 mb-4 border border-amber-100">
                        <p className="text-sm font-black text-amber-700 text-center">Standard Enrollment Fees</p>
                        <ul className="mt-3 space-y-2">

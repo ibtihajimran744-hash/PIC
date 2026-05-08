@@ -118,7 +118,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   const [preview, setPreview] = useState<any>(null);
   const [confirming, setConfirming] = useState<any>(null);
   const [instDates, setInstDates] = useState<string[]>([]);
-  const [nextRoll,setNextRoll]= useState(2527290);
+  const [manualRoll, setManualRoll] = useState('');
   const [form,    setForm]    = useState<any>({...EMPTY});
 
   const showToast = (msg:string, type:'ok'|'err'|'info'='ok') => {
@@ -138,12 +138,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
     setLoading(false);
   };
 
-  const loadNextRoll = async () => {
-    const { data } = await supabase.from('students').select('roll_no').lt('roll_no',9999999).order('roll_no',{ascending:false}).limit(1);
-    if(data?.[0]) setNextRoll(data[0].roll_no+1);
-  };
-
-  useEffect(()=>{ loadForms(); loadNextRoll(); },[]);
+  useEffect(()=>{ loadForms(); },[]);
 
   const syncToSheets = async (fd:any) => {
     try {
@@ -222,62 +217,62 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   };
 
   const confirmToDatabase = async (f:any, installmentDates: string[]) => {
+    if (!manualRoll) {
+      showToast('Please assign a roll number manually', 'err');
+      return;
+    }
     setSaving(true);
     try {
       const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
-      let roll = f.student_roll_no;
+      let roll = Number(manualRoll);
+      
+      if (isNaN(roll)) {
+        throw new Error('Invalid Roll Number. Please enter a valid number.');
+      }
+
+      // Check if roll number already exists
+      const { data: exRoll } = await supabase.from('students').select('roll_no').eq('roll_no', roll).maybeSingle();
+      if (exRoll) {
+        throw new Error(`Roll Number ${roll} is already assigned to another student.`);
+      }
+
       let ledgerFees: any[] = [];
       const today = new Date().toISOString().split('T')[0];
       
-      if (!roll) {
-        roll = nextRoll;
-        const username=`stu_${roll}`, password=`PIC${roll}`;
-        const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
-        
-        let totalPackage = 0;
-        if (studentType === 'Summer Camp') totalPackage = 7000;
-        else if (studentType === 'Regular') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
-        else if (studentType === 'Transfer') totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
+      const username=`stu_${roll}`, password=`PIC${roll}`;
+      const classSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
+      
+      let totalPackage = 0;
+      if (studentType === 'Summer Camp') totalPackage = 7000;
+      else totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
 
-        // Additional Fees (Optional)
-        for (const [key, details] of Object.entries(f.extra_fees || {})) {
-          const fee = details as any;
-          if (fee.active && fee.amount > 0) {
-            const feeName = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            ledgerFees.push({
-              student_roll: roll,
-              fees_group: feeName,
-              fees_code: `OPT-${key.toUpperCase().slice(0, 3)}`,
-              due_date: today,
-              amount: fee.amount,
-              paid: 0,
-              status: 'Unpaid'
-            });
-            totalPackage += fee.amount;
-          }
+      // Additional Fees (Optional)
+      for (const [key, details] of Object.entries(f.extra_fees || {})) {
+        const fee = details as any;
+        if (fee.active && fee.amount > 0) {
+          const feeName = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          ledgerFees.push({
+            student_roll: roll,
+            fees_group: feeName,
+            fees_code: `OPT-${key.toUpperCase().slice(0, 3)}`,
+            due_date: today,
+            amount: fee.amount,
+            paid: 0,
+            status: 'Unpaid'
+          });
+          totalPackage += fee.amount;
         }
-
-        const { error: se } = await supabase.from('students').insert([{
-          roll_no:roll, full_name:f.student_name, father_name:f.father_name,
-          gender:f.gender, program:f.program, applied_for: f.applied_for, part:f.part, 
-          student_picture: f.student_picture,
-          class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
-          total_package: totalPackage, paid_amount:0, status:'Active',
-          username, password, total_xp:0, profile_xp:0, current_badge:'🥉 Newcomer'
-        }]);
-        if(se) throw se;
-        if (!f.student_roll_no) setNextRoll(roll+1);
-      } else {
-        // Handle Transfer / Update
-        let totalPackage = (Number(f.fee_package)||0) + 7000 + 1000;
-        await supabase.from('students').update({
-            total_package: totalPackage,
-            program: f.program,
-            applied_for: f.applied_for,
-            student_picture: f.student_picture,
-            status: 'Active'
-        }).eq('roll_no', roll);
       }
+
+      const { error: se } = await supabase.from('students').insert([{
+        roll_no:roll, full_name:f.student_name, father_name:f.father_name,
+        gender:f.gender, program:f.program, applied_for: f.applied_for, part:f.part, 
+        student_picture: f.student_picture,
+        class_section: f.program === 'Summer Camp' ? 'Summer-Camp' : classSection,
+        total_package: totalPackage, paid_amount:0, status:'Active',
+        username, password, total_xp:0, profile_xp:0, current_badge:'Newcomer'
+      }]);
+      if(se) throw se;
 
       if (studentType === 'Summer Camp') {
         ledgerFees = [
@@ -494,13 +489,10 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                   <div className="px-6 md:px-8 py-6 space-y-6">
 
-                    {/* Row 1: Form No / Roll / Session */}
-                    <div className="grid grid-cols-3 gap-4 pb-5 border-b border-slate-100">
+                    {/* Row 1: Form No / Session */}
+                    <div className="grid grid-cols-2 gap-4 pb-5 border-b border-slate-100">
                       <F label="Form No.">
                         <div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black text-[#c0392b]">Auto-assigned</div>
-                      </F>
-                      <F label="Roll No.">
-                        <div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black text-blue-600">#{nextRoll}</div>
                       </F>
                       <F label="Session">
                         <TS value={form.session} onChange={e=>set('session',e.target.value)}>
@@ -940,7 +932,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
       <AnimatePresence>
         {(preview || confirming) && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>{setPreview(null); setConfirming(null);}} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"/>
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>{setPreview(null); setConfirming(null); setManualRoll('');}} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"/>
             <motion.div initial={{opacity:0,scale:0.94,y:20}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.94}}
               transition={{type:'spring',stiffness:400,damping:28}}
               className="relative bg-white rounded-3xl w-full max-w-2xl overflow-hidden z-10 max-h-[90vh] flex flex-col"
@@ -948,11 +940,26 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
               <div className="h-1" style={{background:'#c0392b'}}/>
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
                 <div><h3 className="font-black text-slate-900">Form Details</h3><p className="text-xs text-[#c0392b] font-bold">{(preview || confirming).form_no}</p></div>
-                <button onClick={()=>{setPreview(null); setConfirming(null);}} className="text-slate-400 hover:text-slate-700"><X size={20}/></button>
+                <button onClick={()=>{setPreview(null); setConfirming(null); setManualRoll('');}} className="text-slate-400 hover:text-slate-700"><X size={20}/></button>
               </div>
               <div className="overflow-y-auto flex-1 p-6 space-y-3">
                 {confirming && (
                   <div className="space-y-4 mb-4">
+                    <div className="bg-sky-50 rounded-2xl p-4 border border-sky-100 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <UserCheck size={16} className="text-sky-600" />
+                        <h4 className="text-[11px] font-black uppercase tracking-widest text-sky-700">Assign Student Roll Number</h4>
+                      </div>
+                      <input 
+                        type="number" 
+                        value={manualRoll} 
+                        onChange={(e) => setManualRoll(e.target.value)} 
+                        placeholder="Manual roll number…"
+                        className="w-full px-3 py-2 bg-white rounded-xl border border-sky-200 text-sm font-black text-slate-900 outline-none focus:border-sky-500"
+                      />
+                      <p className="text-[9px] text-sky-500 mt-2 italic font-bold">Auto-generation is disabled as requested.</p>
+                    </div>
+
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                       <p className="text-sm font-black text-indigo-700 mb-1">Set Installment Due Dates</p>
                       <p className="text-[10px] text-indigo-500 mb-3 uppercase tracking-widest font-black leading-none">Schedule Payment Timeline</p>
