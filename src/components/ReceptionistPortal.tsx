@@ -77,10 +77,17 @@ export const ReceptionistPortal: React.FC<{
   const [notices, setNotices] = useState<any[]>([]);
   const [visitorLog, setVisitorLog] = useState<any[]>([]);
   const [callLog, setCallLog] = useState<any[]>([]);
-  const [complaints, setComplaints] = useState<any[]>([]);
-  const [lostFound, setLostFound] = useState<any[]>([]);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [complaintsData, setComplaintsData] = useState<any[]>([]);
+  const [lostFoundData, setLostFoundData] = useState<any[]>([]);
+  const [messagesData, setMessagesData] = useState<any[]>([]);
   const [searchData, setSearchData] = useState<any>({ teachers: [], students: [], timetable: [] });
+
+  // Form States
+  const [visitorForm, setVisitorForm] = useState({ name: '', to_meet: '', purpose: '' });
+  const [callForm, setCallForm] = useState({ caller_name: '', phone: '', purpose: '', status: 'Inbound' });
+  const [complaintForm, setComplaintForm] = useState({ title: '', description: '', priority: 'Medium', type: 'General' });
+  const [lostFoundForm, setLostFoundForm] = useState({ item_name: '', description: '', location: '', type: 'Lost' });
+  const [messageForm, setMessageForm] = useState({ recipient_id: '', content: '' });
 
   const refreshData = () => setRefreshKey(prev => prev + 1);
 
@@ -153,14 +160,14 @@ export const ReceptionistPortal: React.FC<{
         setCallLog(data || []);
       } else if (activeTab === 'complaints') {
         const { data } = await supabase.from('complaints').select('*').order('created_at', { ascending: false });
-        setComplaints(data || []);
+        setComplaintsData(data || []);
       } else if (activeTab === 'lostfound') {
         const { data } = await supabase.from('lost_and_found').select('*').order('created_at', { ascending: false });
-        setLostFound(data || []);
+        setLostFoundData(data || []);
       } else if (activeTab === 'messages') {
         const { data: inbox } = await supabase.from('receptionist_messages').select('*').eq('recipient_id', adminData.id).order('created_at', { ascending: false });
         const { data: sent } = await supabase.from('receptionist_messages').select('*').eq('sender_id', adminData.id).order('created_at', { ascending: false });
-        setMessages([...(inbox || []), ...(sent || [])]);
+        setMessagesData([...(inbox || []), ...(sent || [])]);
       } else if (activeTab === 'info') {
         const [
           { data: tchs },
@@ -168,7 +175,7 @@ export const ReceptionistPortal: React.FC<{
           { data: ttble }
         ] = await Promise.all([
           supabase.from('teachers').select('*').order('full_name'),
-          supabase.from('students').select('*').limit(10), // Default 10 for performance
+          supabase.from('students').select('*').limit(100),
           supabase.from('timetable').select('*').eq('day_of_week', dayOfWeek).order('period_no')
         ]);
         setSearchData({ teachers: tchs || [], students: stus || [], timetable: ttble || [] });
@@ -184,6 +191,114 @@ export const ReceptionistPortal: React.FC<{
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Handlers
+  const handleVisitorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!visitorForm.name || !visitorForm.to_meet) return showToast('Please fill all required fields', 'error');
+    
+    try {
+      const { error } = await supabase.from('visitor_log').insert([{
+        visitor_name: visitorForm.name,
+        to_meet: visitorForm.to_meet,
+        purpose: visitorForm.purpose,
+        visit_date: new Date().toISOString().split('T')[0],
+        check_in_time: new Date().toLocaleTimeString(),
+        status: 'Inside',
+        logged_by: adminData.full_name
+      }]);
+      if (error) throw error;
+      showToast('Visitor registered successfully');
+      setVisitorForm({ name: '', to_meet: '', purpose: '' });
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      showToast('Action failed', 'error');
+    }
+  };
+
+  const handleCallSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { error } = await supabase.from('reception_call_log').insert([{
+        ...callForm,
+        time: new Date().toLocaleTimeString(),
+        logged_by: adminData.full_name
+      }]);
+      if (error) throw error;
+      showToast('Call logged');
+      setCallForm({ caller_name: '', phone: '', purpose: '', status: 'Inbound' });
+      refreshData();
+    } catch (err) {
+      showToast('Action failed', 'error');
+    }
+  };
+
+  const handleComplaintSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { error } = await supabase.from('complaints').insert([{
+        ...complaintForm,
+        status: 'Open',
+        filed_by: adminData.full_name
+      }]);
+      if (error) throw error;
+      showToast('Complaint filed');
+      setComplaintForm({ title: '', description: '', priority: 'Medium', type: 'General' });
+      refreshData();
+    } catch (err) {
+      showToast('Action failed', 'error');
+    }
+  };
+
+  const handleLostFoundSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { error } = await supabase.from('lost_and_found').insert([{
+        ...lostFoundForm,
+        status: 'Active',
+        reported_by: adminData.full_name
+      }]);
+      if (error) throw error;
+      showToast('Item recorded');
+      setLostFoundForm({ item_name: '', description: '', location: '', type: 'Lost' });
+      refreshData();
+    } catch (err) {
+      showToast('Action failed', 'error');
+    }
+  };
+
+  const handleMessageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { error } = await supabase.from('receptionist_messages').insert([{
+        sender_id: adminData.id,
+        recipient_id: messageForm.recipient_id,
+        content: messageForm.content,
+        is_read: false
+      }]);
+      if (error) throw error;
+      showToast('Message sent');
+      setMessageForm({ recipient_id: '', content: '' });
+      refreshData();
+    } catch (err) {
+      showToast('Action failed', 'error');
+    }
+  };
+
+  const handleVisitorCheckout = async (id: string) => {
+    try {
+      const { error } = await supabase.from('visitor_log').update({ 
+        check_out_time: new Date().toLocaleTimeString(),
+        status: 'Outside' 
+      }).eq('id', id);
+      if (error) throw error;
+      showToast('Visitor checked out');
+      refreshData();
+    } catch (err) {
+      showToast('Action failed', 'error');
+    }
+  };
 
   const handlePrint = (title: string, content: string) => {
     const printWindow = window.open('', '_blank');
@@ -649,50 +764,450 @@ export const ReceptionistPortal: React.FC<{
 
             {/* Other tabs implementation... simplifying for response length but maintaining structure */}
             {activeTab === 'visitors' && (
-              <motion.div key="visitors" className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-bold text-slate-800">Visitor Management</h2>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-sky-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-sky-100">
-                    <Plus size={18} /> New Visitor
-                  </button>
+              <motion.div 
+                key="visitors" 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Visitor Management</h2>
+                    <p className="text-sm text-slate-500">Register and track campus visitors</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => handlePrint('Visitor Log', `<table>...</table>`)}
+                      className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-sky-500 transition-colors"
+                    >
+                      <Printer size={20} />
+                    </button>
+                    <button 
+                      onClick={refreshData}
+                      className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-sky-500 transition-colors"
+                    >
+                      <RefreshCw size={20} />
+                    </button>
+                  </div>
                 </div>
+
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                  <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <UserCheck size={18} className="text-sky-500" />
+                    New Visitor Registration
+                  </h3>
+                  <form onSubmit={handleVisitorSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Visitor Name</label>
-                       <input type="text" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" placeholder="John Doe" />
+                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Visitor Name *</label>
+                       <input 
+                        type="text" 
+                        required
+                        value={visitorForm.name}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, name: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
+                        placeholder="John Doe" 
+                      />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phone Number</label>
-                       <input type="text" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" placeholder="0300-1234567" />
+                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Who to Meet / Reason *</label>
+                       <input 
+                        type="text" 
+                        required
+                        value={visitorForm.to_meet}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, to_meet: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
+                        placeholder="Principal / Admission Inquiry" 
+                      />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">ID Type & Number</label>
-                       <div className="flex gap-2">
-                          <select className="w-1/3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none">
-                            <option>CNIC</option>
-                            <option>B-Form</option>
-                            <option>Passport</option>
-                          </select>
-                          <input type="text" className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none" placeholder="ID Number" />
-                       </div>
+                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Additional Purpose (Optional)</label>
+                       <input 
+                        type="text" 
+                        value={visitorForm.purpose}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, purpose: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
+                        placeholder="Detail about the visit" 
+                      />
                     </div>
                     <div className="lg:col-span-3 flex justify-end">
-                       <button className="px-8 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm hover:bg-sky-600 shadow-lg shadow-sky-100 transition-all">Register & Check In</button>
+                       <button 
+                        type="submit"
+                        className="px-8 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm hover:bg-sky-600 shadow-lg shadow-sky-100 transition-all flex items-center gap-2"
+                      >
+                         <UserCheck size={18} /> Register & Check In
+                       </button>
                     </div>
                   </form>
                 </div>
-                {/* Active Visitors Table... */}
+
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800">Active Visitors Log</h3>
+                    <span className="px-2.5 py-1 rounded-full bg-sky-50 text-sky-600 text-[10px] font-bold">Today: {visitorLog.length}</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50/50 border-b border-slate-100">
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Visitor</th>
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">To Meet / Reason</th>
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Time In</th>
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Time Out</th>
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visitorLog.map((v, i) => (
+                          <tr key={v.id || i} className="hover:bg-slate-50/30 transition-colors">
+                            <td className="p-4">
+                              <p className="text-xs font-bold text-slate-900">{v.visitor_name}</p>
+                              <p className="text-[10px] text-slate-400">{new Date(v.visit_date).toLocaleDateString()}</p>
+                            </td>
+                            <td className="p-4">
+                              <p className="text-xs text-slate-600 font-medium">{v.to_meet}</p>
+                              <p className="text-[10px] text-slate-400 line-clamp-1">{v.purpose || '—'}</p>
+                            </td>
+                            <td className="p-4 text-xs font-medium text-slate-500">{v.check_in_time}</td>
+                            <td className="p-4 text-xs font-medium text-slate-500">{v.check_out_time || '—'}</td>
+                            <td className="p-4">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase",
+                                v.status === 'Inside' ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
+                              )}>
+                                {v.status}
+                              </span>
+                            </td>
+                            <td className="p-4 text-right">
+                              {v.status === 'Inside' && (
+                                <button 
+                                  onClick={() => handleVisitorCheckout(v.id)}
+                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all"
+                                  title="Checkout"
+                                >
+                                  <LogOut size={14} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {visitorLog.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="p-12 text-center text-slate-400 italic text-sm">No visitors recorded today</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </motion.div>
             )}
 
-            {/* Add placeholders for other tabs to keep the file valid while focusing on key functionality */}
-            {['calls', 'complaints', 'lostfound', 'messages', 'info'].includes(activeTab) && (
-              <div className="h-96 flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200">
-                <HelpCircle size={48} className="mb-4 opacity-20" />
-                <p className="font-bold">Tab content for {activeTab} coming soon...</p>
-                <p className="text-xs mt-1">This module is currently being optimized.</p>
-              </div>
+            {activeTab === 'calls' && (
+              <motion.div key="calls" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                  <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <Phone size={18} className="text-sky-500" />
+                    Log New Call
+                  </h3>
+                  <form onSubmit={handleCallSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <input 
+                      type="text" 
+                      placeholder="Caller Name" 
+                      required
+                      value={callForm.caller_name}
+                      onChange={(e) => setCallForm({ ...callForm, caller_name: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Phone Number" 
+                      required
+                      value={callForm.phone}
+                      onChange={(e) => setCallForm({ ...callForm, phone: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Purpose" 
+                      required
+                      value={callForm.purpose}
+                      onChange={(e) => setCallForm({ ...callForm, purpose: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                    />
+                    <select 
+                      value={callForm.status}
+                      onChange={(e) => setCallForm({ ...callForm, status: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none font-bold"
+                    >
+                      <option>Inbound</option>
+                      <option>Outbound</option>
+                      <option>Missed</option>
+                    </select>
+                    <div className="lg:col-span-4 flex justify-end">
+                      <button type="submit" className="px-6 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-sky-100">Log Call</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Caller</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Phone</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Purpose</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Status</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {callLog.map((c, i) => (
+                        <tr key={i} className="text-xs">
+                          <td className="p-4 font-bold">{c.caller_name}</td>
+                          <td className="p-4">{c.phone}</td>
+                          <td className="p-4">{c.purpose}</td>
+                          <td className="p-4">
+                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", c.status === 'Inbound' ? "bg-sky-50 text-sky-600" : "bg-amber-50 text-amber-600")}>{c.status}</span>
+                          </td>
+                          <td className="p-4 text-slate-400">{c.time}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'complaints' && (
+              <motion.div key="complaints" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                  <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <ShieldAlert size={18} className="text-rose-500" />
+                    File New Complaint
+                  </h3>
+                  <form onSubmit={handleComplaintSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input 
+                        type="text" 
+                        placeholder="Complaint Title" 
+                        required
+                        value={complaintForm.title}
+                        onChange={(e) => setComplaintForm({ ...complaintForm, title: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                      />
+                      <select 
+                        value={complaintForm.priority}
+                        onChange={(e) => setComplaintForm({ ...complaintForm, priority: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                      >
+                        <option>Low</option>
+                        <option>Medium</option>
+                        <option>High</option>
+                      </select>
+                    </div>
+                    <textarea 
+                      placeholder="Detailed Description" 
+                      required
+                      value={complaintForm.description}
+                      onChange={(e) => setComplaintForm({ ...complaintForm, description: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none min-h-[100px]"
+                    />
+                    <div className="flex justify-end">
+                      <button type="submit" className="px-6 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100">Submit Complaint</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Title</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Priority</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Status</th>
+                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase text-right">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {complaintsData.map((c, i) => (
+                        <tr key={i} className="text-xs">
+                          <td className="p-4 font-bold">{c.title}</td>
+                          <td className="p-4">
+                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", c.priority === 'High' ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500")}>{c.priority}</span>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[9px] font-bold uppercase">{c.status}</span>
+                          </td>
+                          <td className="p-4 text-right text-slate-400">{new Date(c.created_at).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'lostfound' && (
+              <motion.div key="lostfound" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                  <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <Package size={18} className="text-amber-500" />
+                    Report Lost/Found Item
+                  </h3>
+                  <form onSubmit={handleLostFoundSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <input 
+                      type="text" 
+                      placeholder="Item Name" 
+                      required
+                      value={lostFoundForm.item_name}
+                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, item_name: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Location" 
+                      required
+                      value={lostFoundForm.location}
+                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, location: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                    />
+                    <select 
+                      value={lostFoundForm.type}
+                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, type: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none bg-white font-bold"
+                    >
+                      <option>Lost</option>
+                      <option>Found</option>
+                    </select>
+                    <button type="submit" className="w-full px-6 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-100">Report Item</button>
+                  </form>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {lostFoundData.map((item, i) => (
+                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 hover:shadow-md transition-all">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", item.type === 'Lost' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600")}>{item.type}</span>
+                        <p className="text-[10px] text-slate-400 font-bold">{new Date(item.created_at).toLocaleDateString()}</p>
+                      </div>
+                      <h4 className="font-bold text-slate-800 mb-1">{item.item_name}</h4>
+                      <p className="text-xs text-slate-500 mb-4 line-clamp-2">{item.description || 'No description provided'}</p>
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <MapPin size={12} />
+                        <span className="text-[10px] font-medium">{item.location}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'messages' && (
+              <motion.div key="messages" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                 <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                    <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
+                      <Mail size={18} className="text-sky-500" />
+                      Send Private Message
+                    </h3>
+                    <form onSubmit={handleMessageSubmit} className="space-y-4">
+                      <input 
+                        type="text" 
+                        placeholder="Recipient Staff ID"
+                        required
+                        value={messageForm.recipient_id}
+                        onChange={(e) => setMessageForm({ ...messageForm, recipient_id: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
+                      />
+                      <textarea 
+                        placeholder="Type your message..."
+                        required
+                        value={messageForm.content}
+                        onChange={(e) => setMessageForm({ ...messageForm, content: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none min-h-[120px]"
+                      />
+                      <div className="flex justify-end">
+                        <button type="submit" className="px-8 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-sky-100 flex items-center gap-2"><Send size={16} /> Send</button>
+                      </div>
+                    </form>
+                 </div>
+                 
+                 <div className="grid grid-cols-1 gap-4">
+                    {messagesData.map((m, i) => (
+                      <div key={i} className={cn("p-4 rounded-2xl border transition-all", m.sender_id === adminData.id ? "bg-sky-50/50 border-sky-100 ml-12" : "bg-white border-slate-100 mr-12")}>
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{m.sender_id === adminData.id ? 'Sent Message' : 'Received'}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{new Date(m.created_at).toLocaleString()}</p>
+                        </div>
+                        <p className="text-sm text-slate-700 leading-relaxed">{m.content}</p>
+                      </div>
+                    ))}
+                    {messagesData.length === 0 && <div className="text-center p-12 text-slate-400 italic text-sm">No messages yet</div>}
+                 </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'info' && (
+              <motion.div key="info" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6 pb-12">
+                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-[600px]">
+                      <div className="p-4 border-b border-slate-100">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                          <SearchCode size={18} className="text-sky-500" />
+                          Faculty/Staff Directory
+                        </h3>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                          <input type="text" placeholder="Search staff..." className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-sky-500 transition-all" />
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                        {searchData.teachers.map((t: any, i: number) => (
+                          <div key={i} className="p-3 rounded-xl border border-transparent hover:border-slate-100 hover:bg-slate-50 transition-all flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 font-bold text-xs">{t.full_name?.charAt(0)}</div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{t.full_name}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">{t.subject_dept} • Room: {t.room_no || 'NA'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                   </div>
+
+                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-[600px]">
+                      <div className="p-4 border-b border-slate-100">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                          <History size={18} className="text-sky-500" />
+                          Today's Full Timetable
+                        </h3>
+                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</p>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                        <div className="space-y-4">
+                          {searchData.timetable.map((item: any, i: number) => (
+                            <div key={i} className="flex gap-4 group">
+                              <div className="flex flex-col items-center">
+                                <div className="w-6 h-6 rounded-lg bg-sky-500 text-white flex items-center justify-center text-[10px] font-black">{item.period_no}</div>
+                                <div className="flex-1 w-px bg-slate-100 my-1 group-last:hidden" />
+                              </div>
+                              <div className="flex-1 pb-4">
+                                <div className="p-3 rounded-xl border border-slate-100 bg-white shadow-sm">
+                                  <div className="flex justify-between items-start mb-1">
+                                    <p className="text-xs font-bold text-slate-900">{item.subject}</p>
+                                    <span className="text-[9px] font-black text-sky-500 uppercase">{item.class_section}</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 font-medium">{item.teacher_name}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {searchData.timetable.length === 0 && <div className="text-center p-12 text-slate-400 italic text-sm">No classes scheduled for today.</div>}
+                        </div>
+                      </div>
+                   </div>
+                 </div>
+              </motion.div>
             )}
 
           </AnimatePresence>
