@@ -120,7 +120,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   const [toast,   setToast]   = useState<{msg:string;type:'ok'|'err'|'info'}|null>(null);
   const [preview, setPreview] = useState<any>(null);
   const [confirming, setConfirming] = useState<any>(null);
-  const [instDates, setInstDates] = useState<string[]>([]);
+  const [instData, setInstData] = useState<{ date: string; amount: number }[]>([]);
   const [manualRoll, setManualRoll] = useState('');
   const [form,    setForm]    = useState<any>({...EMPTY});
 
@@ -220,7 +220,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
     finally{ setSaving(false); }
   };
 
-  const confirmToDatabase = async (f:any, installmentDates: string[]) => {
+  const confirmToDatabase = async (f:any, installmentData: any[]) => {
     if (!manualRoll) {
       showToast('Please assign a roll number manually', 'err');
       return;
@@ -280,7 +280,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
       if (studentType === 'Summer Camp') {
         ledgerFees = [
-            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: installmentDates[0] || today, amount: 7000, paid: 0, status: 'Unpaid' }
+            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: installmentData[0]?.date || today, amount: 7000, paid: 0, status: 'Unpaid' }
         ];
       } else {
         // Regular or Transfer
@@ -291,21 +291,35 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
           ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
         }
 
-        const pkgAmt = Number(f.fee_package) || 0;
-        const instCount = f.installments || 1;
-        const perInst = Math.floor(pkgAmt / instCount);
-        
-        // Fee Package installments
-        for(let i=0; i<instCount; i++){
+        if (installmentData.length > 0) {
+          for (let i = 0; i < installmentData.length; i++) {
             ledgerFees.push({
-                student_roll: roll,
-                fees_group: instCount > 1 ? `Fee Package (Inst ${i+1})` : 'Fee Package',
-                fees_code: `FEE-PK${instCount > 1 ? `-${i+1}` : ''}`,
-                due_date: installmentDates[i] || today,
-                amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
-                paid: 0, status: 'Unpaid'
+              student_roll: roll,
+              fees_group: installmentData.length > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
+              fees_code: `FEE-PK${installmentData.length > 1 ? `-${i + 1}` : ''}`,
+              due_date: installmentData[i].date || today,
+              amount: installmentData[i].amount,
+              paid: 0, status: 'Unpaid'
             });
+          }
+        } else {
+          const pkgAmt = Number(f.fee_package) || 0;
+          const instCount = f.installments || 1;
+          const perInst = Math.floor(pkgAmt / instCount);
+          
+          // Fee Package installments
+          for(let i=0; i<instCount; i++){
+              ledgerFees.push({
+                  student_roll: roll,
+                  fees_group: instCount > 1 ? `Fee Package (Inst ${i+1})` : 'Fee Package',
+                  fees_code: `FEE-PK${instCount > 1 ? `-${i+1}` : ''}`,
+                  due_date: today,
+                  amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
+                  paid: 0, status: 'Unpaid'
+              });
+          }
         }
+      }
 
         // Summer Camp Fee if not exists
         const { data: exSC } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', 'Summer Camp Fee').maybeSingle();
@@ -539,13 +553,20 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                         <F label="Student Type" req>
                           <TS value={form.student_type} onChange={e=>{
                             const val = e.target.value;
+                            const count = val === 'Summer Camp' ? 1 : 3;
+                            const pkgAmt = val === 'Summer Camp' ? 0 : 8000;
+                            const perInst = Math.floor(pkgAmt / count);
                             setForm((p:any)=>({
                               ...p, 
                               student_type:val,
                               include_summer_camp: val === 'Summer Camp',
-                              fee_package: val === 'Summer Camp' ? 0 : 8000,
-                              installments: val === 'Summer Camp' ? 1 : 3
+                              fee_package: pkgAmt,
+                              installments: count
                             }));
+                            setInstData(Array.from({ length: count }, (_, i) => ({
+                              date: new Date().toISOString().split('T')[0],
+                              amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                            })));
                           }}>
                             <option>Regular</option>
                             <option>Summer Camp</option>
@@ -945,6 +966,13 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                             <button onClick={()=>{
                                 setConfirming(f);
                                 setManualRoll(f.student_roll_no || '');
+                                const count = f.installments || 3;
+                                const pkgAmt = Number(f.fee_package) || 0;
+                                const perInst = Math.floor(pkgAmt / count);
+                                setInstData(Array.from({ length: count }, (_, i) => ({
+                                    date: new Date().toISOString().split('T')[0],
+                                    amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                })));
                             }} className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Eye size={12}/> View & Confirm</button>
                             <motion.button whileTap={{scale:0.95}} disabled={saving} onClick={()=>{
                                 if (f.student_roll_no) setManualRoll(f.student_roll_no);
@@ -1004,18 +1032,30 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                     </div>
 
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
-                      <p className="text-sm font-black text-indigo-700 mb-1">Set Installment Due Dates</p>
-                      <p className="text-[10px] text-indigo-500 mb-3 uppercase tracking-widest font-black leading-none">Schedule Payment Timeline</p>
+                      <p className="text-sm font-black text-indigo-700 mb-1">Set Installment Schedule</p>
+                      <p className="text-[10px] text-indigo-500 mb-3 uppercase tracking-widest font-black leading-none">Dates & Amounts Manually Defined</p>
                       <div className="space-y-2">
-                        {Array.from({length: confirming.installments || 1}).map((_, idx) => (
-                          <div key={idx} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-100">
-                            <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-[10px]">{idx+1}</span>
-                            <span className="flex-1 text-[11px] font-bold text-slate-700">Installment {idx+1}</span>
-                            <input type="date" value={instDates[idx] || ''} onChange={(e) => {
-                              const newDates = [...instDates];
-                              newDates[idx] = e.target.value;
-                              setInstDates(newDates);
-                            }} className="text-[11px] font-black p-1.5 border border-slate-200 rounded-lg outline-none focus:border-indigo-500" />
+                        {instData.map((d, idx) => (
+                          <div key={idx} className="flex flex-col gap-2 bg-white p-3 rounded-xl border border-indigo-100">
+                             <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black text-indigo-700">Installment {idx+1}</p>
+                                <span className="text-[9px] font-bold text-slate-300 italic">Adjust as needed</span>
+                             </div>
+                             <div className="flex gap-2">
+                                <input type="date" value={d.date} onChange={(e) => {
+                                  const next = [...instData];
+                                  next[idx] = { ...next[idx], date: e.target.value };
+                                  setInstData(next);
+                                }} className="flex-1 text-[11px] font-bold p-1.5 border border-indigo-50 rounded-lg outline-none focus:border-indigo-500 bg-indigo-50/30" />
+                                <div className="relative w-24">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-indigo-400">Rs</span>
+                                  <input type="number" value={d.amount} onChange={(e) => {
+                                    const next = [...instData];
+                                    next[idx] = { ...next[idx], amount: Number(e.target.value) };
+                                    setInstData(next);
+                                  }} className="w-full text-[11px] font-black pl-5 p-1.5 border border-indigo-50 rounded-lg outline-none focus:border-indigo-500 bg-indigo-50/30 text-indigo-700" />
+                                </div>
+                             </div>
                           </div>
                         ))}
                       </div>
@@ -1077,7 +1117,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
               </div>
               {confirming && isAccountant && (
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
-                  <motion.button whileTap={{scale:0.97}} disabled={saving} onClick={()=>confirmToDatabase(confirming, instDates)}
+                  <motion.button whileTap={{scale:0.97}} disabled={saving} onClick={()=>confirmToDatabase(confirming, instData)}
                     className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
                     style={{background:'linear-gradient(135deg,#059669,#10b981)'}}>
                     {saving?<Loader2 size={15} className="animate-spin"/>:<><Database size={15}/> Confirm Admission & Sync</>}

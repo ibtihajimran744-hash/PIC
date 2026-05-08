@@ -700,7 +700,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [teachers,     setTeachers]     = useState<any[]>([]);
   const [manualRoll,     setManualRoll]     = useState('');
   const [discSaving,   setDiscSaving]   = useState<string | null>(null);
-  const [instDates,      setInstDates]      = useState<string[]>([]);
+  const [instData,       setInstData]       = useState<{ date: string; amount: number }[]>([]);
   const [saving,         setSaving]         = useState(false);
   const [preview,      setPreview]      = useState<any>(null);
   const [selectedAccStu,  setSelectedAccStu]  = useState<any>(null);
@@ -760,10 +760,15 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
 
   useEffect(() => {
     const count = admForm.num_installments || 1;
-    if (instDates.length !== count) {
-      setInstDates(Array(count).fill(new Date().toISOString().split('T')[0]));
+    const pkgAmt = Number(admForm.fee_package) || 0;
+    const perInst = Math.floor(pkgAmt / count);
+    if (instData.length !== count) {
+      setInstData(Array.from({ length: count }, (_, i) => ({
+        date: new Date().toISOString().split('T')[0],
+        amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+      })));
     }
-  }, [admForm.num_installments]);
+  }, [admForm.num_installments, admForm.fee_package]);
 
   const showToast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); };
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
@@ -1632,9 +1637,14 @@ const handlePrintReport = (data: any) => {
   };
 
   const confirmToDatabase = async (f: any) => {
-    if (f.status === 'Pending' && instDates.length === 0) {
-       // Initialize if not already
-       setInstDates(Array(f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+    if (f.status === 'Pending' && instData.length === 0) {
+       const count = f.num_installments || f.installments || 3;
+       const pkgAmt = Number(f.fee_package) || 0;
+       const perInst = Math.floor(pkgAmt / count);
+       setInstData(Array.from({ length: count }, (_, i) => ({
+         date: new Date().toISOString().split('T')[0],
+         amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+       })));
     }
     
     if (!manualRoll) {
@@ -1677,20 +1687,16 @@ const handlePrintReport = (data: any) => {
 
       if (studentType === 'Summer Camp') {
           ledgerFees = [
-            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: instDates[0] || today, amount: 7000, paid: 0, status: 'Unpaid' }
+            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: instData[0]?.date || today, amount: 7000, paid: 0, status: 'Unpaid' }
           ];
       } else {
-          const pkgAmt = Number(f.fee_package) || 0;
-          const instCount = f.num_instalments || f.installments || 1;
-          const perInst = Math.floor(pkgAmt / instCount);
-          
-          for (let i = 0; i < instCount; i++) {
+          for (let i = 0; i < instData.length; i++) {
               ledgerFees.push({
                   student_roll: roll,
-                  fees_group: instCount > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
-                  fees_code: `FEE-PK${instCount > 1 ? `-${i + 1}` : ''}`,
-                  due_date: instDates[i] || today,
-                  amount: i === instCount - 1 ? pkgAmt - (perInst * (instCount - 1)) : perInst,
+                  fees_group: instData.length > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
+                  fees_code: `FEE-PK${instData.length > 1 ? `-${i + 1}` : ''}`,
+                  due_date: instData[i].date || today,
+                  amount: instData[i].amount,
                   paid: 0, status: 'Unpaid'
               });
           }
@@ -2670,8 +2676,14 @@ const active = tab === id; const badgeN = getBadge(id);
                             <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
                                 setPreview(f);
                                 setManualRoll(f.student_roll_no || '');
-                                setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
-                            }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
+                                const count = f.num_installments || f.installments || 3;
+                                const pkgAmt = Number(f.fee_package) || 0;
+                                const perInst = Math.floor(pkgAmt / count);
+                                setInstData(Array.from({ length: count }, (_, i) => ({
+                                    date: new Date().toISOString().split('T')[0],
+                                    amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                })));
+                            }} className="flex-items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
                           </div>
                         </div>
                       ))}
@@ -3195,7 +3207,13 @@ const active = tab === id; const badgeN = getBadge(id);
                                 <button onClick={() => {
                                     setPreview(f);
                                     setManualRoll(f.student_roll_no || '');
-                                    setInstDates(Array(f.num_installments || f.installments || 3).fill(new Date().toISOString().split('T')[0]));
+                                    const count = f.num_installments || f.installments || 3;
+                                    const pkgAmt = Number(f.fee_package) || 0;
+                                    const perInst = Math.floor(pkgAmt / count);
+                                    setInstData(Array.from({ length: count }, (_, i) => ({
+                                        date: new Date().toISOString().split('T')[0],
+                                        amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                    })));
                                 }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
                                   setAdmForm({
@@ -3480,26 +3498,45 @@ const active = tab === id; const badgeN = getBadge(id);
                                 </TS>
                               </F>
                             </div>
-                            {admForm.num_installments > 0 && instDates.length === admForm.num_installments && (
+                            {admForm.num_installments > 0 && instData.length === Number(admForm.num_installments) && (
                               <div className="mt-4 p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
                                 <div className="flex items-center gap-2">
                                   <Calendar size={16} className="text-sky-500" />
-                                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Installment Due Dates (Fee Cut)</h4>
+                                  <div className="flex-1">
+                                     <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Scheduled Installments</h4>
+                                     <p className="text-[9px] text-slate-400 font-bold italic">Adjust dates and amounts manually</p>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                  {instDates.map((d, i) => (
-                                    <div key={i} className="space-y-1.5 flex flex-col">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Installment #{i+1}</label>
-                                      <input 
-                                        type="date" 
-                                        value={d} 
-                                        onChange={(e) => {
-                                          const next = [...instDates];
-                                          next[i] = e.target.value;
-                                          setInstDates(next);
-                                        }}
-                                        className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 outline-none ring-2 ring-transparent focus:ring-sky-500/20 focus:border-sky-500 transition-all cursor-pointer"
-                                      />
+                                  {instData.map((d, i) => (
+                                    <div key={i} className="space-y-2 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm focus-within:border-sky-200 transition-colors">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase">Inst #{i+1}</label>
+                                      <div className="space-y-1.5">
+                                        <input 
+                                          type="date" 
+                                          value={d.date} 
+                                          onChange={(e) => {
+                                            const next = [...instData];
+                                            next[i] = { ...next[i], date: e.target.value };
+                                            setInstData(next);
+                                          }}
+                                          className="w-full text-[11px] p-2 border border-slate-100 rounded-xl outline-none focus:border-sky-300"
+                                        />
+                                        <div className="relative">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rs</span>
+                                          <input 
+                                            type="number"
+                                            value={d.amount}
+                                            onChange={(e) => {
+                                              const next = [...instData];
+                                              next[i] = { ...next[i], amount: Number(e.target.value) };
+                                              setInstData(next);
+                                            }}
+                                            className="w-full text-[11px] font-black pl-7 p-2 border border-slate-100 rounded-xl outline-none focus:border-sky-300 text-sky-600"
+                                            placeholder="Amount"
+                                          />
+                                        </div>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -4737,30 +4774,44 @@ const active = tab === id; const badgeN = getBadge(id);
                     </div>
                   )}
 
-                  {preview.status === 'Pending' && instDates.length > 0 && (
+                  {preview.status === 'Pending' && instData.length > 0 && (
                     <div className="bg-slate-50 rounded-2xl p-5 mb-4 border border-slate-100">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Calendar size={16} className="text-sky-500" />
-                        <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Confirm Installment Due Dates</h4>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={16} className="text-sky-500" />
+                          <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Confirm Schedule & Amounts</h4>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-bold italic">Manual Editing ON</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        {instDates.map((d, i) => (
-                          <div key={i} className="flex flex-col gap-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {instData.map((d, i) => (
+                          <div key={i} className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm space-y-2">
                             <label className="text-[9px] font-black text-slate-400 uppercase">Inst #{i+1}</label>
-                            <input 
-                              type="date" 
-                              value={d} 
-                              onChange={(e) => {
-                                const next = [...instDates];
-                                next[i] = e.target.value;
-                                setInstDates(next);
-                              }}
-                              className="w-full px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-xs font-bold text-slate-800 focus:border-sky-500 outline-none transition-all"
-                            />
+                            <div className="flex gap-2">
+                              <input 
+                                type="date" 
+                                value={d.date} 
+                                onChange={(e) => {
+                                  const next = [...instData];
+                                  next[i] = { ...next[i], date: e.target.value };
+                                  setInstData(next);
+                                }}
+                                className="flex-1 text-[11px] p-2 border border-slate-50 rounded-lg bg-slate-50/50 outline-none focus:ring-1 focus:ring-sky-200"
+                              />
+                              <input 
+                                type="number"
+                                value={d.amount}
+                                onChange={(e) => {
+                                  const next = [...instData];
+                                  next[i] = { ...next[i], amount: Number(e.target.value) };
+                                  setInstData(next);
+                                }}
+                                className="w-24 text-[11px] font-black text-sky-600 p-2 border border-slate-50 rounded-lg bg-slate-50/50 outline-none focus:ring-1 focus:ring-sky-200"
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>
-                      <p className="text-[9px] text-slate-400 mt-3 italic">Set these dates properly. This installment structure will be used to track Fee Cut-offs.</p>
                     </div>
                   )}
                   {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(8000)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
