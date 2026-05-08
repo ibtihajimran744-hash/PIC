@@ -332,7 +332,6 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
         if(!exUN) {
             ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
         }
-      }
 
       if (ledgerFees.length > 0) {
         const { error: fe } = await supabase.from('fee_groups').insert(ledgerFees);
@@ -549,7 +548,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
 
                     {/* Applied For */}
                     <div className="pb-5 border-b border-slate-100 space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <F label="Student Type" req>
                           <TS value={form.student_type} onChange={e=>{
                             const val = e.target.value;
@@ -571,6 +570,20 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                             <option>Regular</option>
                             <option>Summer Camp</option>
                             <option>Transfer</option>
+                          </TS>
+                        </F>
+                        <F label="No. of Installments" req>
+                          <TS value={form.installments} onChange={e => {
+                            const count = Number(e.target.value);
+                            const pkgAmt = Number(form.fee_package) || 0;
+                            const perInst = Math.floor(pkgAmt / count);
+                            setForm(p => ({ ...p, installments: count }));
+                            setInstData(Array.from({ length: count }, (_, i) => ({
+                              date: new Date().toISOString().split('T')[0],
+                              amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                            })));
+                          }}>
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n}</option>)}
                           </TS>
                         </F>
                         <F label="Applied For" req>

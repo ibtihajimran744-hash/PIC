@@ -376,7 +376,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Installments</label>
                 <select value={installments} onChange={e => setInstallments(Number(e.target.value))} className="w-full px-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-black text-slate-900 bg-slate-50/30 transition-all text-lg appearance-none">
-                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n} Installment{n > 1 ? 's' : ''}</option>)}
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} Installment{n > 1 ? 's' : ''}</option>)}
                 </select>
                 <p className="text-[10px] text-slate-400 mt-2 font-medium">Fee will be divided equally over {installments} month{installments > 1 ? 's' : ''}.</p>
               </div>
@@ -3494,7 +3494,7 @@ const active = tab === id; const badgeN = getBadge(id);
                               </F>
                               <F label="No. of Installments" req>
                                 <TS value={admForm.num_installments} onChange={(e: any) => setF('num_installments', Number(e.target.value))}>
-                                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}</option>)}
+                                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}</option>)}
                                 </TS>
                               </F>
                             </div>
