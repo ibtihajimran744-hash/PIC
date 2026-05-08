@@ -83,11 +83,13 @@ export const ReceptionistPortal: React.FC<{
   const [searchData, setSearchData] = useState<any>({ teachers: [], students: [], timetable: [] });
 
   // Form States
-  const [visitorForm, setVisitorForm] = useState({ name: '', to_meet: '', purpose: '' });
-  const [callForm, setCallForm] = useState({ caller_name: '', phone: '', purpose: '', status: 'Inbound' });
-  const [complaintForm, setComplaintForm] = useState({ title: '', description: '', priority: 'Medium', type: 'General' });
-  const [lostFoundForm, setLostFoundForm] = useState({ item_name: '', description: '', location: '', type: 'Lost' });
+  const [visitorForm, setVisitorForm] = useState({ name: '', to_meet: '', purpose: '', visitor_type: 'Parent', phone: '' });
+  const [callForm, setCallForm] = useState({ caller_name: '', phone: '', purpose: '', status: 'Inbound', notes: '' });
+  const [complaintForm, setComplaintForm] = useState({ title: '', description: '', priority: 'Medium', type: 'General', complainant_name: '', contact: '' });
+  const [lostFoundForm, setLostFoundForm] = useState({ item_name: '', description: '', location: '', type: 'Lost', date_found: new Date().toISOString().split('T')[0] });
   const [messageForm, setMessageForm] = useState({ recipient_id: '', content: '' });
+
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const refreshData = () => setRefreshKey(prev => prev + 1);
 
@@ -198,22 +200,27 @@ export const ReceptionistPortal: React.FC<{
     if (!visitorForm.name || !visitorForm.to_meet) return showToast('Please fill all required fields', 'error');
     
     try {
+      setLoading(true);
       const { error } = await supabase.from('visitor_log').insert([{
         visitor_name: visitorForm.name,
+        visitor_type: visitorForm.visitor_type,
+        phone: visitorForm.phone,
         to_meet: visitorForm.to_meet,
         purpose: visitorForm.purpose,
         visit_date: new Date().toISOString().split('T')[0],
         check_in_time: new Date().toLocaleTimeString(),
         status: 'Inside',
-        logged_by: adminData.full_name
+        logged_by: adminData?.full_name || 'System'
       }]);
       if (error) throw error;
       showToast('Visitor registered successfully');
-      setVisitorForm({ name: '', to_meet: '', purpose: '' });
+      setVisitorForm({ name: '', to_meet: '', purpose: '', visitor_type: 'Parent', phone: '' });
       refreshData();
     } catch (err) {
       console.error(err);
-      showToast('Action failed', 'error');
+      showToast('Action failed: Ensure visitor_log table exists', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -797,45 +804,70 @@ export const ReceptionistPortal: React.FC<{
                     <UserCheck size={18} className="text-sky-500" />
                     New Visitor Registration
                   </h3>
-                  <form onSubmit={handleVisitorSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <form onSubmit={handleVisitorSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Visitor Name *</label>
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Visitor Name *</label>
                        <input 
                         type="text" 
                         required
                         value={visitorForm.name}
                         onChange={(e) => setVisitorForm({ ...visitorForm, name: e.target.value })}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
-                        placeholder="John Doe" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-sky-500 outline-none transition-all" 
+                        placeholder="e.g. Ahmad Ali" 
                       />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Who to Meet / Reason *</label>
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Visitor Type / Who he is</label>
+                       <select 
+                        value={visitorForm.visitor_type}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, visitor_type: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-sky-500 outline-none transition-all"
+                      >
+                        <option>Parent</option>
+                        <option>Alumni</option>
+                        <option>Vendor</option>
+                        <option>Official</option>
+                        <option>Guest</option>
+                        <option>Other</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Who to Meet / Reason *</label>
                        <input 
                         type="text" 
                         required
                         value={visitorForm.to_meet}
                         onChange={(e) => setVisitorForm({ ...visitorForm, to_meet: e.target.value })}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
-                        placeholder="Principal / Admission Inquiry" 
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-sky-500 outline-none transition-all" 
+                        placeholder="e.g. Mr. Kashif / Fee Issue" 
                       />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Additional Purpose (Optional)</label>
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Phone (Optional)</label>
                        <input 
                         type="text" 
-                        value={visitorForm.purpose}
-                        onChange={(e) => setVisitorForm({ ...visitorForm, purpose: e.target.value })}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-sky-500/20 outline-none" 
-                        placeholder="Detail about the visit" 
+                        value={visitorForm.phone}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, phone: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-sky-500 outline-none transition-all" 
+                        placeholder="03xx-xxxxxxx" 
                       />
                     </div>
-                    <div className="lg:col-span-3 flex justify-end">
+                    <div className="lg:col-span-4 space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Detailed Purpose / Notes</label>
+                       <textarea 
+                        value={visitorForm.purpose}
+                        onChange={(e) => setVisitorForm({ ...visitorForm, purpose: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:border-sky-500 outline-none transition-all min-h-[60px]" 
+                        placeholder="Reason for visit in detail..." 
+                      />
+                    </div>
+                    <div className="lg:col-span-4 flex justify-end">
                        <button 
                         type="submit"
-                        className="px-8 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm hover:bg-sky-600 shadow-lg shadow-sky-100 transition-all flex items-center gap-2"
+                        disabled={loading}
+                        className="px-8 py-3 bg-sky-500 text-white rounded-2xl font-black text-xs hover:bg-sky-600 shadow-xl shadow-sky-100 transition-all flex items-center gap-2 disabled:opacity-50"
                       >
-                         <UserCheck size={18} /> Register & Check In
+                         {loading ? <RefreshCw size={16} className="animate-spin" /> : <><UserCheck size={18} /> Register & Check In</>}
                        </button>
                     </div>
                   </form>
@@ -863,7 +895,10 @@ export const ReceptionistPortal: React.FC<{
                           <tr key={v.id || i} className="hover:bg-slate-50/30 transition-colors">
                             <td className="p-4">
                               <p className="text-xs font-bold text-slate-900">{v.visitor_name}</p>
-                              <p className="text-[10px] text-slate-400">{new Date(v.visit_date).toLocaleDateString()}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] font-black uppercase text-sky-500 bg-sky-50 px-1.5 py-0.5 rounded-md">{v.visitor_type || 'Guest'}</span>
+                                <p className="text-[10px] text-slate-400">{v.phone || 'No phone'}</p>
+                              </div>
                             </td>
                             <td className="p-4">
                               <p className="text-xs text-slate-600 font-medium">{v.to_meet}</p>
@@ -906,74 +941,113 @@ export const ReceptionistPortal: React.FC<{
 
             {activeTab === 'calls' && (
               <motion.div key="calls" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Reception Call Log</h2>
+                    <p className="text-sm text-slate-500">Track all incoming and outgoing campus calls</p>
+                  </div>
+                  <button onClick={() => handlePrint('Call Log Report', '...')} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-sky-500 transition-colors">
+                    <Printer size={20} />
+                  </button>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <Phone size={18} className="text-sky-500" />
-                    Log New Call
+                    New Call Entry
                   </h3>
                   <form onSubmit={handleCallSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <input 
-                      type="text" 
-                      placeholder="Caller Name" 
-                      required
-                      value={callForm.caller_name}
-                      onChange={(e) => setCallForm({ ...callForm, caller_name: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Phone Number" 
-                      required
-                      value={callForm.phone}
-                      onChange={(e) => setCallForm({ ...callForm, phone: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Purpose" 
-                      required
-                      value={callForm.purpose}
-                      onChange={(e) => setCallForm({ ...callForm, purpose: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                    />
-                    <select 
-                      value={callForm.status}
-                      onChange={(e) => setCallForm({ ...callForm, status: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none font-bold"
-                    >
-                      <option>Inbound</option>
-                      <option>Outbound</option>
-                      <option>Missed</option>
-                    </select>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Caller Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Mr. Sajjad" 
+                        required
+                        value={callForm.caller_name}
+                        onChange={(e) => setCallForm({ ...callForm, caller_name: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Phone Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="03xx-xxxxxxx" 
+                        required
+                        value={callForm.phone}
+                        onChange={(e) => setCallForm({ ...callForm, phone: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Status</label>
+                      <select 
+                        value={callForm.status}
+                        onChange={(e) => setCallForm({ ...callForm, status: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      >
+                        <option>Inbound</option>
+                        <option>Outbound</option>
+                        <option>Missed</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Purpose</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Admission Inquiry" 
+                        required
+                        value={callForm.purpose}
+                        onChange={(e) => setCallForm({ ...callForm, purpose: e.target.value })}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" 
+                      />
+                    </div>
                     <div className="lg:col-span-4 flex justify-end">
-                      <button type="submit" className="px-6 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-sky-100">Log Call</button>
+                      <button type="submit" disabled={loading} className="px-8 py-2.5 bg-sky-500 text-white rounded-xl font-black text-xs shadow-lg shadow-sky-100 disabled:opacity-50">
+                        {loading ? 'Saving...' : 'Log Call Entry'}
+                      </button>
                     </div>
                   </form>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Caller</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Phone</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Purpose</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Status</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Time</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Caller Details</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Purpose of Call</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status / Type</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Time</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {callLog.map((c, i) => (
-                        <tr key={i} className="text-xs">
-                          <td className="p-4 font-bold">{c.caller_name}</td>
-                          <td className="p-4">{c.phone}</td>
-                          <td className="p-4">{c.purpose}</td>
+                        <tr key={c.id || i} className="hover:bg-slate-50/30">
                           <td className="p-4">
-                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", c.status === 'Inbound' ? "bg-sky-50 text-sky-600" : "bg-amber-50 text-amber-600")}>{c.status}</span>
+                            <p className="text-xs font-bold text-slate-900">{c.caller_name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{c.phone}</p>
                           </td>
-                          <td className="p-4 text-slate-400">{c.time}</td>
+                          <td className="p-4">
+                            <p className="text-xs text-slate-600 font-bold">{c.purpose}</p>
+                          </td>
+                          <td className="p-4">
+                            <span className={cn(
+                              "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase", 
+                              c.status === 'Inbound' ? "bg-sky-50 text-sky-600" : 
+                              c.status === 'Missed' ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"
+                            )}>
+                              {c.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                             <p className="text-xs font-bold text-slate-400">{c.time}</p>
+                             <p className="text-[9px] text-slate-300 uppercase font-black">{new Date(c.created_at).toLocaleDateString()}</p>
+                          </td>
                         </tr>
                       ))}
+                      {callLog.length === 0 && (
+                        <tr><td colSpan={4} className="p-12 text-center text-slate-300 italic text-sm">No calls logged in this period</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -982,65 +1056,85 @@ export const ReceptionistPortal: React.FC<{
 
             {activeTab === 'complaints' && (
               <motion.div key="complaints" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Complaints & Feedback</h2>
+                    <p className="text-sm text-slate-500">Log and monitor student/parent grievances</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <ShieldAlert size={18} className="text-rose-500" />
-                    File New Complaint
+                    New Complaint Record
                   </h3>
-                  <form onSubmit={handleComplaintSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <input 
-                        type="text" 
-                        placeholder="Complaint Title" 
-                        required
-                        value={complaintForm.title}
-                        onChange={(e) => setComplaintForm({ ...complaintForm, title: e.target.value })}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                      />
-                      <select 
-                        value={complaintForm.priority}
-                        onChange={(e) => setComplaintForm({ ...complaintForm, priority: e.target.value })}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
-                      >
-                        <option>Low</option>
-                        <option>Medium</option>
-                        <option>High</option>
-                      </select>
+                  <form onSubmit={handleComplaintSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase">Complainant Name</label>
+                        <input type="text" placeholder="Who is filing the complaint?" required value={complaintForm.complainant_name} onChange={(e) => setComplaintForm({...complaintForm, complainant_name: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase">Contact Info</label>
+                        <input type="text" placeholder="Phone or Roll No" required value={complaintForm.contact} onChange={(e) => setComplaintForm({...complaintForm, contact: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase">Priority Level</label>
+                        <select value={complaintForm.priority} onChange={(e) => setComplaintForm({...complaintForm, priority: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none">
+                          <option>Low</option>
+                          <option>Medium</option>
+                          <option>High</option>
+                          <option>Critical</option>
+                        </select>
+                      </div>
                     </div>
-                    <textarea 
-                      placeholder="Detailed Description" 
-                      required
-                      value={complaintForm.description}
-                      onChange={(e) => setComplaintForm({ ...complaintForm, description: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none min-h-[100px]"
-                    />
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Complaint Title</label>
+                      <input type="text" placeholder="Summary of the issue" required value={complaintForm.title} onChange={(e) => setComplaintForm({...complaintForm, title: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Detailed Description</label>
+                      <textarea placeholder="Describe the complaint in detail..." required value={complaintForm.description} onChange={(e) => setComplaintForm({...complaintForm, description: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none min-h-[100px] focus:border-sky-500" />
+                    </div>
                     <div className="flex justify-end">
-                      <button type="submit" className="px-6 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100">Submit Complaint</button>
+                      <button type="submit" disabled={loading} className="px-8 py-2.5 bg-rose-500 text-white rounded-xl font-black text-xs shadow-lg shadow-rose-100 disabled:opacity-50">
+                        {loading ? 'Submitting...' : 'Register Complaint'}
+                      </button>
                     </div>
                   </form>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50">
+                    <thead className="bg-slate-50/50 border-b border-slate-100">
                       <tr>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Title</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Priority</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Status</th>
-                        <th className="p-4 text-[10px] font-bold text-slate-400 uppercase text-right">Date</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Complainant</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status / Priority</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Filed Date</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {complaintsData.map((c, i) => (
-                        <tr key={i} className="text-xs">
-                          <td className="p-4 font-bold">{c.title}</td>
+                        <tr key={c.id || i} className="hover:bg-slate-50/30">
                           <td className="p-4">
-                            <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", c.priority === 'High' ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500")}>{c.priority}</span>
+                            <p className="text-xs font-bold text-slate-900">{c.complainant_name || 'Anonymous'}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{c.contact || 'No contact'}</p>
                           </td>
                           <td className="p-4">
-                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[9px] font-bold uppercase">{c.status}</span>
+                            <p className="text-xs text-slate-700 font-bold">{c.title}</p>
+                            <p className="text-[10px] text-slate-400 line-clamp-1">{c.description}</p>
                           </td>
-                          <td className="p-4 text-right text-slate-400">{new Date(c.created_at).toLocaleDateString()}</td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1">
+                              <span className={cn("inline-block w-fit px-2 py-0.5 rounded-full text-[9px] font-black uppercase", c.priority === 'High' || c.priority === 'Critical' ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500")}>{c.priority}</span>
+                              <span className="text-[9px] font-bold text-amber-600 uppercase">{c.status}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-right">
+                             <p className="text-xs font-bold text-slate-400">{new Date(c.created_at).toLocaleDateString()}</p>
+                             <p className="text-[9px] text-slate-300 uppercase font-black">{new Date(c.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1051,55 +1145,81 @@ export const ReceptionistPortal: React.FC<{
 
             {activeTab === 'lostfound' && (
               <motion.div key="lostfound" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Lost & Found Inventory</h2>
+                    <p className="text-sm text-slate-500">Coordinate recovery of lost student belongings</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <Package size={18} className="text-amber-500" />
-                    Report Lost/Found Item
+                    Record Lost or Found Item
                   </h3>
                   <form onSubmit={handleLostFoundSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <input 
-                      type="text" 
-                      placeholder="Item Name" 
-                      required
-                      value={lostFoundForm.item_name}
-                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, item_name: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Location" 
-                      required
-                      value={lostFoundForm.location}
-                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, location: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" 
-                    />
-                    <select 
-                      value={lostFoundForm.type}
-                      onChange={(e) => setLostFoundForm({ ...lostFoundForm, type: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none bg-white font-bold"
-                    >
-                      <option>Lost</option>
-                      <option>Found</option>
-                    </select>
-                    <button type="submit" className="w-full px-6 py-2.5 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-100">Report Item</button>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Item Name</label>
+                      <input type="text" placeholder="e.g. Blue Bag" required value={lostFoundForm.item_name} onChange={(e) => setLostFoundForm({ ...lostFoundForm, item_name: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Location</label>
+                      <input type="text" placeholder="e.g. Room 12 / Ground" required value={lostFoundForm.location} onChange={(e) => setLostFoundForm({ ...lostFoundForm, location: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-sky-500" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Type</label>
+                      <select value={lostFoundForm.type} onChange={(e) => setLostFoundForm({ ...lostFoundForm, type: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none">
+                        <option>Lost</option>
+                        <option>Found</option>
+                        <option>Claimed</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end pb-0.5">
+                      <button type="submit" disabled={loading} className="w-full py-2.5 bg-amber-500 text-white rounded-xl font-black text-xs shadow-lg shadow-amber-100 disabled:opacity-50">
+                        {loading ? 'Recording...' : 'Save Record'}
+                      </button>
+                    </div>
+                    <div className="lg:col-span-4 space-y-1.5">
+                       <label className="text-[10px] font-black text-slate-400 uppercase">Brief Description</label>
+                       <textarea placeholder="Describe the item's appearance..." required value={lostFoundForm.description} onChange={(e) => setLostFoundForm({ ...lostFoundForm, description: e.target.value })} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none min-h-[60px] focus:border-sky-500" />
+                    </div>
                   </form>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {lostFoundData.map((item, i) => (
-                    <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 hover:shadow-md transition-all">
-                      <div className="flex justify-between items-start mb-3">
-                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold uppercase", item.type === 'Lost' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600")}>{item.type}</span>
-                        <p className="text-[10px] text-slate-400 font-bold">{new Date(item.created_at).toLocaleDateString()}</p>
+                    <div key={item.id || i} className="bg-white p-5 rounded-3xl border border-slate-200 hover:shadow-xl hover:shadow-slate-200/50 transition-all group">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className={cn(
+                          "px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest", 
+                          item.type === 'Lost' ? "bg-rose-50 text-rose-600 border border-rose-100" : 
+                          item.type === 'Claimed' ? "bg-slate-100 text-slate-500 border border-slate-200" : 
+                          "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                        )}>
+                          {item.type}
+                        </span>
+                        <div className="p-2 bg-slate-50 rounded-lg text-slate-300 group-hover:text-amber-500 transition-colors">
+                          <Package size={14} />
+                        </div>
                       </div>
-                      <h4 className="font-bold text-slate-800 mb-1">{item.item_name}</h4>
-                      <p className="text-xs text-slate-500 mb-4 line-clamp-2">{item.description || 'No description provided'}</p>
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <MapPin size={12} />
-                        <span className="text-[10px] font-medium">{item.location}</span>
+                      <h4 className="font-black text-slate-900 mb-1.5">{item.item_name}</h4>
+                      <p className="text-xs text-slate-500 mb-6 leading-relaxed line-clamp-2">{item.description || 'No specialized description provided.'}</p>
+                      
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <MapPin size={12} className="text-amber-400" />
+                          <span className="text-[10px] font-black uppercase tracking-tighter">{item.location}</span>
+                        </div>
+                        <p className="text-[9px] font-black text-slate-300 uppercase">{new Date(item.created_at).toLocaleDateString()}</p>
                       </div>
                     </div>
                   ))}
+                  {lostFoundData.length === 0 && (
+                     <div className="lg:col-span-3 py-20 bg-white rounded-3xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
+                        <Package size={40} className="text-slate-200 mb-4" />
+                        <p className="text-sm font-bold text-slate-400">No lost or found items recorded yet.</p>
+                     </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1228,10 +1348,42 @@ export const ReceptionistPortal: React.FC<{
               <span className="text-[10px] font-bold">{item.label}</span>
             </button>
           ))}
-          <button className="flex flex-col items-center justify-center gap-1 text-slate-400 py-1.5 min-w-[64px]">
-            <Menu size={20} />
-            <span className="text-[10px] font-bold">More</span>
-          </button>
+          <div className="relative">
+            <button 
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 transition-all rounded-xl min-w-[64px] py-1.5",
+                isMobileMenuOpen ? "text-sky-500" : "text-slate-400"
+              )}
+            >
+              <Menu size={20} />
+              <span className="text-[10px] font-bold">More</span>
+            </button>
+            <AnimatePresence>
+              {isMobileMenuOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  exit={{ opacity: 0, y: 20 }}
+                  className="absolute bottom-16 right-0 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 z-50 overflow-hidden"
+                >
+                  {navItems.slice(4).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => { setActiveTab(item.id); setIsMobileMenuOpen(false); }}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all",
+                        activeTab === item.id ? "bg-sky-500 text-white" : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      <item.icon size={16} />
+                      {item.label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </nav>
       </main>
 

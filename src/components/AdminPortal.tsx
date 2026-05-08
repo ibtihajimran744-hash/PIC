@@ -755,6 +755,13 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const cls = sec ? CLASS_MAP[admForm.program]?.[admForm.part]?.[sec] || '' : '';
   const setF = (k: string, v: any) => setAdmForm((p: any) => ({ ...p, [k]: v }));
 
+  useEffect(() => {
+    const count = admForm.num_installments || 1;
+    if (instDates.length !== count) {
+      setInstDates(Array(count).fill(new Date().toISOString().split('T')[0]));
+    }
+  }, [admForm.num_installments]);
+
   const showToast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); };
   const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
   const refresh   = () => setRefreshKey(k => k + 1);
@@ -3460,6 +3467,31 @@ const active = tab === id; const badgeN = getBadge(id);
                                 </TS>
                               </F>
                             </div>
+                            {admForm.num_installments > 0 && instDates.length === admForm.num_installments && (
+                              <div className="mt-4 p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
+                                <div className="flex items-center gap-2">
+                                  <Calendar size={16} className="text-sky-500" />
+                                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Installment Due Dates (Fee Cut)</h4>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {instDates.map((d, i) => (
+                                    <div key={i} className="space-y-1.5 flex flex-col">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Installment #{i+1}</label>
+                                      <input 
+                                        type="date" 
+                                        value={d} 
+                                        onChange={(e) => {
+                                          const next = [...instDates];
+                                          next[i] = e.target.value;
+                                          setInstDates(next);
+                                        }}
+                                        className="w-full px-3 py-2 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 outline-none ring-2 ring-transparent focus:ring-sky-500/20 focus:border-sky-500 transition-all cursor-pointer"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="p-4 rounded-xl bg-orange-50 border border-orange-100">
                               <p className="text-xs text-orange-700 font-bold flex items-center gap-2 italic">
                                 <AlertTriangle size={14} className="text-orange-500"/> Note: Summer Camp Fee (7,000) and Uniform Fee (1,000) will be added automatically.
@@ -4643,6 +4675,33 @@ const active = tab === id; const badgeN = getBadge(id);
                          </li>
                        </ul>
                        <p className="text-[10px] text-amber-500 mt-3 italic text-center font-bold">These fees will be automatically generated in the student's ledger upon confirmation.</p>
+                    </div>
+                  )}
+
+                  {preview.status === 'Pending' && instDates.length > 0 && (
+                    <div className="bg-slate-50 rounded-2xl p-5 mb-4 border border-slate-100">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Calendar size={16} className="text-sky-500" />
+                        <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Confirm Installment Due Dates</h4>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {instDates.map((d, i) => (
+                          <div key={i} className="flex flex-col gap-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase">Inst #{i+1}</label>
+                            <input 
+                              type="date" 
+                              value={d} 
+                              onChange={(e) => {
+                                const next = [...instDates];
+                                next[i] = e.target.value;
+                                setInstDates(next);
+                              }}
+                              className="w-full px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-xs font-bold text-slate-800 focus:border-sky-500 outline-none transition-all"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-slate-400 mt-3 italic">Set these dates properly. This installment structure will be used to track Fee Cut-offs.</p>
                     </div>
                   )}
                   {[['Student Name', preview.student_name], ['Father Name', preview.father_name], ['B-Form / NIC', preview.b_form_nic || '—'], ['Program', `${preview.program} Part ${preview.part}`], ['Gender', preview.gender], ['DOB', preview.student_dob || '—'], ['Cell No', preview.cell_no || '—'], ['WhatsApp', preview.whatsapp_no || '—'], ['Email', preview.email || '—'], ['Address', preview.current_address || '—'], ['Matric Year', preview.matric_year || '—'], ['Matric Marks', preview.matric_marks || '—'], ['Matric %', preview.matric_percentage ? `${preview.matric_percentage}%` : '—'], ['Matric Board', preview.matric_board || '—'], ['Suggested Section', preview.suggested_section || '—'], ['Suggested Class', preview.suggested_class || '—'], ['Fee Package', PKR(8000)], ['Notes', preview.notes || '—'], ['Status', preview.status], ['Submitted By', preview.created_by || '—'], ['Date', new Date(preview.created_at).toLocaleString('en-PK')]].map(([l, v]) => (
