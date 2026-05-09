@@ -7,7 +7,8 @@ import {
   FileText, UserCheck, Check, Settings, Calendar, Eye,
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target,
-  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine
+  Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
@@ -683,6 +684,8 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [searchQ,         setSearchQ]         = useState('');
   const [filterProgram,   setFilterProgram]   = useState('');
   const [filterSection,   setFilterSection]   = useState('');
+  const [filterGender,    setFilterGender]    = useState('');
+  const [filterStudentType, setFilterStudentType] = useState('');
   const [showNotifs,      setShowNotifs]      = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [editPermRole,    setEditPermRole]    = useState<any>(null);
@@ -747,6 +750,8 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   const [advanceForm, setAdvanceForm] = useState({ amount: '', reason: '', method: 'Cash', notes: '' });
   const [ledgerGender,   setLedgerGender]   = useState('');
   const [ledgerCategory, setLedgerCategory] = useState(''); // 'university' | 'intermediate' | ''
+  const [viewType, setViewType] = useState<'fees' | 'other'>('other');
+  const [selectedIncomeClass, setSelectedIncomeClass] = useState('All');
   // ------------------------
 
 
@@ -1677,10 +1682,38 @@ const handlePrintReport = (data: any) => {
       if (f.include_summer_camp) totalPackage += 7000;
       if (f.include_uniform) totalPackage += 1000;
 
+      // --- Automatic Section Selection ---
+      let baseSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
+      
+      const getAutoSectionName = async (initialSection: string): Promise<string> => {
+        // Count students in initialSection
+        const { count, error: countErr } = await supabase.from('students')
+          .select('id', { count: 'exact', head: true })
+          .eq('class_section', initialSection);
+        
+        if (countErr) return initialSection;
+        if ((count || 0) < 30) return initialSection;
+
+        // Find next available numeric sub-section if already full
+        let subIndex = 2;
+        while (subIndex < 20) {
+          const nextOption = `${initialSection} (${subIndex})`;
+          const { count: subCount } = await supabase.from('students')
+            .select('id', { count: 'exact', head: true })
+            .eq('class_section', nextOption);
+          if ((subCount || 0) < 30) return nextOption;
+          subIndex++;
+        }
+        return initialSection;
+      };
+
+      const finalSection = await getAutoSectionName(baseSection);
+
       const { error: se } = await supabase.from('students').insert([{
         roll_no: roll, full_name: f.student_name, father_name: f.father_name,
         gender: f.gender, program: f.program, part: f.part,
-        class_section: f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD'),
+        class_section: finalSection,
+        student_type: studentType,
         total_package: totalPackage, paid_amount: 0, status: 'Active',
         username, password, total_xp: 0, profile_xp: 0, current_badge: 'Newcomer',
       }]);
@@ -1960,7 +1993,6 @@ const handlePrintReport = (data: any) => {
     if (error) throw error;
     
     showToast(`✅ ${finType} recorded successfully`);
-    setTab('reports');
     setFinAmount('');
     setFinCategory(''); setFinName(''); setFinSlipNo(''); setFinDesc('');
     refresh();
@@ -2078,6 +2110,8 @@ const handlePrintReport = (data: any) => {
   const filteredStudents = students.filter(s => {
     if (filterProgram && s.program !== filterProgram) return false;
     if (filterSection && s.class_section !== filterSection) return false;
+    if (filterGender && s.gender !== filterGender) return false;
+    if (filterStudentType && s.student_type !== filterStudentType) return false;
     if (!searchQ) return true;
     const q = searchQ.toLowerCase();
     return s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q) || s.class_section?.toLowerCase().includes(q) || s.father_name?.toLowerCase().includes(q);
@@ -2100,8 +2134,7 @@ const handlePrintReport = (data: any) => {
         { id: 'fee-ledger',   label: 'Fee Ledger',   icon: DollarSign },
         { id: 'transactions', label: 'Transactions', icon: Receipt },
         { id: 'income',       label: 'Income Mgmt',  icon: BarChart3 },
-        { id: 'expense-header', label: 'Expense Headers', icon: Tag },
-        { id: 'expenses',     label: 'Expenses',     icon: Minus },
+        { id: 'expenses',     label: 'Expense Mgmt', icon: Minus },
         { id: 'salaries',     label: 'Teacher Salaries', icon: UserCheck }
       ]
     },
@@ -2156,7 +2189,8 @@ const handlePrintReport = (data: any) => {
     { id: 'transactions',  label: 'Transactions',  icon: Receipt },
     { id: 'salaries',      label: 'Salaries',      icon: UserCheck },
     { id: 'admissions',    label: 'Admissions',    icon: FileText },
-    { id: 'expense-header', label: 'Expense Header', icon: Tag },
+    { id: 'income',        label: 'Income',        icon: BarChart3 },
+    { id: 'expenses',      label: 'Expenses',      icon: Minus },
     { id: 'new-admission', label: 'New Admission', icon: UserPlus },
     { id: 'discounts',     label: 'Discounts',     icon: Tag },
     { id: 'students',      label: 'Students',      icon: Users },
@@ -2179,7 +2213,8 @@ const handlePrintReport = (data: any) => {
     students: 'Student Records', academics: 'Academic Overview',
     leaves: 'Leave Requests', admissions: 'Admissions',
     'new-admission': 'New Admission Form', 'fee-ledger': 'Fee Ledger',
-    'expense-header': 'Expense Header Management',
+    'expenses': 'Expense Management',
+    'income': 'Income Management',
     'fee-groups': 'Fee Groups', transactions: 'Transactions',
     discounts: 'Discount Requests', reports: 'Financial Reports',
     salaries: 'Teacher Salaries',
@@ -2484,7 +2519,62 @@ const active = tab === id; const badgeN = getBadge(id);
                     </motion.div>
                   )}
                 </AnimatePresence>
-                <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Name, roll, class section..." className="w-full border border-slate-200 rounded-2xl py-3 pl-11 pr-4 text-sm outline-none focus:border-teal-500 bg-white transition-all" /></div>
+                <div className="relative mb-3"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} /><input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Name, roll, class section..." className="w-full border border-slate-200 rounded-2xl py-3 pl-11 pr-4 text-sm outline-none focus:border-teal-500 bg-white transition-all" /></div>
+                
+                <div className="bg-white rounded-3xl border border-slate-100 p-5 space-y-5 shadow-sm">
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by Class & Section</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => { setFilterProgram(''); setFilterSection(''); }} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', !filterProgram && !filterSection ? 'bg-teal-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
+                        All Students
+                      </button>
+                      {PROGRAMS.map(p => (
+                        <button key={p} onClick={() => { setFilterProgram(p); setFilterSection(''); }} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', filterProgram === p ? 'bg-teal-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                    {filteredSectionOptions.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {filteredSectionOptions.map(sec => (
+                          <button key={sec} onClick={() => setFilterSection(filterSection === sec ? '' : sec)} className={cn('px-3 py-1 rounded-lg text-[10px] font-bold border transition-all', filterSection === sec ? 'bg-slate-800 text-white border-transparent' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300')}>
+                            {sec}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender</p>
+                      <div className="flex gap-2">
+                        {['Male', 'Female'].map(g => {
+                          const active = filterGender === g;
+                          return (
+                            <button key={g} onClick={() => setFilterGender(active ? '' : g)} className={cn('flex-1 py-1.5 rounded-xl text-xs font-black border transition-all', active ? (g === 'Male' ? 'bg-blue-600 text-white border-transparent' : 'bg-purple-600 text-white border-transparent') : 'bg-slate-50 text-slate-600 border-slate-200')}>
+                              {g === 'Male' ? 'Boys' : 'Girls'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['Regular', 'Franchisee', 'Summer Camp', 'Transfer'].map(t => {
+                          const active = filterStudentType === t;
+                          return (
+                            <button key={t} onClick={() => setFilterStudentType(active ? '' : t)} className={cn('px-2.5 py-1.5 rounded-xl text-[10px] font-black border transition-all', active ? 'bg-amber-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
+                              {t === 'Summer Camp' ? 'Summer' : t}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                   <div className="px-5 py-3 border-b border-slate-100"><p className="text-xs font-bold text-slate-500">{filteredStudents.length} students · click a row to view details</p></div>
                   <div className="overflow-x-auto" style={{ maxHeight: 480 }}>
@@ -3124,44 +3214,174 @@ const active = tab === id; const badgeN = getBadge(id);
               </motion.div>
             )}
 
-            {/* ════ EXPENSE HEADERS ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'expense-header' && (
-              <motion.div key="exp-hd" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="max-w-xl mx-auto space-y-6">
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-xl overflow-hidden">
-                  <div className="text-center mb-8">
-                    <div className="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-sm"><Tag size={28} /></div>
-                    <h2 className="text-2xl font-black text-slate-900">Expense Headlines / Tags</h2>
-                    <p className="text-sm text-slate-500 font-medium">Create fixed categories for proper expense classification</p>
-                  </div>
+            {/* ════ EXPENSE MANAGEMENT ════ */}
+            {(isAccountant || isSuperAdmin) && tab === 'expenses' && (() => {
+              const filteredList = expenses.filter(e => {
+                const d = (e.expense_date || '').slice(0, 10);
+                return (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
+              });
+              const totalAmount = filteredList.reduce((s, x) => s + x.amount, 0);
 
-                  <div className="flex gap-3 mb-8">
-                    <TI placeholder="e.g. Electricity, Rent, Salary..." value={newExpenseHeader} onChange={(e: any) => setNewExpenseHeader(e.target.value)} />
-                    <button 
-                      onClick={saveExpenseHeader}
-                      disabled={saving || !newExpenseHeader.trim()}
-                      className="px-6 py-3 rounded-xl bg-slate-900 text-white font-black text-sm active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {saving ? <Loader2 size={16} className="animate-spin" /> : 'Add Tag'}
-                    </button>
-                  </div>
+              return (
+                <motion.div key="exp-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Recording Form & Tags */}
+                    <div className="lg:col-span-1 space-y-6">
+                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                         <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center border border-orange-100"><Minus size={20} /></div>
+                            <h3 className="font-black text-slate-800">Record Expense</h3>
+                         </div>
+                         <div className="space-y-4">
+                            <div>
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Headline / Tag</label>
+                              <div className="relative">
+                                <select 
+                                  value={finCategory} 
+                                  onChange={(e: any) => setFinCategory(e.target.value)}
+                                  className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 outline-none focus:border-orange-500 bg-white text-sm font-bold appearance-none"
+                                >
+                                  <option value="">Select Category...</option>
+                                  {expenseHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+                                </select>
+                                <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                              </div>
+                            </div>
+                            
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Amount (PKR)</label>
+                               <TI type="number" value={finAmount} onChange={(e:any)=>setFinAmount(e.target.value)} placeholder="0" className="py-3" />
+                            </div>
 
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Existing Tags ({expenseHeaders.length})</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {expenseHeaders.map(h => (
-                        <div key={h.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group">
-                          <span className="font-bold text-slate-700 text-sm">{h.name}</span>
-                          <button onClick={() => deleteExpenseHeader(h.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 p-1">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
+                            <div className="grid grid-cols-2 gap-3">
+                               <div>
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Recipient/Payer</label>
+                                  <TI value={finName} onChange={(e:any)=>setFinName(e.target.value)} placeholder="Name..." className="py-2.5 text-xs" />
+                               </div>
+                               <div>
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Ref / Slip #</label>
+                                  <TI value={finSlipNo} onChange={(e:any)=>setFinSlipNo(e.target.value)} placeholder="#" className="py-2.5 text-xs" />
+                               </div>
+                            </div>
+
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Date</label>
+                               <input type="date" value={finDate} onChange={(e:any)=>setFinDate(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-orange-500 bg-white text-sm font-bold" />
+                            </div>
+
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Description</label>
+                               <textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} placeholder="Note..." className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-orange-500 min-h-[80px]" />
+                            </div>
+
+                            <motion.button 
+                              whileTap={{ scale: 0.95 }} 
+                              onClick={() => { setFinType('Expense'); saveFinancialRecord(); }} 
+                              disabled={saving || !finAmount || !finCategory}
+                              className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                              style={{ background: GRADIENT }}
+                            >
+                              {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Expense</>}
+                            </motion.button>
+                         </div>
+                      </div>
+
+                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                         <div className="flex items-center justify-between mb-4">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category Headers</p>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{expenseHeaders.length}</span>
+                         </div>
+                         <div className="flex gap-2 mb-4">
+                            <TI placeholder="New headline..." value={newExpenseHeader} onChange={(e:any)=>setNewExpenseHeader(e.target.value)} className="py-2 text-xs" />
+                            <button onClick={saveExpenseHeader} disabled={saving || !newExpenseHeader.trim()} className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase">Add</button>
+                         </div>
+                         <div className="flex flex-wrap gap-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                           {expenseHeaders.map(h => (
+                             <div key={h.id} className="flex items-center gap-2 pl-3 pr-2 py-1.5 bg-slate-50 rounded-lg border border-slate-100 group">
+                               <span className="text-[11px] font-bold text-slate-600">{h.name}</span>
+                               <button onClick={() => deleteExpenseHeader(h.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X size={12} /></button>
+                             </div>
+                           ))}
+                         </div>
+                      </div>
                     </div>
-                    {expenseHeaders.length === 0 && <p className="text-center py-10 text-slate-400 text-sm italic">No expense tags defined yet</p>}
+
+                    {/* Report / History */}
+                    <div className="lg:col-span-2 space-y-6">
+                       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
+                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                   <h3 className="font-black text-slate-900 leading-none">Expense History</h3>
+                                   <p className="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest">Filter by date and view records</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                   <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1">
+                                      <Calendar size={12} className="text-slate-400 mr-2" />
+                                      <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                                      <span className="mx-2 text-slate-300">to</span>
+                                      <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                                   </div>
+                                   <button 
+                                     onClick={() => {
+                                       const rows = filteredList.map(x => [(x.expense_date || '').slice(0, 10), x.name || '—', x.category, x.description, PKR(x.amount)]);
+                                       handlePrintList(`Expense Report (${reportFrom} to ${reportTo})`, ['Date','Payer/Recipient','Category','Description','Amount'], rows);
+                                     }}
+                                     className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
+                                   >
+                                      <Printer size={14} /> Print
+                                   </button>
+                                </div>
+                             </div>
+                          </div>
+
+                          <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-50">
+                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
+                                <p className="text-lg font-black text-slate-900">{filteredList.length}</p>
+                             </div>
+                             <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 col-span-1 sm:col-span-2">
+                                <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-1">Total Expenses</p>
+                                <p className="text-lg font-black text-orange-700">{PKR(totalAmount)}</p>
+                             </div>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <tr>
+                                  <th className="px-6 py-3 text-left">Date</th>
+                                  <th className="px-6 py-3 text-left">Recipient</th>
+                                  <th className="px-6 py-3 text-left">Category</th>
+                                  <th className="px-6 py-3 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {filteredList.length === 0 ? (
+                                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">No expenses found for the selected period</td></tr>
+                                ) : filteredList.map(x => (
+                                  <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
+                                    <td className="px-6 py-4 text-slate-500 font-medium">{(x.expense_date || '').slice(0, 10)}</td>
+                                    <td className="px-6 py-4">
+                                      <p className="font-bold text-slate-800">{x.name || '—'}</p>
+                                      <p className="text-[10px] text-slate-400 font-medium line-clamp-1">{x.description}</p>
+                                      {x.slip_no && <p className="text-[9px] text-orange-600 font-bold mt-1">Ref: {x.slip_no}</p>}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px] border border-slate-200">{x.category}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                       </div>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
+                </motion.div>
+              );
+            })()}
 
             {isAccountant && tab === 'admissions' && (
               <motion.div key="acc-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -3372,7 +3592,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                   setF('include_summer_camp', false);
                                   setF('fee_package', 8000);
                                 }
-                          }}><option>Regular</option><option>Summer Camp</option><option>Transfer</option></TS></F>
+                          }}><option>Regular</option><option>Summer Camp</option><option>Transfer</option><option>Franchisee</option></TS></F>
                         </div>
                       </div>
                       <div className="pb-5 border-b border-slate-100 space-y-4">
@@ -3657,24 +3877,60 @@ const active = tab === id; const badgeN = getBadge(id);
                 {/* Filter */}
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                   <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filter by Class</p>
-                    {(filterProgram || filterSection || searchQ) && <button onClick={() => { setFilterProgram(''); setFilterSection(''); setSearchQ(''); }} className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all" style={{ color: ACCENT, background: `${ACCENT}12` }}><X size={11} /> Clear All</button>}
+                    <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filter Students</p>
+                    {(filterProgram || filterSection || filterGender || filterStudentType || searchQ) && <button onClick={() => { setFilterProgram(''); setFilterSection(''); setFilterGender(''); setFilterStudentType(''); setSearchQ(''); }} className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all" style={{ color: ACCENT, background: `${ACCENT}12` }}><X size={11} /> Clear All</button>}
                   </div>
-                  <div className="p-4 space-y-3">
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
-                      <div className="flex flex-wrap gap-2">
-                        {PROGRAMS.map(prog => {
-                          const count = students.filter(s => s.program === prog).length;
-                          const active = filterProgram === prog;
-                          return (
-                            <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setFilterProgram(active ? '' : prog); setFilterSection(''); }} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT, borderColor: 'transparent' } : {}}>
-                              {prog} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span>
-                            </motion.button>
-                          );
-                        })}
+                  <div className="p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
+                        <div className="flex flex-wrap gap-2">
+                          {PROGRAMS.map(prog => {
+                            const count = students.filter(s => s.program === prog).length;
+                            const active = filterProgram === prog;
+                            return (
+                              <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setFilterProgram(active ? '' : prog); setFilterSection(''); }} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT, borderColor: 'transparent' } : {}}>
+                                {prog} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex gap-4">
+                           <div className="flex-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Gender</p>
+                              <div className="flex gap-2">
+                                {['Male', 'Female'].map(g => {
+                                  const active = filterGender === g;
+                                  const count = students.filter(s => s.gender === g && (!filterProgram || s.program === filterProgram)).length;
+                                  return (
+                                    <button key={g} onClick={() => setFilterGender(active ? '' : g)} className={cn('flex-1 py-1.5 rounded-xl text-[10px] font-black border transition-all', active ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
+                                      {g === 'Male' ? 'Boys' : 'Girls'} <span className="opacity-60 ml-1">{count}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                           </div>
+                            <div className="flex-1">
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Student Type</p>
+                               <div className="flex flex-wrap gap-2">
+                                 {['Regular', 'Franchisee', 'Summer Camp', 'Transfer'].map(t => {
+                                   const active = filterStudentType === t;
+                                   const count = students.filter(s => s.student_type === t && (!filterProgram || s.program === filterProgram)).length;
+                                   return (
+                                     <button key={t} onClick={() => setFilterStudentType(active ? '' : t)} className={cn('px-2 py-1.5 rounded-xl text-[10px] font-black border transition-all', active ? 'bg-amber-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
+                                       {t === 'Summer Camp' ? 'Summer' : t} <span className="opacity-60 ml-0.5">{count}</span>
+                                     </button>
+                                   );
+                                 })}
+                               </div>
+                            </div>
+                        </div>
                       </div>
                     </div>
+
                     <AnimatePresence>
                       {filteredSectionOptions.length > 0 && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
@@ -3864,62 +4120,203 @@ const active = tab === id; const badgeN = getBadge(id);
               </motion.div>
             )}
 
-            {/* ════ INCOME & EXPENSE MANAGEMENT ════ */}
-            {(isSuperAdmin || isAccountant) && (tab === 'income' || tab === 'expenses') && (
-              <motion.div key="fin-ext" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Summary Cards */}
-                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm col-span-1">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Quick Entry: {tab === 'income' ? 'Income' : 'Expense'}</p>
-                    <div className="space-y-4">
-                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Category/Source</label><TI value={finCategory} onChange={(e:any)=>setFinCategory(e.target.value)} placeholder="e.g. Donation, Rent" /></div>
-                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Amount</label><TI type="number" value={finAmount} onChange={(e:any)=>setFinAmount(e.target.value)} placeholder="0.00" /></div>
-                      {tab === 'expenses' && (
-                        <>
-                          <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Payer Name</label><TI value={finName} onChange={(e:any)=>setFinName(e.target.value)} /></div>
-                          <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Slip No</label><TI value={finSlipNo} onChange={(e:any)=>setFinSlipNo(e.target.value)} /></div>
-                        </>
-                      )}
-                      <div><label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-1 block">Description</label><textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-blue-600 min-h-[80px]" /></div>
-                      <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setFinType(tab === 'income' ? 'Income' : 'Expense'); saveFinancialRecord(); }} className="w-full py-3 rounded-2xl bg-white text-white font-black text-sm shadow-xl flex items-center justify-center gap-2">
-                        {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Record</>}
-                      </motion.button>
-                    </div>
-                  </div>
+            {/* ════ INCOME MANAGEMENT ════ */}
+            {(isAccountant || isSuperAdmin) && tab === 'income' && (() => {
+              const filteredOther = income.filter(i => {
+                const d = (i.income_date || '').slice(0, 10);
+                return (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
+              });
 
-                  {/* History View */}
-                  <div className="md:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <h3 className="font-black text-slate-900">Recent {tab === 'income' ? 'Income' : 'Expenses'}</h3>
-                      <div className="flex items-center gap-4">
-                        <p className="text-xl font-black text-slate-800">{PKR((tab === 'income' ? income : expenses).reduce((s,x)=>s+x.amount,0))}</p>
+              const filteredFees = transactions.filter(t => {
+                const d = (t.payment_date || '').slice(0, 10);
+                const dateMatch = (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
+                
+                let classMatch = true;
+                if (selectedIncomeClass !== 'All') {
+                   const student = students.find(s => String(s.roll_no) === String(t.student_roll || t.student_roll_link));
+                   classMatch = student?.class_section === selectedIncomeClass || 
+                                student?.program === selectedIncomeClass || 
+                                `Part ${student?.part}` === selectedIncomeClass;
+                }
+                return dateMatch && classMatch;
+              });
+
+              // Available Classes for filter
+              const availableClasses = [
+                'All', 
+                ...new Set(students.map(s => s.class_section).filter(Boolean)),
+                ...new Set(students.map(s => s.program).filter(Boolean)),
+                ...new Set(students.map(s => `Part ${s.part}`).filter(Boolean))
+              ].sort();
+
+              const totalOther = filteredOther.reduce((s, x) => s + x.amount, 0);
+              const totalFees  = filteredFees.reduce((s, x) => s + (Number(x.amount_paid) || 0), 0);
+
+              return (
+                <motion.div key="inc-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Recording Form */}
+                    <div className="lg:col-span-1 space-y-6">
+                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                         <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100"><Plus size={20} /></div>
+                            <h3 className="font-black text-slate-800">Record Other Income</h3>
+                         </div>
+                         <p className="text-[10px] text-slate-400 font-bold mb-4 leading-relaxed uppercase tracking-widest">Note: Student fees are automatically recorded via the Fee Ledger/Transactions.</p>
+                         
+                         <div className="space-y-4">
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Category/Source</label>
+                               <TI value={finCategory} onChange={(e:any)=>setFinCategory(e.target.value)} placeholder="e.g. Donation, Rent, Sale..." className="py-3" />
+                            </div>
+                            
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Amount (PKR)</label>
+                               <TI type="number" value={finAmount} onChange={(e:any)=>setFinAmount(e.target.value)} placeholder="0" className="py-3" />
+                            </div>
+
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Date</label>
+                               <input type="date" value={finDate} onChange={(e:any)=>setFinDate(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 bg-white text-sm font-bold" />
+                            </div>
+
+                            <div>
+                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Description</label>
+                               <textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} placeholder="Note..." className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 min-h-[80px]" />
+                            </div>
+
+                            <motion.button 
+                              whileTap={{ scale: 0.95 }} 
+                              onClick={() => { setFinType('Income'); saveFinancialRecord(); }} 
+                              disabled={saving || !finAmount || !finCategory}
+                              className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                              style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+                            >
+                              {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Record</>}
+                            </motion.button>
+                         </div>
                       </div>
                     </div>
-                    <div className="overflow-y-auto max-h-[500px]">
-                      <table className="w-full text-xs">
-                        <thead className="sticky top-0 bg-white border-b border-slate-100">
-                          <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest"><th className="px-6 py-3 text-left">Date</th><th className="px-6 py-3 text-left">Description</th><th className="px-6 py-3 text-left">Category</th><th className="px-6 py-3 text-right">Amount</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {(tab === 'income' ? income : expenses).slice(0, 50).map(x => (
-                            <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
-                              <td className="px-6 py-3 text-slate-500">{(x.income_date || x.expense_date).slice(0,10)}</td>
-                              <td className="px-6 py-4">
-                                <p className="font-bold text-slate-800">{x.description}</p>
-                                {x.recorded_by && <p className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Recorded by: {x.recorded_by}</p>}
-                                {x.slip_no && <p className="text-[9px] text-blue-600 font-bold mt-0.5">Slip: {x.slip_no} · {x.name}</p>}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px]">{x.category}</span></td>
-                              <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+
+                    {/* Report / History */}
+                    <div className="lg:col-span-2 space-y-6">
+                       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
+                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex bg-white rounded-xl p-1 border border-slate-200 self-start">
+                                   <button onClick={() => setViewType('other')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'other' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Other Income</button>
+                                   <button onClick={() => setViewType('fees')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'fees' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Student Fees</button>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                   <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1">
+                                      <Calendar size={12} className="text-slate-400 mr-2" />
+                                      <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                                      <span className="mx-2 text-slate-300">to</span>
+                                      <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                                   </div>
+                                   <button 
+                                     onClick={() => {
+                                       if (viewType === 'other') {
+                                         const rows = filteredOther.map(x => [(x.income_date || '').slice(0, 10), x.category, x.description, PKR(x.amount)]);
+                                         handlePrintList(`Income Report (${reportFrom} to ${reportTo})`, ['Date','Category','Description','Amount'], rows);
+                                       } else {
+                                         const rows = filteredFees.map(x => [(x.payment_date || '').slice(0, 10), x.id?.slice(0,8) || '—', x.student_roll || x.student_roll_link || '—', PKR(Number(x.amount_paid) || 0), x.payment_method || 'Cash']);
+                                         handlePrintList(`Fee Income Report - ${selectedIncomeClass} (${reportFrom} to ${reportTo})`, ['Date','TX ID','Roll #','Paid Amount','Method'], rows);
+                                       }
+                                     }}
+                                     className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
+                                   >
+                                      <Printer size={14} /> Print
+                                   </button>
+                                </div>
+                             </div>
+                             
+                             {viewType === 'fees' && (
+                               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by Class:</label>
+                                  <select 
+                                    value={selectedIncomeClass} 
+                                    onChange={e => setSelectedIncomeClass(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-black outline-none focus:border-blue-500"
+                                  >
+                                    {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                               </div>
+                             )}
+                          </div>
+
+                          <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-50">
+                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
+                                <p className="text-lg font-black text-slate-900">{(viewType === 'other' ? filteredOther : filteredFees).length}</p>
+                             </div>
+                             <div className="bg-emerald-50 p-3 rounded-2xl border border-emerald-100 col-span-1 sm:col-span-2">
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Income ({viewType === 'other' ? 'Other' : 'Fees'})</p>
+                                <p className="text-lg font-black text-emerald-700">{PKR(viewType === 'other' ? totalOther : totalFees)}</p>
+                             </div>
+                             {viewType === 'fees' && (
+                               <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 italic">
+                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Class Selected</p>
+                                  <p className="text-sm font-black text-blue-700">{selectedIncomeClass}</p>
+                               </div>
+                             )}
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <tr>
+                                  <th className="px-6 py-3 text-left">Date</th>
+                                  {viewType === 'other' ? (
+                                    <>
+                                      <th className="px-6 py-3 text-left">Category</th>
+                                      <th className="px-6 py-3 text-left">Description</th>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <th className="px-6 py-3 text-left">Roll #</th>
+                                      <th className="px-6 py-3 text-left">Method</th>
+                                    </>
+                                  )}
+                                  <th className="px-6 py-3 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {(viewType === 'other' ? filteredOther : filteredFees).length === 0 ? (
+                                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">No records found for the selection</td></tr>
+                                ) : (viewType === 'other' ? filteredOther : filteredFees).map(x => (
+                                  <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
+                                    <td className="px-6 py-4 text-slate-500 font-medium">{(x.income_date || x.payment_date || '').slice(0, 10)}</td>
+                                    {viewType === 'other' ? (
+                                      <>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px] border border-slate-200">{x.category}</span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                          <p className="font-bold text-slate-800 line-clamp-1">{x.description}</p>
+                                          {x.recorded_by && <p className="text-[9px] text-slate-400 font-medium mt-1 uppercase tracking-tighter">By: {x.recorded_by}</p>}
+                                        </td>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <td className="px-6 py-4 font-black text-slate-700">Roll: {x.student_roll || x.student_roll_link || '—'}</td>
+                                        <td className="px-6 py-4">
+                                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-black text-[9px] border border-blue-100">{x.payment_method || 'Cash'}</span>
+                                        </td>
+                                      </>
+                                    )}
+                                    <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(viewType === 'other' ? x.amount : x.amount_paid)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                       </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
+                </motion.div>
+              );
+            })()}
             {(isAccountant || isSuperAdmin) && tab === 'salaries' && (
               <motion.div key="salaries" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">

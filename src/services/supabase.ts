@@ -744,16 +744,22 @@ export async function markAttendanceByTeacher(
     if (biometricScan) finalStatus = 'Late';
   }
 
-  const { error } = await supabase.from('attendance').insert([{
-    student_id: student.id,
+  const payload: any = {
     student_roll: student.roll_no,
     status: finalStatus,
     date,
-    time_in: now.toTimeString().slice(0, 5),
-    source: 'teacher-portal'
-  }]);
+    time_in: now.toTimeString().slice(0, 5)
+  };
 
-  if (error) throw error;
+  // If student_id exists in Student object, use it as fallback link
+  if (student.id) payload.student_id = student.id;
+
+  const { error } = await supabase.from('attendance').insert([payload]);
+
+  if (error) {
+    console.error('Attendance mark failed:', error);
+    throw error;
+  }
 
   if (finalStatus === 'Absent') {
     await supabase.from('notifications').insert([{
@@ -824,6 +830,42 @@ export async function getTeacherSchedule(teacherId: number): Promise<TeacherSche
 }
 
 /**
+ * Get a teacher's full weekly schedule from `timetable` table.
+ */
+export async function getTeacherWeeklySchedule(teacherId: number, teacherName?: string): Promise<TeacherScheduleEntry[]> {
+  let query = supabase
+    .from('timetable')
+    .select('*')
+    .order('start_time', { ascending: true });
+    
+  if (teacherId) {
+    if (teacherName) {
+      query = query.or(`teacher_id.eq.${teacherId},teacher_name.ilike.%${teacherName}%`);
+    } else {
+      query = query.eq('teacher_id', teacherId);
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) { console.error('Error fetching weekly schedule:', error); return []; }
+
+  // Map Timetable to TeacherScheduleEntry
+  return (data || []).map(t => ({
+    timetable_id: t.id,
+    teacher_id: t.teacher_id,
+    teacher_name: teacherName || '',
+    day_of_week: t.day_of_week,
+    start_time: t.start_time,
+    end_time: t.end_time || '',
+    subject: t.subject || '',
+    class_section: t.class_section || '',
+    room: t.room || '',
+    campus: t.campus || '',
+    total_students: 0
+  }));
+}
+
+/**
  * Get today's schedule for a specific teacher.
  */
 export async function getTeacherTodaySchedule(teacherId: number, teacherName?: string): Promise<TeacherScheduleEntry[]> {
@@ -871,6 +913,16 @@ export async function getTeacherTodaySchedule(teacherId: number, teacherName?: s
     campus: t.campus || '',
     total_students: 0
   }));
+}
+
+export async function getSchemeOfStudy(teacherId: number | string) {
+  const { data, error } = await supabase
+    .from('scheme_of_study')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .order('scheduled_date', { ascending: true });
+  if (error) { console.error('Error fetching scheme:', error); return []; }
+  return data as any[];
 }
 
 /**

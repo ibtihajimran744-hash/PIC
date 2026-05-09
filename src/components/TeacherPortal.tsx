@@ -15,7 +15,9 @@ import {
   getNotifications, getTeachers,
   markAttendanceByTeacher, submitTeacherLeaveRequest,
   getTeacherTodaySchedule, getTeacherAttendanceTrend, TeacherScheduleEntry,
+  getTeacherWeeklySchedule, getSchemeOfStudy
 } from '../services/supabase';
+import { seedAllDemoData } from '../services/demoData';
 import { SchemeEntry } from '../services/academicManagement';
 import { Leaderboard } from './Leaderboard';
 import { toast, Toaster } from 'react-hot-toast';
@@ -128,6 +130,53 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [proposedDate, setProposedDate] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [submittingReschedule, setSubmittingReschedule] = useState(false);
+  
+  // ── Academics & Course Progress state ──────────────────────────────────────
+  const [fullWeeklySchedule, setFullWeeklySchedule] = useState<TeacherScheduleEntry[]>([]);
+  const [courseProgressData, setCourseProgressData] = useState<any[]>([]);
+  const [loadingAcademics, setLoadingAcademics] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+
+  const handleLeaveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherData) return;
+    if (!leaveForm.reason || !leaveForm.from_date || !leaveForm.to_date) {
+      toast.error('Please fill all fields');
+      return;
+    }
+    setSubmittingLeave(true);
+    try {
+      await submitTeacherLeaveRequest({
+        teacher_id: teacherData.id,
+        teacher_name: teacherData.full_name,
+        reason: leaveForm.reason,
+        from_date: leaveForm.from_date,
+        to_date: leaveForm.to_date
+      });
+      toast.success('Leave request submitted to VP');
+      setLeaveForm({ reason: '', from_date: '', to_date: '' });
+      setActiveTab('Home');
+    } catch (err) {
+      toast.error('Failed to submit leave request');
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
+  const handleSeedDemoData = async () => {
+    if (!window.confirm("This will populate your portal with comprehensive demo data. Existing entries for your teacher ID might be duplicated if unique constraints aren't set. Proceed?")) return;
+    setSeeding(true);
+    const ok = await seedAllDemoData();
+    setSeeding(false);
+    if (ok) {
+      toast.success('Portal populated with demo data!');
+      fetchStudents();
+      loadExamManagement();
+      loadAcademicsData();
+    } else {
+      toast.error('Seeding failed. Check console for details.');
+    }
+  };
 
   const loadExamManagement = async () => {
     if (!teacherData) return;
@@ -340,33 +389,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
 
   // ── Notifications & exams ──────────────────────────────────────────────────
   useEffect(() => {
-    const handleLeaveSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!teacherData) return;
-    if (!leaveForm.reason || !leaveForm.from_date || !leaveForm.to_date) {
-      toast.error('Please fill all fields');
-      return;
-    }
-    setSubmittingLeave(true);
-    try {
-      await submitTeacherLeaveRequest({
-        teacher_id: teacherData.id,
-        teacher_name: teacherData.full_name,
-        reason: leaveForm.reason,
-        from_date: leaveForm.from_date,
-        to_date: leaveForm.to_date
-      });
-      toast.success('Leave request submitted to VP');
-      setLeaveForm({ reason: '', from_date: '', to_date: '' });
-      setActiveTab('Home');
-    } catch (err) {
-      toast.error('Failed to submit leave request');
-    } finally {
-      setSubmittingLeave(false);
-    }
-  };
-
-  const init = async () => {
+    const init = async () => {
       if (!teacherData) return;
       const notifs = await getNotifications(teacherData.id, 'TEACHER');
       setNotifications(notifs);
@@ -403,6 +426,27 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     setRescheduleRequests((reqData as RescheduleRequest[]) || []);
     setLoadingReschedule(false);
   };
+
+  const loadAcademicsData = async () => {
+    if (!teacherData) return;
+    setLoadingAcademics(true);
+    try {
+      const [weekly, scheme] = await Promise.all([
+        getTeacherWeeklySchedule(teacherData.id, teacherData.full_name),
+        getSchemeOfStudy(teacherData.id)
+      ]);
+      setFullWeeklySchedule(weekly);
+      setCourseProgressData(scheme);
+    } catch (err) {
+      console.error('Error loading academics data:', err);
+    } finally {
+      setLoadingAcademics(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAcademicsData();
+  }, [teacherData]);
 
   // ── Mark attendance ────────────────────────────────────────────────────────
   const handleMarkAttendance = async (student: Student, status: 'Present' | 'Absent' | 'Late') => {
@@ -1060,6 +1104,127 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </motion.div>
         );
 
+      case 'WeeklySchedule':
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return (
+          <motion.div key="weekly-schedule" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"><ChevronLeft size={20} /></button>
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Weekly Schedule</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Your complete lecture timetable</p>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              {days.map(day => {
+                const daySlots = fullWeeklySchedule.filter(s => s.day_of_week === day);
+                return (
+                  <div key={day} className="space-y-4">
+                    <h4 className="text-sm font-black text-[#2D3494] px-4 flex items-center gap-2">
+                       <Calendar size={16} /> {day}
+                    </h4>
+                    {daySlots.length === 0 ? (
+                      <div className="bg-slate-50 border border-dashed border-slate-200 p-4 rounded-2xl text-center text-[10px] text-slate-400">No classes</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {daySlots.map(slot => {
+                          const { time, period } = formatTime(slot.start_time);
+                          return (
+                            <div key={slot.timetable_id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
+                              <div className="text-center w-12 shrink-0">
+                                <p className="text-xs font-black text-slate-900">{time}</p>
+                                <p className="text-[8px] text-slate-400 uppercase font-bold">{period}</p>
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-bold text-slate-900">{slot.subject}</p>
+                                <p className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 rounded-md w-fit mt-1">{slot.class_section}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 justify-end"><MapPin size={10} /> {slot.room || 'TBA'}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        );
+
+      case 'FullScheme':
+        return (
+          <motion.div key="full-scheme" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"><ChevronLeft size={20} /></button>
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Academic Roadmap</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Track your course progress and upcoming topics</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              {/* Progress Summary */}
+              <div className="grid grid-cols-2 gap-4">
+                <StatCard 
+                  icon={BookCheck} 
+                  label="Topics Completed" 
+                  value={courseProgressData.filter(e => e.status === 'Completed').length} 
+                  color="bg-emerald-50 text-emerald-600" 
+                />
+                <StatCard 
+                  icon={BookOpen} 
+                  label="Completion" 
+                  value={courseProgressData.length > 0 ? `${Math.round((courseProgressData.filter(e => e.status === 'Completed').length / courseProgressData.length) * 100)}%` : '0%'} 
+                  color="bg-blue-50 text-blue-600" 
+                />
+              </div>
+
+              {/* Timeline */}
+              <div className="space-y-4 relative">
+                <div className="absolute left-[23px] top-4 bottom-4 w-0.5 bg-slate-100" />
+                {courseProgressData.map((item, idx) => (
+                  <div key={item.id} className="flex gap-4 items-start relative z-10">
+                    <div className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-4 border-white shadow-sm",
+                      item.status === 'Completed' ? "bg-emerald-500 text-white" : "bg-white text-slate-300 border-slate-100"
+                    )}>
+                      {item.status === 'Completed' ? <CheckCircle2 size={18} /> : <span>{idx + 1}</span>}
+                    </div>
+                    <div className={cn(
+                      "flex-1 p-5 rounded-3xl border transition-all",
+                      item.status === 'Completed' ? "bg-white border-emerald-100 opacity-60" : "bg-white border-slate-100 shadow-sm"
+                    )}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-xs font-bold text-[#2D3494] uppercase tracking-widest">{item.subject}</p>
+                          <h4 className="text-sm font-black text-slate-900 mt-1">{item.topic}</h4>
+                        </div>
+                        {item.status === 'Completed' ? (
+                          <Badge c="bg-emerald-50 text-emerald-600 border-emerald-100" label="Completed" />
+                        ) : (
+                          <p className="text-[10px] font-bold text-slate-400 capitalize">{item.status}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 mt-3">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                          <Calendar size={12} /> {new Date(item.scheduled_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })}
+                        </div>
+                        {item.week_no && (
+                          <div className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-bold text-slate-500">WEEK {item.week_no}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        );
+
       default: return null;
     }
   };
@@ -1079,13 +1244,21 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </div>
           <div className="sm:hidden">
             <h2 className="text-sm font-black text-[#2D3494] leading-none uppercase tracking-tight">PIC</h2>
-            <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">Teacher</p>
+            <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">Teacher Portal</p>
           </div>
         </div>
-            <div className="flex items-center gap-3 sm:gap-4">
-              <button onClick={fetchStudents} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Refresh Data">
-                <RefreshCw size={18} className={cn("text-slate-600", studentsLoading && "animate-spin")} />
-              </button>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <button 
+            onClick={handleSeedDemoData} 
+            disabled={seeding}
+            className="hidden sm:flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-50"
+          >
+            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {seeding ? 'Seeding...' : 'Seed Data'}
+          </button>
+          <button onClick={fetchStudents} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Refresh Data">
+            <RefreshCw size={18} className={cn("text-slate-600", studentsLoading && "animate-spin")} />
+          </button>
               <button onClick={() => setSubPage('Notifications')} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center relative hover:bg-slate-100 transition-colors">
             <Bell size={20} className="text-slate-600" />
             {notifications.length > 0 && <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white" />}
@@ -1109,10 +1282,46 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <StatCard icon={Users} label="Assigned Students" value={studentsLoading ? '...' : assignedStudents.length} color="bg-blue-50 text-blue-600" />
-                    <StatCard icon={CheckCircle2} label="Marked Today" value={Object.keys(markedToday).length} color="bg-emerald-50 text-emerald-600" />
+                    <StatCard 
+                      icon={BookMarked} 
+                      label="Course Progress" 
+                      value={courseProgressData.length > 0 ? `${Math.round((courseProgressData.filter(e => e.status === 'Completed').length / courseProgressData.length) * 100)}%` : '0%'} 
+                      color="bg-emerald-50 text-emerald-600" 
+                    />
+                    <StatCard icon={CheckCircle2} label="Marked Today" value={Object.keys(markedToday).length} color="bg-orange-50 text-orange-600" />
                     <StatCard icon={Bell} label="Notifications" value={notifications.length} color="bg-purple-50 text-purple-600" />
-                    <StatCard icon={TrendingUp} label="Subject" value={teacherData?.subject_dept?.split(' ')[0] || '—'} color="bg-orange-50 text-orange-600" />
                   </div>
+
+                  {/* Next Lecture Widget */}
+                  {(() => {
+                    const now = new Date();
+                    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    const nextSlot = todaySchedule.find(s => s.start_time > currentTimeStr);
+                    
+                    if (nextSlot) {
+                      const { time, period } = formatTime(nextSlot.start_time);
+                      return (
+                        <div onClick={() => setSubPage('WeeklySchedule')} className="bg-[#2D3494] p-8 rounded-[2.5rem] text-white shadow-xl shadow-blue-200 cursor-pointer group overflow-hidden relative">
+                          <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform"><Clock size={160} /></div>
+                          <div className="relative z-10">
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-200">Next Lecture</span>
+                            <div className="flex items-end justify-between mt-4">
+                              <div>
+                                <h4 className="text-2xl font-black">{nextSlot.subject}</h4>
+                                <p className="text-sm font-bold text-blue-200 mt-1">{nextSlot.class_section} • Room {nextSlot.room || 'TBA'}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-4xl font-black">{time}</p>
+                                <p className="text-xs font-bold text-blue-300 uppercase leading-none">{period}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                     <h3 className="text-lg font-black text-slate-900 mb-6">Weekly Attendance Trend</h3>
                     <ResponsiveContainer width="100%" height={120}>
@@ -1129,9 +1338,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                     <div className="grid grid-cols-2 gap-4">
                       {[
                         { label: 'Attendance', icon: CheckSquare, color: 'bg-blue-500 text-white hover:bg-blue-600', action: () => setSubPage('Attendance') },
-                        { label: 'Exam Duty', icon: UserCheck, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => setSubPage('ExamManagement') },
+                        { label: 'Full Schedule', icon: Calendar, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => setSubPage('WeeklySchedule') },
                         { label: 'Post Grades', icon: GraduationCap, color: 'bg-orange-500 text-white hover:bg-orange-600', action: () => setShowGradeModal(true) },
-                        { label: 'Course Progress', icon: BookMarked, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => { loadRescheduleData(); setSubPage('SchemeProgress'); } },
+                        { label: 'Academic Roadmap', icon: BookMarked, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => setSubPage('FullScheme') },
                       ].map(qa => (
                         <button key={qa.label} onClick={qa.action} className={cn('p-4 rounded-3xl flex flex-col items-center gap-2 transition-all shadow-md', qa.color)}>
                           <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-sm"><qa.icon size={20} /></div>
@@ -1228,7 +1437,92 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                 </motion.div>
               )}
 
-              {/* ── LEADERBOARD ── */}
+              {/* ── ACADEMICS ── */}
+              {activeTab === 'Academics' && (
+                <motion.div key="academics" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
+                  <div className="flex justify-between items-center">
+                    <h1 className="text-2xl font-black text-slate-900">Academic Hub</h1>
+                    <button onClick={loadAcademicsData} className="p-2 bg-white rounded-xl shadow-sm"><RefreshCw size={18} className={loadingAcademics ? "animate-spin" : ""} /></button>
+                  </div>
+
+                  {/* Course Progress Highlights */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Syllabus Overview</h3>
+                      <button onClick={() => setSubPage('FullScheme')} className="text-[10px] font-bold text-blue-600 uppercase">View Details</button>
+                    </div>
+                    {courseProgressData.length === 0 ? (
+                      <div className="bg-white p-8 rounded-[2rem] border border-dashed border-slate-200 text-center text-slate-400 font-bold">No scheme data found</div>
+                    ) : (
+                      <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                        {(() => {
+                           // Group by subject to show progress per subject
+                           const subjMap: Record<string, { total: number, comp: number }> = {};
+                           courseProgressData.forEach(e => {
+                             if (!subjMap[e.subject]) subjMap[e.subject] = { total: 0, comp: 0 };
+                             subjMap[e.subject].total++;
+                             if (e.status === 'Completed') subjMap[e.subject].comp++;
+                           });
+                           return Object.entries(subjMap).map(([subj, stats]) => {
+                             const pct = Math.round((stats.comp / stats.total) * 100);
+                             return (
+                               <div key={subj} className="space-y-2">
+                                 <div className="flex justify-between items-end">
+                                   <p className="text-sm font-black text-slate-900">{subj}</p>
+                                   <p className="text-[10px] font-bold text-slate-400">{stats.comp} / {stats.total} Topics</p>
+                                 </div>
+                                 <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                   <motion.div 
+                                     initial={{ width: 0 }} 
+                                     animate={{ width: `${pct}%` }} 
+                                     className="h-full bg-[#2D3494] rounded-full"
+                                   />
+                                 </div>
+                               </div>
+                             );
+                           });
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Weekly Timetable Summary */}
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Weekly Timetable</h3>
+                      <button onClick={() => setSubPage('WeeklySchedule')} className="text-[10px] font-bold text-blue-600 uppercase">Interactive View</button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => {
+                        const count = fullWeeklySchedule.filter(s => s.day_of_week === day).length;
+                        const isToday = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
+                        return (
+                          <div key={day} className={cn(
+                            "p-4 rounded-2xl border text-center transition-all",
+                            isToday ? "bg-blue-50 border-blue-200" : "bg-white border-slate-100"
+                          )}>
+                            <p className={cn("text-[10px] font-black uppercase tracking-tighter", isToday ? "text-blue-600" : "text-slate-400")}>{day.substring(0, 3)}</p>
+                            <p className="text-lg font-black text-slate-900 mt-1">{count}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">Lectures</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Quick Modules */}
+                  <div className="grid grid-cols-2 gap-4">
+                     <button onClick={() => setSubPage('Reschedule')} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center gap-3 hover:border-blue-200 transition-all">
+                       <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center"><RefreshCw size={24} /></div>
+                       <span className="text-[10px] font-black text-slate-900 uppercase">Rescheduling</span>
+                     </button>
+                     <button onClick={() => setSubPage('ExamManagement')} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center gap-3 hover:border-blue-200 transition-all">
+                       <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center"><UserCheck size={24} /></div>
+                       <span className="text-[10px] font-black text-slate-900 uppercase">Exam Duties</span>
+                     </button>
+                  </div>
+                </motion.div>
+              )}
               {activeTab === 'Leave' && (
                 <motion.div key="leave" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
                   <div className="flex items-center gap-4">
@@ -1496,6 +1790,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
         {[
           { id: 'Home', icon: LayoutDashboard },
           { id: 'Students', icon: Users },
+          { id: 'Academics', icon: GraduationCap },
           { id: 'Grading', icon: CheckSquare },
           { id: 'Leave', icon: Calendar },
           { id: 'Leaderboard', icon: Trophy },
