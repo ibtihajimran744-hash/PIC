@@ -704,6 +704,26 @@ export async function markAttendance(studentId: number) {
   return status;
 }
 
+export async function submitTeacherLeaveRequest(data: {
+  teacher_id: number;
+  teacher_name: string;
+  reason: string;
+  from_date: string;
+  to_date: string;
+  status?: 'Pending' | 'Approved' | 'Rejected';
+}) {
+  const { error } = await supabase.from('teacher_leave_requests').insert([{
+    teacher_id: data.teacher_id,
+    teacher_name: data.teacher_name,
+    reason: data.reason,
+    from_date: data.from_date,
+    to_date: data.to_date,
+    status: data.status || 'Pending',
+    created_at: new Date().toISOString()
+  }]);
+  if (error) throw error;
+}
+
 export async function markAttendanceByTeacher(
   student: Student,
   status: 'Present' | 'Absent' | 'Late',
@@ -725,11 +745,12 @@ export async function markAttendanceByTeacher(
   }
 
   const { error } = await supabase.from('attendance').insert([{
+    student_id: student.id,
     student_roll: student.roll_no,
     status: finalStatus,
     date,
-    time_in: time,
-    marked_by: teacherId
+    time_in: now.toTimeString().slice(0, 5),
+    source: 'teacher-portal'
   }]);
 
   if (error) throw error;

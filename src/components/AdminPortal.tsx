@@ -59,9 +59,12 @@ const getGrade = (pct: number) => {
   return 'F';
 };
 
-const getSuggestedSection = (pct: number, gender: string) => {
+const getSuggestedSection = (pct: number, gender: string, program?: string) => {
   const g = gender === 'Female' ? 'G' : 'B';
-  if (pct >= 85) return `A-${g}`; if (pct >= 70) return `B-${g}`; return `C-${g}`;
+  if (pct >= 85) return `A-${g}`;
+  if (program === 'ICS Physics') return `B-${g}`;
+  if (pct >= 70) return `B-${g}`;
+  return `C-${g}`;
 };
 const EMPTY_FORM: any = {
   student_roll_no: '',
@@ -754,7 +757,7 @@ const [showExaminerPortal, setShowExaminerPortal] = useState(false);
   });
   
   const pct = Number(admForm.matric_percentage) || 0;
-  const sec = pct > 0 ? getSuggestedSection(pct, admForm.gender) : '';
+  const sec = pct > 0 ? getSuggestedSection(pct, admForm.gender, admForm.program) : '';
   const cls = sec ? CLASS_MAP[admForm.program]?.[admForm.part]?.[sec] || '' : '';
   const setF = (k: string, v: any) => setAdmForm((p: any) => ({ ...p, [k]: v }));
 
@@ -1636,7 +1639,7 @@ const handlePrintReport = (data: any) => {
     finally { setSaving(false); }
   };
 
-  const confirmToDatabase = async (f: any) => {
+  const confirmToDatabase = async (f: any, overrideRoll?: string) => {
     if (f.status === 'Pending' && instData.length === 0) {
        const count = f.num_installments || f.installments || 3;
        const pkgAmt = Number(f.fee_package) || 0;
@@ -1647,7 +1650,8 @@ const handlePrintReport = (data: any) => {
        })));
     }
     
-    if (!manualRoll) {
+    const finalRoll = overrideRoll || manualRoll || f.student_roll_no;
+    if (!finalRoll) {
       showErr('Please assign a roll number manually.');
       return;
     }
@@ -1655,7 +1659,7 @@ const handlePrintReport = (data: any) => {
     setSaving(true);
     try {
       const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
-      let roll = Number(manualRoll);
+      let roll = Number(finalRoll);
 
       if (isNaN(roll)) {
         throw new Error('Invalid Roll Number. Please enter a valid number.');
@@ -2667,10 +2671,8 @@ const active = tab === id; const badgeN = getBadge(id);
                           <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 font-black text-xs flex items-center justify-center flex-shrink-0">{f.student_name?.charAt(0)}</div>
                           <div className="flex-1 min-w-0"><p className="text-sm font-black text-slate-900 truncate">{f.student_name}</p><p className="text-[11px] text-slate-400 truncate">{f.program} Part {f.part} · {f.form_no}</p></div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
-                                if (f.student_roll_no) setManualRoll(f.student_roll_no);
-                                confirmToDatabase(f);
-                            }} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f, f.student_roll_no)}
+                               disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                               {saving ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} OK
                             </motion.button>
                             <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
@@ -3264,7 +3266,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                   <Save size={10} /> Edit
                                 </motion.button>
                                 {f.status === 'Pending' && <>
-                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f, f.student_roll_no)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                     {saving ? <Loader2 size={10} className="animate-spin" /> : <Database size={10} />} Confirm
                                   </motion.button>
                                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => rejectForm(f)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200"><X size={10} /> Reject</motion.button>

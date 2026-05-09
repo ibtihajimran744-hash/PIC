@@ -13,7 +13,7 @@ import {
   Exam, getExamsByTeacher,
   supabase, getFeesByRollNo, 
   getNotifications, getTeachers,
-  markAttendanceByTeacher,
+  markAttendanceByTeacher, submitTeacherLeaveRequest,
   getTeacherTodaySchedule, getTeacherAttendanceTrend, TeacherScheduleEntry,
 } from '../services/supabase';
 import { SchemeEntry } from '../services/academicManagement';
@@ -92,6 +92,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
 
   const [todaySchedule, setTodaySchedule] = useState<TeacherScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [leaveForm, setLeaveForm] = useState({ reason: '', from_date: '', to_date: '' });
+  const [submittingLeave, setSubmittingLeave] = useState(false);
 
   const [attendanceStats, setAttendanceStats] = useState([
     { name: 'Mon', present: 0 }, { name: 'Tue', present: 0 },
@@ -272,14 +274,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
 
       // 6. Ultra-fallback for verification/guest mode
       if (finalStudents.length === 0) {
-        console.log('Database empty, using sample data for portal verification');
-        finalStudents = [
-          { id: 1, full_name: 'Sample Student 1', roll_no: 1001, class_section: '10th-A', paid_amount: 5000, total_package: 10000 },
-          { id: 2, full_name: 'Sample Student 2', roll_no: 1002, class_section: '10th-A', paid_amount: 8000, total_package: 10000 },
-          { id: 3, full_name: 'Sample Student 3', roll_no: 1003, class_section: '10th-B', paid_amount: 3000, total_package: 12000 },
-          { id: 4, full_name: 'Sample Student 4', roll_no: 1004, class_section: '9th-A', paid_amount: 15000, total_package: 15000 },
-          { id: 5, full_name: 'Sample Student 5', roll_no: 1005, class_section: '9th-B', paid_amount: 0, total_package: 10000 },
-        ] as any;
+        console.log('Database empty, no students to show');
+        finalStudents = [];
       }
 
       // Dedup by Roll No
@@ -344,7 +340,33 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
 
   // ── Notifications & exams ──────────────────────────────────────────────────
   useEffect(() => {
-    const init = async () => {
+    const handleLeaveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherData) return;
+    if (!leaveForm.reason || !leaveForm.from_date || !leaveForm.to_date) {
+      toast.error('Please fill all fields');
+      return;
+    }
+    setSubmittingLeave(true);
+    try {
+      await submitTeacherLeaveRequest({
+        teacher_id: teacherData.id,
+        teacher_name: teacherData.full_name,
+        reason: leaveForm.reason,
+        from_date: leaveForm.from_date,
+        to_date: leaveForm.to_date
+      });
+      toast.success('Leave request submitted to VP');
+      setLeaveForm({ reason: '', from_date: '', to_date: '' });
+      setActiveTab('Home');
+    } catch (err) {
+      toast.error('Failed to submit leave request');
+    } finally {
+      setSubmittingLeave(false);
+    }
+  };
+
+  const init = async () => {
       if (!teacherData) return;
       const notifs = await getNotifications(teacherData.id, 'TEACHER');
       setNotifications(notifs);
@@ -394,7 +416,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       if (trend.length) setAttendanceStats(trend);
     } catch (err: any) {
       if (err?.code === '23505') { setMarkedToday(prev => ({ ...prev, [student.roll_no]: status })); }
-      else { toast.error('Failed to mark attendance'); }
+      else { toast.error(`Failed to mark attendance: ${err?.message || 'Unknown error'}`); }
     }
   };
 
@@ -1207,6 +1229,56 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
               )}
 
               {/* ── LEADERBOARD ── */}
+              {activeTab === 'Leave' && (
+                <motion.div key="leave" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
+                  <div className="flex items-center gap-4">
+                    <button onClick={() => setActiveTab('Home')} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center"><ChevronLeft size={20} /></button>
+                    <h3 className="text-2xl font-black text-slate-900">Request Leave</h3>
+                  </div>
+                  <form onSubmit={handleLeaveSubmit} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Reason for Leave</label>
+                      <textarea 
+                        value={leaveForm.reason} 
+                        onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                        placeholder="Explain why you need leave..."
+                        rows={4}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">From Date</label>
+                        <input 
+                          type="date"
+                          value={leaveForm.from_date}
+                          onChange={e => setLeaveForm({ ...leaveForm, from_date: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">To Date</label>
+                        <input 
+                          type="date"
+                          value={leaveForm.to_date}
+                          onChange={e => setLeaveForm({ ...leaveForm, to_date: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <button 
+                      type="submit" 
+                      disabled={submittingLeave}
+                      className="w-full py-5 bg-[#2D3494] text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-blue-800 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {submittingLeave ? <Loader2 className="animate-spin" /> : <Calendar size={20} />}
+                      Submit Request
+                    </button>
+                  </form>
+                </motion.div>
+              )}
+
+              {/* ── LEADERBOARD ── */}
               {activeTab === 'Leaderboard' && (
                 <motion.div key="lb" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}><Leaderboard /></motion.div>
               )}
@@ -1425,6 +1497,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           { id: 'Home', icon: LayoutDashboard },
           { id: 'Students', icon: Users },
           { id: 'Grading', icon: CheckSquare },
+          { id: 'Leave', icon: Calendar },
           { id: 'Leaderboard', icon: Trophy },
           { id: 'Profile', icon: User }
         ].map(tab => (

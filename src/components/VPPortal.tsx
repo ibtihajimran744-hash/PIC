@@ -54,7 +54,8 @@ const PERMISSION_LABELS: Record<string, string> = {
 const TABS_VP = [
   { id: 'dashboard',    label: 'Dashboard',    icon: Home },
   { id: 'permissions',  label: 'Permissions',  icon: Shield },
-  { id: 'sessions',     label: 'Sessions',     icon: GraduationCap },
+  { id: 'students',     label: 'Students',     icon: Users },
+  { id: 'sessions',     label: 'Promotion & Sessions', icon: GraduationCap },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'staff',        label: 'Staff',        icon: Users },
   { id: 'leaves',       label: 'Leaves',       icon: Calendar },
@@ -64,7 +65,8 @@ const TABS_VP = [
 const TABS_DIR = [
   { id: 'dashboard',    label: 'Dashboard',    icon: Home },
   { id: 'permissions',  label: 'Permissions',  icon: Shield },
-  { id: 'sessions',     label: 'Sessions',     icon: GraduationCap },
+  { id: 'students',     label: 'Students',     icon: Users },
+  { id: 'sessions',     label: 'Promotion & Sessions', icon: GraduationCap },
   { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'staff',        label: 'Staff',        icon: Users },
   { id: 'leaves',       label: 'Leaves',       icon: Calendar },
@@ -105,6 +107,8 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
 
   const [tab, setTab]                     = useState('dashboard');
   const [toast, setToast]                 = useState('');
+  const [searchQuery, setSearchQuery]     = useState('');
+  const [filterClass, setFilterClass]     = useState('');
   const [errMsg, setErrMsg]               = useState('');
   const [saving, setSaving]               = useState(false);
 
@@ -113,10 +117,19 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [transactions, setTransactions]   = useState<any[]>([]);
   const [students, setStudents]           = useState<any[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [teacherLeaves, setTeacherLeaves] = useState<any[]>([]);
   const [permissions, setPermissions]     = useState<Record<string, any>>({});
   const [income, setIncome]               = useState<any[]>([]);
   const [expenses, setExpenses]           = useState<any[]>([]);
   const [sessions, setSessions]           = useState<any[]>([]);
+
+  // Promotion state
+  const [promoSearch, setPromoSearch]     = useState('');
+  const [promoFilter, setPromoFilter]     = useState({ program: '', part: 0 }); // 0 means All
+  const [selectedPromos, setSelectedPromos] = useState<number[]>([]);
+  const [promoTargetSession, setPromoTargetSession] = useState('');
+  const [promoTargetPart, setPromoTargetPart] = useState(2);
+  const [promoLoading, setPromoLoading]   = useState(false);
 
   // UI state
   const [editPermRole, setEditPermRole]   = useState<{ role: string; perms: Record<string, boolean> } | null>(null);
@@ -144,20 +157,23 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       { data: incData },
       { data: expData },
       { data: sessData },
+      { data: tLeaveData },
     ] = await Promise.all([
       supabase.from('admin_users').select('*').order('full_name'),
       supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
-      supabase.from('students').select('roll_no,full_name,class_section,program,gender,status').limit(500),
+      supabase.from('students').select('roll_no,full_name,class_section,program,gender,status,part,exam_result,session').limit(2000),
       supabase.from('leave_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('role_permissions').select('*'),
       supabase.from('income').select('*').order('income_date', { ascending: false }).limit(100),
       supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(100),
       supabase.from('academic_sessions').select('*').order('created_at', { ascending: false }),
+      supabase.from('teacher_leave_requests').select('*').order('created_at', { ascending: false }),
     ]);
     setStaff(staffData || []);
     setTransactions(txData || []);
     setStudents(stuData || []);
     setLeaveRequests(leaveData || []);
+    setTeacherLeaves(tLeaveData || []);
     setIncome(incData || []);
     setExpenses(expData || []);
     setSessions(sessData || []);
@@ -237,11 +253,16 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   };
 
   // ── Handle leave ───────────────────────────────────────────────────────
-  const handleLeave = async (id: string, status: 'Approved' | 'Rejected') => {
+  const handleLeave = async (id: string, status: 'Approved' | 'Rejected', isTeacher = false) => {
     setLeaveSaving(id);
     try {
-      await supabase.from('leave_requests').update({ status, reviewed_by: adminData.full_name }).eq('id', id);
-      setLeaveRequests(prev => prev.map(l => l.id === id ? { ...l, status, reviewed_by: adminData.full_name } : l));
+      const table = isTeacher ? 'teacher_leave_requests' : 'leave_requests';
+      await supabase.from(table).update({ status, reviewed_by: adminData.full_name }).eq('id', id);
+      if (isTeacher) {
+        setTeacherLeaves(prev => prev.map(l => l.id === id ? { ...l, status, reviewed_by: adminData.full_name } : l));
+      } else {
+        setLeaveRequests(prev => prev.map(l => l.id === id ? { ...l, status, reviewed_by: adminData.full_name } : l));
+      }
       showToast(`✅ Leave ${status}`);
     } catch (e: any) { showErr(e.message || 'Failed'); }
     finally { setLeaveSaving(null); }
@@ -269,8 +290,157 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     } catch (e: any) { showErr(e.message || 'Update failed'); }
   };
 
+  const promoteStudents = async () => {
+    if (!promoTargetSession) { showErr('Select a target session'); return; }
+    if (selectedPromos.length === 0) { showErr('No students selected'); return; }
+    
+    setPromoLoading(true);
+    try {
+      // 1. Update session and part
+      // 2. Optionally we could also update a 'promotion_status' if we had such column
+      const { error } = await supabase
+        .from('students')
+        .update({ 
+          session: promoTargetSession, 
+          part: promoTargetPart,
+        })
+        .in('roll_no', selectedPromos);
+
+      if (error) throw error;
+      
+      showToast(`✅ Successfully promoted ${selectedPromos.length} students to ${promoTargetSession} (Part ${promoTargetPart})`);
+      setSelectedPromos([]);
+      await loadAll();
+    } catch (e: any) { showErr(e.message || 'Promotion failed'); }
+    finally { setPromoLoading(false); }
+  };
+
+  const updateStudentResult = async (rollNo: number, result: string) => {
+    try {
+      const { error } = await supabase.from('students').update({ exam_result: result }).eq('roll_no', rollNo);
+      if (error) throw error;
+      setStudents(prev => prev.map(s => s.roll_no === rollNo ? { ...s, exam_result: result } : s));
+      showToast(`✅ Updated result for #${rollNo} to ${result}`);
+    } catch (e: any) { 
+      showErr(e.message || 'Update failed');
+    }
+  };
+
+  const renderStudents = () => {
+    const filtered = students.filter(s => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q);
+      const matchesClass = filterClass ? s.class_section === filterClass : true;
+      return matchesSearch && matchesClass;
+    });
+
+    return (
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <div className="flex flex-col md:flex-row gap-3 items-center justify-between mb-6">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search students by name or roll number..." 
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold shadow-sm focus:border-purple-400 transition-all outline-none"
+            />
+          </div>
+          <select 
+            value={filterClass} 
+            onChange={e => setFilterClass(e.target.value)}
+            className="w-full md:w-48 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold shadow-sm outline-none focus:border-purple-400"
+          >
+            <option value="">All Sections</option>
+            {Array.from(new Set(students.map(s => s.class_section).filter(Boolean))).sort().map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50/50 border-b border-slate-100">
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Student</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Program</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Roll No</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Section</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Exam Result</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {filtered.map((s: any) => (
+                  <tr key={s.roll_no} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-black text-xs">
+                          {s.full_name?.charAt(0)}
+                        </div>
+                        <span className="font-bold text-slate-900">{s.full_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-600">{s.program} Pt {s.part}</td>
+                    <td className="px-6 py-4 font-mono text-xs font-bold text-slate-500">#{s.roll_no}</td>
+                    <td className="px-6 py-4">
+                      <input 
+                        defaultValue={s.class_section || ''}
+                        onBlur={(e) => {
+                          if (e.target.value !== s.class_section) updateStudentClass(s.roll_no, e.target.value);
+                        }}
+                        className="w-20 px-2 py-1 rounded bg-slate-50 border border-transparent focus:border-purple-200 text-xs font-bold outline-none"
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-1">
+                        <button 
+                          onClick={() => updateStudentResult(s.roll_no, 'Pass')}
+                          className={cn('px-2 py-1 rounded text-[9px] font-black transition-all', s.exam_result === 'Pass' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 text-slate-400 hover:bg-slate-200')}
+                        >
+                          PASS
+                        </button>
+                        <button 
+                          onClick={() => updateStudentResult(s.roll_no, 'Fail')}
+                          className={cn('px-2 py-1 rounded text-[9px] font-black transition-all', s.exam_result === 'Fail' ? 'bg-rose-500 text-white shadow-sm' : 'bg-slate-100 text-slate-400 hover:bg-slate-200')}
+                        >
+                          FAIL
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider', s.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400')}>
+                        {s.status || 'Active'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length === 0 && (
+            <div className="py-20 text-center text-slate-400">
+              <Users size={32} className="mx-auto mb-3 opacity-20" />
+              <p className="font-bold">No students found matching your search</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
+
+  const updateStudentClass = async (rollNo: number, classSec: string) => {
+    try {
+      const { error } = await supabase.from('students').update({ class_section: classSec }).eq('roll_no', rollNo);
+      if (error) throw error;
+      setStudents(prev => prev.map(s => s.roll_no === rollNo ? { ...s, class_section: classSec } : s));
+      showToast(`✅ Updated class/section for #${rollNo} to ${classSec}`);
+    } catch (e: any) { showErr(e.message || 'Update failed'); }
+  };
+
   // ── Computed ───────────────────────────────────────────────────────────
-  const pendingLeaves  = leaveRequests.filter(l => !l.status || l.status === 'Pending').length;
+  const pendingLeaves  = leaveRequests.filter(l => !l.status || l.status === 'Pending').length + teacherLeaves.filter(tl => !tl.status || tl.status === 'Pending').length;
   const todayRevenue   = transactions.filter(t => t.payment_date?.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((s, t) => s + Number(t.amount_paid || 0), 0);
   const totalRevenue   = transactions.filter(t => !t.is_reversed).reduce((s, t) => s + Number(t.amount_paid || 0), 0);
   const reversedCount  = transactions.filter(t => t.is_reversed).length;
@@ -365,7 +535,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                 <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">{new Date().toLocaleDateString('en-PK', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
                 <h2 className="text-xl font-black mb-4">Welcome, {adminData.full_name.split(' ').slice(0, 2).join(' ')}</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[{ l: "Today's Revenue", v: PKR(todayRevenue) }, { l: 'Total Revenue', v: PKR(totalRevenue) }, { l: 'Staff Count', v: staff.length }, { l: 'Pending Leaves', v: pendingLeaves }].map(({ l, v }) => (
+                  {[{ l: "Today's Revenue", v: PKR(todayRevenue) }, { l: "Students enrolled", v: students.length }, { l: 'Staff Count', v: staff.length }, { l: 'Pending Leaves', v: pendingLeaves }].map(({ l, v }) => (
                     <div key={l}><p className="text-[9px] font-black uppercase opacity-60 tracking-widest mb-1">{l}</p><p className="text-xl font-black">{v}</p></div>
                   ))}
                 </div>
@@ -375,7 +545,52 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                 <StatCard icon={Receipt}    label="Transactions"    value={transactions.length}     sub={`${reversedCount} reversed`}        color="bg-blue-50 text-blue-600"    />
                 <StatCard icon={Shield}     label="Roles Managed"   value={ALL_ROLES.length}         sub="Permission sets"                    color={`text-white`} style={{ background: ACCENT }} />
                 <StatCard icon={Calendar}   label="Pending Leaves"  value={pendingLeaves}            sub="Awaiting action"                    color="bg-amber-50 text-amber-600"  alert={pendingLeaves > 0} />
-                <StatCard icon={Users}      label="Total Staff"     value={staff.length}             sub="Active portal users"                color="bg-teal-50 text-teal-600"    />
+                <StatCard icon={GraduationCap} label="Total Students"  value={students.length}          sub="Enrolled in system"                 color="bg-purple-50 text-purple-600" />
+              </div>
+
+              {/* Recent Enrollments */}
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-black text-slate-900 text-lg">📚 Recent Enrollments</h3>
+                  <button onClick={() => setTab('sessions')} className="text-xs font-bold hover:underline" style={{ color: ACCENT }}>Promotion Portal →</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-50">
+                  <div className="divide-y divide-slate-50">
+                    {students.slice(0, 5).map(s => (
+                      <div key={s.roll_no} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">{s.full_name?.charAt(0)}</div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{s.full_name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{s.program} · Part {s.part}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-black text-slate-700">#{s.roll_no}</p>
+                          <p className={cn('text-[9px] font-black px-2 py-0.5 rounded-full inline-block', s.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500')}>{s.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {students.slice(5, 10).map(s => (
+                      <div key={s.roll_no} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">{s.full_name?.charAt(0)}</div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">{s.full_name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">{s.program} · Part {s.part}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-black text-slate-700">#{s.roll_no}</p>
+                          <p className={cn('text-[9px] font-black px-2 py-0.5 rounded-full inline-block', s.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500')}>{s.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {students.length === 0 && <p className="p-12 text-center text-slate-300 text-sm italic">No students found. Loading data...</p>}
               </div>
 
               {/* Quick permissions overview */}
@@ -635,45 +850,63 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
           {/* ════ LEAVES ════ */}
           {tab === 'leaves' && (
             <motion.div key="leaves" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                {[{ l: 'Total', v: leaveRequests.length, c: 'text-slate-900' }, { l: 'Pending', v: pendingLeaves, c: 'text-amber-600' }, { l: 'Approved', v: leaveRequests.filter(l => l.status === 'Approved').length, c: 'text-emerald-600' }].map(({ l, v, c }) => (
-                  <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
-                ))}
-              </div>
-              <div className="space-y-3">
-                {leaveRequests.length === 0 ? (
-                  <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center"><Calendar size={28} className="mx-auto mb-3 text-slate-300" /><p className="text-slate-400 font-bold">No leave requests yet</p></div>
-                ) : leaveRequests.map((l: any, i: number) => {
-                  const isPending = !l.status || l.status === 'Pending';
-                  return (
-                    <motion.div key={l.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                      className={cn('bg-white rounded-2xl overflow-hidden shadow-sm', isPending ? 'border-l-4 border border-amber-200' : 'border border-slate-100')}
-                      style={isPending ? { borderLeftColor: '#D97706' } : {}}>
-                      <div className="px-4 py-4 flex items-start gap-3">
-                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{(l.student_name || l.student_roll_no || 'S')?.charAt(0)}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-black text-slate-900">{l.student_name || `Roll #${l.student_roll_no}`}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{l.reason || l.leave_type || 'Leave request'}</p>
-                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                            {(l.from_date || l.request_date) && <span className="text-[11px] text-slate-400">{l.from_date || l.request_date}{l.to_date && l.to_date !== l.from_date ? ` → ${l.to_date}` : ''}</span>}
-                            <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-black', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{l.status || 'Pending'}</span>
-                          </div>
-                        </div>
-                        {isPending && (
-                          <div className="flex gap-1.5 flex-shrink-0">
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                              {leaveSaving === l.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
-                            </motion.button>
-                            <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected')} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
-                              <X size={10} /> Reject
-                            </motion.button>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+              {(() => {
+                const combined = [
+                  ...leaveRequests.map(l => ({ ...l, isTeacher: false })),
+                  ...teacherLeaves.map(l => ({ ...l, isTeacher: true, student_name: l.teacher_name, student_roll_no: `Teacher ID: ${l.teacher_id}` }))
+                ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+                
+                const totalLeaves = combined.length;
+                const totalPending = combined.filter(l => !l.status || l.status === 'Pending').length;
+                const totalApproved = combined.filter(l => l.status === 'Approved').length;
+
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[{ l: 'Total', v: totalLeaves, c: 'text-slate-900' }, { l: 'Pending', v: totalPending, c: 'text-amber-600' }, { l: 'Approved', v: totalApproved, c: 'text-emerald-600' }].map(({ l, v, c }) => (
+                        <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
+                      ))}
+                    </div>
+                    <div className="space-y-3">
+                      {combined.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center"><Calendar size={28} className="mx-auto mb-3 text-slate-300" /><p className="text-slate-400 font-bold">No leave requests yet</p></div>
+                      ) : combined.map((l: any, i: number) => {
+                        const isPending = !l.status || l.status === 'Pending';
+                        return (
+                          <motion.div key={l.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
+                            className={cn('bg-white rounded-2xl overflow-hidden shadow-sm', isPending ? 'border-l-4 border border-amber-200' : 'border border-slate-100')}
+                            style={isPending ? { borderLeftColor: '#D97706' } : {}}>
+                            <div className="px-4 py-4 flex items-start gap-3">
+                              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{(l.student_name || l.teacher_name || 'L')?.charAt(0)}</div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-black text-slate-900 flex items-center gap-2">
+                                  {l.student_name || l.teacher_name || `Roll #${l.student_roll_no}`}
+                                  {l.isTeacher && <span className="bg-blue-50 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-full uppercase font-black">Teacher</span>}
+                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">{l.reason || l.leave_type || 'Leave request'}</p>
+                                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                                  {(l.from_date || l.request_date) && <span className="text-[11px] text-slate-400">{l.from_date || l.request_date}{l.to_date && l.to_date !== l.from_date ? ` → ${l.to_date}` : ''}</span>}
+                                  <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-black', l.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{l.status || 'Pending'}</span>
+                                </div>
+                              </div>
+                              {isPending && (
+                                <div className="flex gap-1.5 flex-shrink-0">
+                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Approved', l.isTeacher)} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                                    {leaveSaving === l.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
+                                  </motion.button>
+                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => handleLeave(l.id, 'Rejected', l.isTeacher)} disabled={leaveSaving === l.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                                    <X size={10} /> Reject
+                                  </motion.button>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           )}
 
@@ -718,68 +951,248 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
             </motion.div>
           )}
 
+          {/* ════ STUDENTS ════ */}
+          {tab === 'students' && renderStudents()}
+
           {/* ════ SESSIONS ════ */}
           {tab === 'sessions' && (
             <motion.div key="sessions" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Create Session */}
-                <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm h-fit">
-                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2">
-                    <Plus size={18} className="text-emerald-500" /> Create Academic Session
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Session Name</label>
-                      <input 
-                        value={sessionForm.name} 
-                        onChange={e => setSessionForm({ ...sessionForm, name: e.target.value })}
-                        placeholder="e.g. 2026-27"
-                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-purple-400 transition-all"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left Col: Session Management */}
+                <div className="lg:col-span-1 space-y-6">
+                  {/* Create Session */}
+                  <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+                    <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2">
+                      <Plus size={18} className="text-emerald-500" /> Create Session
+                    </h3>
+                    <div className="space-y-4">
                       <div>
-                        <p className="text-sm font-bold text-slate-700">Initial Status</p>
-                        <p className="text-[10px] text-slate-400">Mark as active session immediately</p>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Session Name</label>
+                        <input 
+                          value={sessionForm.name} 
+                          onChange={e => setSessionForm({ ...sessionForm, name: e.target.value })}
+                          placeholder="e.g. 2026-28"
+                          className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-purple-400 transition-all"
+                        />
                       </div>
-                      <Toggle value={sessionForm.is_active} onChange={v => setSessionForm({ ...sessionForm, is_active: v })} accent={ACCENT} />
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                        <p className="text-xs font-bold text-slate-700">Set as Active</p>
+                        <Toggle value={sessionForm.is_active} onChange={v => setSessionForm({ ...sessionForm, is_active: v })} accent={ACCENT} />
+                      </div>
+                      <motion.button 
+                        whileTap={{ scale: 0.97 }} 
+                        onClick={createSession} 
+                        disabled={sessionLoading}
+                        className="w-full py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                        style={{ background: GRADIENT }}>
+                        {sessionLoading ? <Loader2 size={16} className="animate-spin" /> : 'Create'}
+                      </motion.button>
                     </div>
-                    <motion.button 
-                      whileTap={{ scale: 0.97 }} 
-                      onClick={createSession} 
-                      disabled={sessionLoading}
-                      className="w-full py-3.5 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-200 disabled:opacity-50"
-                      style={{ background: GRADIENT }}>
-                      {sessionLoading ? <Loader2 size={16} className="animate-spin" /> : 'Create Session'}
-                    </motion.button>
+                  </div>
+
+                  {/* Sessions List */}
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Academic Sessions</h3>
+                    </div>
+                    <div className="divide-y divide-slate-50 max-h-[300px] overflow-y-auto">
+                      {sessions.map(s => (
+                        <div key={s.id} className="px-5 py-3 flex items-center justify-between">
+                          <p className="font-black text-slate-800 text-sm">{s.name}</p>
+                          <Toggle value={s.is_active} onChange={v => toggleSession(s.id, v)} accent={ACCENT} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* List Sessions */}
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-6 py-4 border-b border-slate-100">
-                    <h3 className="font-black text-slate-900">Academic Sessions</h3>
-                  </div>
-                  <div className="divide-y divide-slate-50 max-h-[400px] overflow-y-auto">
-                    {sessions.map((s, i) => (
-                      <motion.div key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                        className="flex items-center justify-between px-6 py-4 hover:bg-slate-50/50">
-                        <div>
-                          <p className="font-black text-slate-800 tracking-tight">{s.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(s.created_at).toLocaleDateString()}</p>
+                {/* Right Col: Promotion logic */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm flex flex-col h-full min-h-[600px]">
+                    <div className="p-6 border-b border-slate-100 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-black text-slate-900 text-lg flex items-center gap-2">
+                          <TrendingUp size={20} className="text-purple-600" /> Student Promotion
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selected:</span>
+                          <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-black">{selectedPromos.length}</span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', s.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400')}>
-                            {s.is_active ? 'ACTIVE' : 'INACTIVE'}
-                          </span>
-                          <Toggle value={s.is_active} onChange={v => toggleSession(s.id, v)} accent={ACCENT} />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                          <input 
+                            value={promoSearch} 
+                            onChange={e => setPromoSearch(e.target.value)} 
+                            placeholder="Search roll/name..."
+                            className="w-full border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none focus:border-purple-400 bg-slate-50"
+                          />
                         </div>
-                      </motion.div>
-                    ))}
-                    {sessions.length === 0 && <p className="p-8 text-center text-slate-400 text-sm">No sessions defined</p>}
+                        <select 
+                          value={promoFilter.program} 
+                          onChange={e => setPromoFilter({ ...promoFilter, program: e.target.value })}
+                          className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none bg-slate-50"
+                        >
+                          <option value="">All Programs</option>
+                          {Array.from(new Set(students.map(s => s.program))).map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <select 
+                          value={promoFilter.part} 
+                          onChange={e => setPromoFilter({ ...promoFilter, part: Number(e.target.value) })}
+                          className="border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none bg-slate-50"
+                        >
+                          <option value={0}>All Parts</option>
+                          <option value={1}>Part 1</option>
+                          <option value={2}>Part 2</option>
+                          <option value={3}>Part 3</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto min-h-[300px]">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-white border-b border-slate-100 z-10">
+                          <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">
+                            <th className="px-6 py-3 w-10">
+                              <button 
+                                onClick={() => {
+                                  const visibleIds = students
+                                    .filter(s => {
+                                      if (promoFilter.program && s.program !== promoFilter.program) return false;
+                                      if (promoFilter.part !== 0 && s.part !== promoFilter.part) return false;
+                                      if (promoSearch) {
+                                        const q = promoSearch.toLowerCase();
+                                        return s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q);
+                                      }
+                                      return true;
+                                    })
+                                    .map(s => s.roll_no);
+                                  
+                                  if (selectedPromos.length === visibleIds.length) setSelectedPromos([]);
+                                  else setSelectedPromos(visibleIds);
+                                }}
+                                className="w-4 h-4 border-2 border-slate-200 rounded flex items-center justify-center transition-colors hover:border-purple-400"
+                              >
+                                {selectedPromos.length > 0 && <div className="w-2 h-2 bg-purple-500 rounded-sm" />}
+                              </button>
+                            </th>
+                            <th className="px-4 py-3">Student</th>
+                            <th className="px-4 py-3">Result</th>
+                            <th className="px-4 py-3">Class & Section</th>
+                            <th className="px-4 py-3">Current Session</th>
+                            <th className="px-4 py-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {students
+                            .filter(s => {
+                              if (promoFilter.program && s.program !== promoFilter.program) return false;
+                              if (promoFilter.part !== 0 && s.part !== promoFilter.part) return false;
+                              if (promoSearch) {
+                                const q = promoSearch.toLowerCase();
+                                return s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q);
+                              }
+                              return true;
+                            })
+                            .map(s => (
+                              <tr key={s.roll_no} className={cn('hover:bg-slate-50/50 transition-colors', selectedPromos.includes(s.roll_no) && 'bg-purple-50/30')}>
+                                <td className="px-6 py-3">
+                                  <button 
+                                    onClick={() => setSelectedPromos(prev => prev.includes(s.roll_no) ? prev.filter(id => id !== s.roll_no) : [...prev, s.roll_no])}
+                                    className={cn('w-4 h-4 border-2 rounded flex items-center justify-center transition-colors', selectedPromos.includes(s.roll_no) ? 'border-purple-600 bg-purple-600' : 'border-slate-200')}
+                                  >
+                                    {selectedPromos.includes(s.roll_no) && <Check size={10} className="text-white" />}
+                                  </button>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <p className="font-black text-slate-800">{s.full_name}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold tracking-wider">#{s.roll_no} · {s.program}</p>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex gap-1">
+                                    <button 
+                                      onClick={() => updateStudentResult(s.roll_no, 'Pass')}
+                                      className={cn('px-2 py-1 rounded text-[9px] font-black transition-all', s.exam_result === 'Pass' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-slate-100 text-slate-400 hover:bg-slate-200')}
+                                    >
+                                      PASS
+                                    </button>
+                                    <button 
+                                      onClick={() => updateStudentResult(s.roll_no, 'Fail')}
+                                      className={cn('px-2 py-1 rounded text-[9px] font-black transition-all', s.exam_result === 'Fail' ? 'bg-rose-500 text-white shadow-sm' : 'bg-slate-100 text-slate-400 hover:bg-slate-200')}
+                                    >
+                                      FAIL
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <input 
+                                    defaultValue={s.class_section || ''}
+                                    onBlur={(e) => {
+                                      if (e.target.value !== s.class_section) {
+                                        updateStudentClass(s.roll_no, e.target.value);
+                                      }
+                                    }}
+                                    className="bg-slate-50 border border-slate-200 rounded px-2 py-1 w-32 outline-none focus:border-purple-400 font-bold"
+                                    placeholder="e.g. 10th-A"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 text-slate-500 font-medium">{s.session} (Part {s.part})</td>
+                                <td className="px-4 py-3">
+                                  <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', s.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500')}>
+                                    {s.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="p-6 bg-slate-50 border-t border-slate-100">
+                      <div className="flex flex-wrap gap-4 items-end">
+                        <div className="flex-1 min-w-[180px]">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Promote To Session</label>
+                          <select 
+                            value={promoTargetSession} 
+                            onChange={e => setPromoTargetSession(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-purple-400 bg-white"
+                          >
+                            <option value="">Select Session...</option>
+                            {sessions.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="w-32">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Target Part</label>
+                          <select 
+                            value={promoTargetPart} 
+                            onChange={e => setPromoTargetPart(Number(e.target.value))}
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-purple-400 bg-white"
+                          >
+                            <option value={1}>Part 1</option>
+                            <option value={2}>Part 2</option>
+                            <option value={3}>Part 3</option>
+                          </select>
+                        </div>
+                        <motion.button 
+                          whileTap={{ scale: 0.97 }} 
+                          onClick={promoteStudents}
+                          disabled={promoLoading || selectedPromos.length === 0}
+                          className="px-6 py-2.5 rounded-xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                          style={{ background: GRADIENT }}>
+                          {promoLoading ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle size={16} /> Promote Selected</>}
+                        </motion.button>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-bold mt-4 flex items-center gap-1.5 opacity-60">
+                        <AlertTriangle size={12} /> Promotion will update student session and part across the system.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
+
             </motion.div>
           )}
 

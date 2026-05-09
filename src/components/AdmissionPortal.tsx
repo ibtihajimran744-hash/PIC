@@ -16,15 +16,21 @@ interface AdmissionPortalProps {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 // ── Section logic ─────────────────────────────────────────────
-const getSuggestedSection = (pct: number, gender: string) => {
+const getSuggestedSection = (pct: number, gender: string, program?: string) => {
   const g = gender === 'Female' ? 'G' : 'B';
   if (pct >= 85) return `A-${g}`;
+  if (program === 'ICS Physics') {
+    return `B-${g}`; // Strictly A and B for ICS Physics
+  }
   if (pct >= 70) return `B-${g}`;
   return `C-${g}`;
 };
 
 const CLASS_MAP: Record<string, Record<number, Record<string,string>>> = {
-  'ICS Physics':    { 1:{'A-B':'ICS-Phy-A-B','B-B':'ICS-Phy-B-B','C-B':'ICS-Phy-B-B','A-G':'ICS-Phy-A-G','B-G':'ICS-Phy-A-G','C-G':'ICS-Phy-A-G'}, 2:{'A-B':'ICS-Phy-II-A-B','B-B':'ICS-Phy-II-B-B','C-B':'ICS-Phy-II-B-B','A-G':'ICS-Phy-II-A-G','B-G':'ICS-Phy-II-A-G','C-G':'ICS-Phy-II-A-G'} },
+  'ICS Physics':    { 
+    1:{'A-B':'ICS-Phy-A-B','B-B':'ICS-Phy-B-B','A-G':'ICS-Phy-A-G','B-G':'ICS-Phy-A-G'}, 
+    2:{'A-B':'ICS-Phy-II-A-B','B-B':'ICS-Phy-II-B-B','A-G':'ICS-Phy-II-A-G','B-G':'ICS-Phy-II-A-G'} 
+  },
   'ICS Statistics': { 1:{'A-B':'ICS-Stat-B','B-B':'ICS-Stat-B','C-B':'ICS-Stat-B','A-G':'ICS-Stat-G','B-G':'ICS-Stat-G','C-G':'ICS-Stat-G'}, 2:{'A-B':'ICS-Stat-II-B','B-B':'ICS-Stat-II-B','C-B':'ICS-Stat-II-B','A-G':'ICS-Stat-II-G','B-G':'ICS-Stat-II-G','C-G':'ICS-Stat-II-G'} },
   'Pre-Medical':    { 1:{'A-B':'Pre-Med-B','B-B':'Pre-Med-B','C-B':'Pre-Med-B','A-G':'Pre-Med-G','B-G':'Pre-Med-G','C-G':'Pre-Med-G'}, 2:{'A-B':'Pre-Med-II-B','B-B':'Pre-Med-II-B','C-B':'Pre-Med-II-B','A-G':'Pre-Med-II-G','B-G':'Pre-Med-II-G','C-G':'Pre-Med-II-G'} },
   'Pre-Engineering':{ 1:{'A-B':'Pre-Eng-B','B-B':'Pre-Eng-B','C-B':'Pre-Eng-B','A-G':'Pre-Eng-G','B-G':'Pre-Eng-G','C-G':'Pre-Eng-G'}, 2:{'A-B':'Pre-Eng-II-B','B-B':'Pre-Eng-II-B','C-B':'Pre-Eng-II-B','A-G':'Pre-Eng-II-G','B-G':'Pre-Eng-II-G','C-G':'Pre-Eng-II-G'} },
@@ -130,7 +136,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   };
 
   const pct = Number(form.matric_percentage) || 0;
-  const sec  = pct > 0 ? getSuggestedSection(pct, form.gender) : '';
+  const sec  = pct > 0 ? getSuggestedSection(pct, form.gender, form.program) : '';
   const cls  = sec ? CLASS_MAP[form.program]?.[form.part]?.[sec] || '' : '';
   const set  = (k:string, v:any) => setForm((p:any)=>({...p,[k]:v}));
 
@@ -220,15 +226,16 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
     finally{ setSaving(false); }
   };
 
-  const confirmToDatabase = async (f:any, installmentData: any[]) => {
-    if (!manualRoll) {
+  const confirmToDatabase = async (f:any, installmentData: any[], overrideRoll?: string) => {
+    const finalRoll = overrideRoll || manualRoll || f.student_roll_no;
+    if (!finalRoll) {
       showToast('Please assign a roll number manually', 'err');
       return;
     }
     setSaving(true);
     try {
       const studentType = f.student_type || (f.program === 'Summer Camp' ? 'Summer Camp' : 'Regular');
-      let roll = Number(manualRoll);
+      let roll = Number(finalRoll);
       
       if (isNaN(roll)) {
         throw new Error('Invalid Roll Number. Please enter a valid number.');
@@ -988,8 +995,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                                 })));
                             }} className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Eye size={12}/> View & Confirm</button>
                             <motion.button whileTap={{scale:0.95}} disabled={saving} onClick={()=>{
-                                if (f.student_roll_no) setManualRoll(f.student_roll_no);
-                                confirmToDatabase(f, []);
+                                confirmToDatabase(f, [], f.student_roll_no);
                             }}
                               className="flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-black text-white disabled:opacity-50"
                               style={{background:'linear-gradient(135deg,#059669,#10b981)'}}>
