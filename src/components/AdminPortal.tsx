@@ -1361,7 +1361,7 @@ const handlePrintReport = (data: any) => {
       const [s1, s2, s3, s4, s5, s6, s9, s10, sN] = await Promise.all([
         supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,gender,status,total_xp,current_badge,total_package,paid_amount').order('class_section').order('full_name'),
         supabase.from('academics_class_summary').select('*'),
-        supabase.from('admin_notifications').select('*').in('target_role', ['Principal', 'VP', 'Director']).order('created_at', { ascending: false }).limit(30),
+        supabase.from('admin_notifications').select('*').in('target', ['ALL', 'Principal', 'VP', 'Director', adminData.role, adminData.username, 'PRINCIPAL', 'DIRECTOR']).order('created_at', { ascending: false }).limit(30),
         supabase.from('admission_forms').select('*').order('created_at', { ascending: false }).limit(200),
         supabase.from('attendance').select('status').eq('date', today),
         supabase.from('leave_requests').select('*').order('created_at', { ascending: false }).limit(50),
@@ -1413,7 +1413,7 @@ const handlePrintReport = (data: any) => {
         if (pData) setUserPermissions(pData.permissions || []);
       }
 
-      const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, sN] = await Promise.all([
+      const [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, sN, sNotif] = await Promise.all([
         supabase.from('students').select('roll_no,full_name,father_name,class_section,program,part,status,total_package,paid_amount,current_badge,total_xp,gender').order('roll_no', { ascending: false }),
         supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
         supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
@@ -1424,13 +1424,15 @@ const handlePrintReport = (data: any) => {
         supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
         supabase.from('teachers').select('*').order('full_name'),
         supabase.from('teacher_salaries').select('*').order('payment_date', { ascending: false }).limit(100),
-        supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Accountant},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6)
+        supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Accountant},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6),
+        supabase.from('admin_notifications').select('*').in('target', ['ALL', adminData.role, adminData.username, adminData.role.toUpperCase()]).order('created_at', { ascending: false }).limit(30)
       ]);
       setStudents(s1.data || []);
       setFeeGroups((s2.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
       setTransactions(s3.data || []);
       setDiscounts(s4.data || []); setExpenses(s5.data || []); setIncome(s6.data || []);
       setNotices(sN.data || []);
+      setNotifications(sNotif.data || []);
       const { data: ehData } = await supabase.from('expense_headers').select('*').order('name');
       setExpenseHeaders(ehData || []);
       setAdmForms(s7.data || []); setTeachers(s9.data || []); setSalaries(s10.data || []);
@@ -2321,7 +2323,7 @@ const active = tab === id; const badgeN = getBadge(id);
         </div>
         <div className="flex items-center gap-2">
           {savedMsg && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">{savedMsg}</span>}
-          {!isAccountant && (
+          {true && (
             <button onClick={() => setShowNotifs(true)} className="relative w-9 h-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200">
               <Bell size={16} className="text-slate-600" />
               {unreadNotifs > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-white text-[8px] font-black flex items-center justify-center" style={{ background: ACCENT }}>{unreadNotifs > 9 ? '9+' : unreadNotifs}</span>}
@@ -2341,7 +2343,7 @@ const active = tab === id; const badgeN = getBadge(id);
           <div className="flex items-center gap-3">
             {savedMsg && <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200"><CheckCircle size={13} />{savedMsg}</motion.div>}
             {errorMsg  && <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200"><AlertTriangle size={13} />{errorMsg}</motion.div>}
-            {!isAccountant && (
+            {true && (
               <button onClick={() => setShowNotifs(true)} className="relative w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100">
                 <Bell size={14} />{unreadNotifs > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-white text-[8px] font-black flex items-center justify-center" style={{ background: ACCENT }}>{unreadNotifs}</span>}
               </button>
@@ -4889,7 +4891,7 @@ const active = tab === id; const badgeN = getBadge(id);
 
       {/* NOTIFICATIONS PANEL (Principal only) */}
       <AnimatePresence>
-        {showNotifs && !isAccountant && (
+        {showNotifs && (
           <div className="fixed inset-0 z-50 flex items-end justify-center">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNotifs(false)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
             <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 380, damping: 32 }} className="relative bg-white w-full max-w-2xl rounded-t-3xl overflow-hidden z-10" style={{ maxHeight: '85vh' }}>

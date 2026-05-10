@@ -1449,7 +1449,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                 <Field label="Role">
                   <Select value={notifyForm.target_role} onChange={e=>setNotifyForm({...notifyForm,target_role:e.target.value})}>
                     <option value="">Select...</option>
-                    {['ACCOUNTANT','TEACHER','EXAMINER','REGISTRAR','RECEPTIONIST','DIRECTOR','VP','PRINCIPAL'].map(r=><option key={r} value={r}>{r}</option>)}
+                    {['Accountant','Teacher','Examiner','Registrar','Receptionist','Director','VP','Principal'].map(r=><option key={r} value={r}>{r}</option>)}
                   </Select>
                 </Field>
               )}
