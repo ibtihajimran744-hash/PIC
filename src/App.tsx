@@ -3,6 +3,8 @@ import { supabase } from './services/supabase';
 import { AdminPortal }       from './components/AdminPortal';
 import { ReceptionistPortal } from './components/ReceptionistPortal';
 import VPPortal              from './components/VPPortal';
+import { DirectorPortal }     from './components/DirectorPortal';
+import { PrincipalPortal }    from './components/PrincipalPortal';
 import { CoordinatorPortal } from './components/CoordinatorPortal';
 import { ExaminerPortal }    from './components/ExaminerPortal';
 import { AcademicsPortal }   from './components/AcademicsPortal';
@@ -339,9 +341,27 @@ export default function App() {
     );
   }
 
-  if (portalType === 'vp' || portalType === 'director') {
+  if (portalType === 'vp') {
     return (
       <VPPortal
+        onLogout={handleLogout}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+      />
+    );
+  }
+
+  if (portalType === 'director') {
+    return (
+      <DirectorPortal
+        onLogout={handleLogout}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+      />
+    );
+  }
+
+  if (portalType === 'principal') {
+    return (
+      <PrincipalPortal
         onLogout={handleLogout}
         adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
       />
