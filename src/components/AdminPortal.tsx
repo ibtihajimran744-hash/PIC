@@ -1666,6 +1666,20 @@ const handlePrintReport = (data: any) => {
     setStudentLoading(false);
   };
 
+  const openAccStudentProfile = async (student: any) => {
+    setSelectedAccStu(student);
+    setStuFeeLoading(true);
+    try {
+      const [prog, fees] = await Promise.all([
+        supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject'),
+        supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('created_at', { ascending: false })
+      ]);
+      setStudentProgress(prog.data || []);
+      setStuFeeGroups((fees.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) + (g.fine || 0) - (g.paid || 0) - (g.discount || 0) })));
+    } catch (e: any) { console.error(e); }
+    finally { setStuFeeLoading(false); }
+  };
+
   const handleLeave = async (id: string, action: 'Approved' | 'Rejected') => {
     setLeaveSaving(id);
     try {
@@ -1703,7 +1717,6 @@ const handlePrintReport = (data: any) => {
       const { data } = supabase.storage.from('admissions').getPublicUrl(path);
       return data.publicUrl;
     } catch {
-      // Fallback to base64
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -1712,24 +1725,6 @@ const handlePrintReport = (data: any) => {
     }
   };
 
-  // ── Accountant: open student profile (loads results + fee summary) ─────
-  const openAccStudentProfile = async (student: any) => {
-    const isSelected = selectedAccStu?.roll_no === student.roll_no;
-    if (isSelected) { setSelectedAccStu(null); setStuFeeGroups([]); return; }
-    setSelectedAccStu(student);
-    setStuFeeFilter('All');
-    setSelectedFeeGroups(new Set());
-    setStuFeeLoading(true);
-    const [progress, fees] = await Promise.all([
-      supabase.from('student_course_progress').select('*').eq('student_roll', student.roll_no).order('subject'),
-      supabase.from('fee_groups').select('*').eq('student_roll', student.roll_no).order('due_date'),
-    ]);
-    setStudentProgress(progress.data || []);
-    setStuFeeGroups((fees.data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) - (g.paid || 0) - (g.discount || 0) })));
-    setStuFeeLoading(false);
-  };
-
-  // ── Accountant actions ─────────────────────────────────────────────────
   const saveAdmission = async () => {
     if (!admForm.student_name.trim() || !admForm.father_name.trim()) { showErr('Student name and father name are required'); return; }
     setSaving(true);
@@ -1774,16 +1769,32 @@ const handlePrintReport = (data: any) => {
       fee_package:        Number(admForm.fee_package),
       student_type:       admForm.student_type,
       is_fresher:         admForm.is_fresher,
-      installments:       Number(admForm.num_installments),
+      num_installments:    Number(admForm.num_installments),
       suggested_section:  sec,
       suggested_class:    cls,
       notes:              admForm.notes || '',
       degree_type:        admForm.degree_type || (isUniversityProgram(admForm.applied_for) ? admForm.applied_for : 'Intermediate'),
       university_program: isUniversityProgram(admForm.applied_for) ? admForm.program : null,
       student_photo_url:  admForm.student_photo_url || null,
+      custom_installments: instData,
+      include_summer_camp: !!admForm.include_summer_camp,
+      summer_camp_amount:   Number(admForm.summer_camp_amount) || 0,
+      include_uniform:     !!admForm.include_uniform,
+      uniform_amount:       Number(admForm.uniform_amount) || 0,
+      welcome_party_amount: Number(admForm.welcome_party_amount)||0,
+      exam_fee_amount:      Number(admForm.exam_fee_amount)||0,
+      registration_fee_amount: Number(admForm.registration_fee_amount)||0,
+      student_card_amount:  Number(admForm.student_card_amount)||0,
+      annual_charges_amount: Number(admForm.annual_charges_amount)||0,
+      include_welcome_party: !!admForm.include_welcome_party,
+      include_exam_fee:      !!admForm.include_exam_fee,
+      include_registration_fee: !!admForm.include_registration_fee,
+      include_student_card:     !!admForm.include_student_card,
+      include_annual_charges:   !!admForm.include_annual_charges,
       admission_data: {
         ...admForm,
-        _localPhotoPreview: undefined // don't save blob url
+        custom_installments: instData,
+        _localPhotoPreview: undefined
       }
     };
     try {
@@ -1792,58 +1803,180 @@ const handlePrintReport = (data: any) => {
         const { error } = await supabase.from('admission_forms').update(payload).eq('id', editingId);
         if (error) throw error;
         
-        // If it was already synced to students table, update the student record too
-        const oldForm = admForms.find(f => f.id === editingId);
-        if (oldForm && oldForm.synced_to_db && oldForm.student_roll_no) {
-          await supabase.from('students').update({
-            full_name: payload.student_name,
-            father_name: payload.father_name,
-            gender: payload.gender,
-            program: payload.program,
-            part: payload.part,
-            class_section: payload.suggested_section || oldForm.suggested_section,
-            total_package: payload.fee_package,
-          }).eq('roll_no', oldForm.student_roll_no);
+        // --- NEW: Sync with Student Ledger if roll no exists ---
+        if (payload.student_roll_no) {
+          await syncFormToLedger(payload.student_roll_no, payload);
         }
         
         showToast('✅ Admission form updated');
       } else {
         // INSERT new form
         const { error } = await supabase.from('admission_forms').insert([{
-          ...payload, status: 'Pending', synced_to_db: false,
-          created_by: adminData.full_name, form_no: '',
+          ...payload, status: 'Pending', created_by: adminData.full_name, synced_to_db: false,
         }]);
         if (error) throw error;
         showToast('✅ Admission form saved');
       }
-
-      // 🔔 VP Notification
-      await supabase.from('admin_notifications').insert([{
-        target_role: 'VP',
-        title: editingId ? 'Admission Updated' : 'New Admission Form',
-        message: `${payload.student_name} (${payload.program}) ${editingId ? 'updated' : 'submitted'} by ${adminData.full_name}.`,
-        type: 'Admission',
-        is_read: false
-      }]);
-
       setAdmForm({ ...EMPTY_FORM });
       setTab('admissions');
       refresh();
-    } catch (e: any) { showErr(e.message || 'Error saving'); }
+    } catch (e: any) { showErr(e.message); }
     finally { setSaving(false); }
   };
 
-  const confirmToDatabase = async (f: any, overrideRoll?: string) => {
-    if (f.status === 'Pending' && instData.length === 0) {
-       const count = f.num_installments || f.installments || 3;
-       const pkgAmt = Number(f.fee_package) || 0;
-       const perInst = Math.floor(pkgAmt / count);
-       setInstData(Array.from({ length: count }, (_, i) => ({
-         date: new Date().toISOString().split('T')[0],
-         amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-       })));
+  const syncFormToLedger = async (rollNo: number, f: any) => {
+    try {
+      const studentRoll = Number(rollNo);
+      if (isNaN(studentRoll)) throw new Error('Invalid Roll Number for sync');
+
+      // 1. Calculate new Total Package
+      const basePkg = Number(f.fee_package) || 0;
+      let totalPackage = basePkg;
+      const optionalFeeConfigs = [
+        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000, code: 'EXT-SUMMER' },
+        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000, code: 'EXT-UNIFORM' },
+        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0,    code: 'EXT-WELCOME' },
+        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0,    code: 'EXT-EXAM' },
+        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0,    code: 'EXT-REGISTRATION' },
+        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0,    code: 'EXT-STUDENT' },
+        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0,    code: 'EXT-ANNUAL' },
+      ];
+
+      optionalFeeConfigs.forEach(opt => {
+        if (f[opt.key]) {
+          const amt = Number(f[opt.amt]) || opt.def || 0;
+          totalPackage += amt;
+        }
+      });
+
+      // 2. Update Student Record
+      const { error: stuErr } = await supabase.from('students').update({
+        full_name: f.student_name,
+        father_name: f.father_name,
+        gender: f.gender,
+        program: f.program,
+        part: f.part,
+        total_package: totalPackage,
+        student_type: f.student_type
+      }).eq('roll_no', studentRoll);
+      if (stuErr) throw stuErr;
+
+      // 3. Sync Fees
+      const { data: existingFees } = await supabase.from('fee_groups').select('*').eq('student_roll', studentRoll);
+      const today = new Date().toISOString().split('T')[0];
+
+      // 3a. Sync Optional Fees
+      for (const opt of optionalFeeConfigs) {
+        const code = opt.code;
+        const existing = existingFees?.find(fg => fg.fees_code === code);
+        const shouldHave = !!f[opt.key];
+        const targetAmt = Number(f[opt.amt]) || opt.def || 0;
+
+        if (shouldHave && targetAmt > 0) {
+          if (!existing) {
+            await supabase.from('fee_groups').insert([{
+              student_roll: studentRoll,
+              fees_group: opt.label || opt.key.replace('include_', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              fees_code: code,
+              due_date: today,
+              amount: targetAmt,
+              paid: 0, 
+              balance: targetAmt,
+              status: 'Unpaid'
+            }]);
+          } else if (existing.paid === 0 && (Number(existing.amount) !== targetAmt || existing.status === 'Rejected' || existing.status === 'Cancelled')) {
+             await supabase.from('fee_groups').update({ amount: targetAmt, balance: targetAmt, status: 'Unpaid' }).eq('id', existing.id);
+          }
+        } else if (!shouldHave || targetAmt <= 0) {
+          if (existing && existing.paid === 0) {
+            await supabase.from('fee_groups').delete().eq('id', existing.id);
+          }
+        }
+      }
+
+      // 3b. Sync Fee Package (Installments)
+      const requiredCount = Number(f.num_installments) || 1;
+      const finalInsts = Array.isArray(f.custom_installments) ? f.custom_installments : (f.admission_data?.custom_installments || []);
+      const installmentFees = existingFees?.filter(fg => fg.fees_code?.startsWith('FEE-PK')) || [];
+
+      const newInstUpdates: any[] = [];
+      const newInstInserts: any[] = [];
+      const validCodes: string[] = [];
+
+      for (let i = 0; i < requiredCount; i++) {
+        const inst = finalInsts[i] || {
+          date: today,
+          amount: i === requiredCount - 1 
+            ? basePkg - (Math.floor(basePkg / requiredCount) * (requiredCount - 1)) 
+            : Math.floor(basePkg / requiredCount)
+        };
+        
+        const code = requiredCount > 1 ? `FEE-PK-${i + 1}` : 'FEE-PK';
+        validCodes.push(code);
+        const existing = installmentFees.find(fg => fg.fees_code === code);
+        const targetAmt = Number(inst.amount) || 0;
+        const targetDate = inst.date || today;
+        const groupName = requiredCount > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package';
+
+        if (!existing) {
+          // If moving from 1 to many, or many to 1, we might have an "orphan" that should be this one
+          // E.g. shifting FEE-PK to FEE-PK-1
+          const orphan = (i === 0) ? installmentFees.find(fg => fg.fees_code === (requiredCount > 1 ? 'FEE-PK' : 'FEE-PK-1')) : null;
+          
+          if (orphan && orphan.paid === 0) {
+            await supabase.from('fee_groups').update({
+              fees_group: groupName,
+              fees_code: code,
+              due_date: targetDate,
+              amount: targetAmt,
+              balance: targetAmt
+            }).eq('id', orphan.id);
+          } else {
+            newInstInserts.push({
+              student_roll: studentRoll,
+              fees_group: groupName,
+              fees_code: code,
+              due_date: targetDate,
+              amount: targetAmt,
+              paid: 0,
+              balance: targetAmt,
+              status: 'Unpaid'
+            });
+          }
+        } else if (existing.paid === 0) {
+          if (Number(existing.amount) !== targetAmt || existing.due_date !== targetDate || existing.fees_group !== groupName) {
+            await supabase.from('fee_groups').update({ 
+               amount: targetAmt, 
+               balance: targetAmt, 
+               due_date: targetDate,
+               fees_group: groupName
+             }).eq('id', existing.id);
+          }
+        } else if (existing.fees_group !== groupName) {
+           await supabase.from('fee_groups').update({ fees_group: groupName }).eq('id', existing.id);
+        }
+      }
+
+      if (newInstInserts.length > 0) {
+        const { error: insErr } = await supabase.from('fee_groups').insert(newInstInserts);
+        if (insErr) throw insErr;
+      }
+
+      // Cleanup extra unpaid installments
+      const extraUnpaid = installmentFees.filter(fg => !validCodes.includes(fg.fees_code) && (fg.paid === 0 || fg.paid === null));
+      if (extraUnpaid.length > 0) {
+        await supabase.from('fee_groups').delete().in('id', extraUnpaid.map(e => e.id));
+      }
+
+      showToast('✅ Profile and Ledger synchronized');
+      refresh();
+    } catch (e: any) {
+      console.error('Sync Error:', e);
+      showErr('Partially failed to sync ledger: ' + e.message);
     }
-    
+  };
+
+  const confirmToDatabase = async (f: any, overrideRoll?: string) => {
     const finalRoll = overrideRoll || manualRoll || f.student_roll_no;
     if (!finalRoll) {
       showErr('Please assign a roll number manually.');
@@ -1867,9 +2000,38 @@ const handlePrintReport = (data: any) => {
 
       const username = `stu_${roll}`, password = `PIC${roll}`;
 
-      let totalPackage = (Number(f.fee_package) || 0);
-      if (f.include_summer_camp) totalPackage += 7000;
-      if (f.include_uniform) totalPackage += 1000;
+      // Calculate REAL total package from all sources
+      const basePkg = Number(f.fee_package) || 0;
+      let totalPackage = basePkg;
+      
+      const optionalFeeConfigs = [
+        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000 },
+        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000 },
+        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0 },
+        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0 },
+        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0 },
+        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0 },
+        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0 },
+      ];
+
+      optionalFeeConfigs.forEach(opt => {
+        if (f[opt.key]) {
+          const amt = Number(f[opt.amt]) || opt.def || 0;
+          totalPackage += amt;
+        }
+      });
+
+      // Recalculate installments if they don't match or are missing
+      const requiredCount = Number(f.num_installments) || 1;
+      let finalInsts = f.custom_installments || f.admission_data?.custom_installments || [];
+      
+      if (!Array.isArray(finalInsts) || finalInsts.length !== requiredCount) {
+        const perInst = Math.floor(basePkg / requiredCount);
+        finalInsts = Array.from({ length: requiredCount }, (_, i) => ({
+          date: new Date().toISOString().split('T')[0],
+          amount: i === requiredCount - 1 ? basePkg - (perInst * (requiredCount - 1)) : perInst
+        }));
+      }
 
       // --- Automatic Section Selection ---
       let baseSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
@@ -1911,46 +2073,34 @@ const handlePrintReport = (data: any) => {
       let ledgerFees: any[] = [];
       const today = new Date().toISOString().split('T')[0];
 
-      if (studentType === 'Summer Camp') {
-          ledgerFees = [
-            { student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: instData[0]?.date || today, amount: 7000, paid: 0, status: 'Unpaid' }
-          ];
-      } else {
-          for (let i = 0; i < instData.length; i++) {
-              ledgerFees.push({
-                  student_roll: roll,
-                  fees_group: instData.length > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
-                  fees_code: `FEE-PK${instData.length > 1 ? `-${i + 1}` : ''}`,
-                  due_date: instData[i].date || today,
-                  amount: instData[i].amount,
-                  paid: 0, status: 'Unpaid'
-              });
-          }
+      // 1. Fee Package / Installments
+      finalInsts.forEach((inst: any, i: number) => {
+        ledgerFees.push({
+          student_roll: roll,
+          fees_group: finalInsts.length > 1 ? `Fee Package (Inst ${i + 1})` : 'Fee Package',
+          fees_code: `FEE-PK${finalInsts.length > 1 ? `-${i + 1}` : ''}`,
+          due_date: inst.date || today,
+          amount: Number(inst.amount) || 0,
+          paid: 0, status: 'Unpaid'
+        });
+      });
 
-          if (f.include_summer_camp) {
-              ledgerFees.push({ student_roll: roll, fees_group: 'Summer Camp Fee', fees_code: 'SC-FEE', due_date: today, amount: 7000, paid: 0, status: 'Unpaid' });
-          }
-          if (f.include_uniform) {
-              ledgerFees.push({ student_roll: roll, fees_group: 'Uniform Fee', fees_code: 'UN-FEE', due_date: today, amount: 1000, paid: 0, status: 'Unpaid' });
-          }
-      }
-
-      // Add after the existing ledgerFees array is populated:
-      const optionalFees = [
-        { key: 'include_welcome_party',    amtKey: 'welcome_party_amount',    group: 'Welcome Party Fee',    code: 'WP-FEE' },
-        { key: 'include_exam_fee',         amtKey: 'exam_fee_amount',         group: 'Examination Fee',       code: 'EX-FEE' },
-        { key: 'include_registration_fee', amtKey: 'registration_fee_amount', group: 'Registration Fee',      code: 'REG-FEE' },
-        { key: 'include_student_card',     amtKey: 'student_card_amount',     group: 'Student Card Fee',      code: 'SC-CARD' },
-        { key: 'include_annual_charges',   amtKey: 'annual_charges_amount',   group: 'Annual Charges',        code: 'ANN-FEE' },
-      ];
-      for (const { key, amtKey, group, code } of optionalFees) {
-        if (f[key] && Number(f[amtKey]) > 0) {
-          const { data: existing } = await supabase.from('fee_groups').select('id').eq('student_roll', roll).eq('fees_group', group).maybeSingle();
-          if (!existing) {
-            ledgerFees.push({ student_roll: roll, fees_group: group, fees_code: code, due_date: today, amount: Number(f[amtKey]), paid: 0, status: 'Unpaid' });
+      // 2. Extra Charges
+      optionalFeeConfigs.forEach(opt => {
+        if (f[opt.key]) {
+          const amt = Number(f[opt.amt]) || opt.def || 0;
+          if (amt > 0) {
+            ledgerFees.push({
+              student_roll: roll,
+              fees_group: opt.key.replace('include_', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              fees_code: `EXT-${opt.key.split('_')[1].toUpperCase()}`,
+              due_date: today,
+              amount: amt,
+              paid: 0, status: 'Unpaid'
+            });
           }
         }
-      }
+      });
 
       if (ledgerFees.length > 0) {
         const { error: fe } = await supabase.from('fee_groups').insert(ledgerFees);
@@ -2947,10 +3097,14 @@ const active = tab === id; const badgeN = getBadge(id);
                                 const count = f.num_installments || f.installments || 3;
                                 const pkgAmt = Number(f.fee_package) || 0;
                                 const perInst = Math.floor(pkgAmt / count);
-                                setInstData(Array.from({ length: count }, (_, i) => ({
-                                    date: new Date().toISOString().split('T')[0],
-                                    amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                })));
+                                if (f.custom_installments && Array.isArray(f.custom_installments) && f.custom_installments.length > 0) {
+                                    setInstData(f.custom_installments);
+                                } else {
+                                    setInstData(Array.from({ length: count }, (_, i) => ({
+                                        date: new Date().toISOString().split('T')[0],
+                                        amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                    })));
+                                }
                             }} className="flex-items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200"><Eye size={10} /> View</motion.button>
                           </div>
                         </div>
@@ -3562,6 +3716,16 @@ const active = tab === id; const badgeN = getBadge(id);
             {isAccountant && tab === 'admissions' && (
               <motion.div key="acc-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex-1 w-full relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                    <input 
+                      type="text" 
+                      placeholder="Search candidate name or roll number..." 
+                      value={searchQ} 
+                      onChange={e => setSearchQ(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all"
+                    />
+                  </div>
                   <div className="flex gap-2 flex-wrap">
                     {[{ v: '', l: 'All' }, { v: 'Pending', l: 'Pending' }, { v: 'Approved', l: 'Approved' }, { v: 'Rejected', l: 'Rejected' }].map(({ v, l }) => (
                       <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
@@ -3612,15 +3776,22 @@ const active = tab === id; const badgeN = getBadge(id);
                                 <button onClick={() => {
                                     setPreview(f);
                                     setManualRoll(f.student_roll_no || '');
-                                    const count = f.num_installments || f.installments || 3;
-                                    const pkgAmt = Number(f.fee_package) || 0;
-                                    const perInst = Math.floor(pkgAmt / count);
-                                    setInstData(Array.from({ length: count }, (_, i) => ({
-                                        date: new Date().toISOString().split('T')[0],
-                                        amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                    })));
+                                    const saved = f.custom_installments || f.admission_data?.custom_installments;
+                                    if (saved && Array.isArray(saved) && saved.length > 0) {
+                                      setInstData(saved);
+                                    } else {
+                                      const count = f.num_installments || f.installments || 1;
+                                      const pkgAmt = Number(f.fee_package) || 0;
+                                      const perInst = Math.floor(pkgAmt / count);
+                                      setInstData(Array.from({ length: count }, (_, i) => ({
+                                          date: new Date().toISOString().split('T')[0],
+                                          amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                      })));
+                                    }
                                 }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
                                 <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
+                                  const savedInst = f.custom_installments || f.admission_data?.custom_installments || [];
+                                  setInstData(savedInst);
                                   setAdmForm({
                                     applied_for:        f.applied_for        || 'Intermediate',
                                     program:            f.program            || 'ICS Physics',
@@ -3648,7 +3819,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                     matric_percentage:  f.matric_percentage  || '',
                                     inter_year:         f.inter_year         || '',
                                     inter_roll_no:      f.inter_roll_no      || '',
-                                    inter_marks:        f.inter_marks        || '',
+                                    inter_marks:        f.inter_marks       || '',
                                     inter_subjects:     f.inter_subjects     || '',
                                     inter_board:        f.inter_board        || 'BISE Gujranwala',
                                     inter_division:     f.inter_division     || '',
@@ -3660,14 +3831,37 @@ const active = tab === id; const badgeN = getBadge(id);
                                     fee_package:        f.fee_package        || 8000,
                                     student_type:       f.student_type       || 'Regular',
                                     is_fresher:         f.is_fresher         ?? true,
-                                    num_instalments:    f.num_instalments    || 1,
+                                    num_installments:    f.num_installments   || f.installments || 1,
                                     notes:              f.notes              || '',
+                                    include_summer_camp: !!f.include_summer_camp,
+                                    summer_camp_amount:   Number(f.summer_camp_amount) || 7000,
+                                    include_uniform:     !!f.include_uniform,
+                                    uniform_amount:       Number(f.uniform_amount) || 1000,
+                                    include_welcome_party: !!f.include_welcome_party,
+                                    welcome_party_amount: Number(f.welcome_party_amount) || 0,
+                                    include_exam_fee:      !!f.include_exam_fee,
+                                    exam_fee_amount:      Number(f.exam_fee_amount) || 0,
+                                    include_registration_fee: !!f.include_registration_fee,
+                                    registration_fee_amount: Number(f.registration_fee_amount) || 0,
+                                    include_student_card:     !!f.include_student_card,
+                                    student_card_amount:  Number(f.student_card_amount) || 500,
+                                    include_annual_charges:   !!f.include_annual_charges,
+                                    annual_charges_amount: Number(f.annual_charges_amount) || 0,
                                     _editingId:         f.id,
                                   });
+                                  setInstData(f.custom_installments || []);
                                   setTab('new-admission');
                                 }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
                                   <Save size={10} /> Edit
                                 </motion.button>
+                                {isAccountant && f.status === 'Approved' && f.student_roll_no && (
+                                  <button 
+                                    onClick={() => syncFormToLedger(f.student_roll_no, f)}
+                                    className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"
+                                  >
+                                    <RefreshCw size={10} /> Sync Ledger
+                                  </button>
+                                )}
                                 {f.status === 'Pending' && <>
                                   <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f, f.student_roll_no)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                                     {saving ? <Loader2 size={10} className="animate-spin" /> : <Database size={10} />} Confirm
@@ -3862,58 +4056,61 @@ const active = tab === id; const badgeN = getBadge(id);
                             </tbody>
                           </table>
                         </div>
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest mt-6" style={{ background: FA }}>Optional/Add-on Fees</div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 pt-2">
-                           {[
-                             { k: 'include_welcome_party', ak: 'welcome_party_amount', l: 'Welcome Party Fee', d: 'Freshers party charges' },
-                             { k: 'include_exam_fee', ak: 'exam_fee_amount', l: 'Internal Exam Fee', d: 'Full year exams' },
-                             { k: 'include_registration_fee', ak: 'registration_fee_amount', l: 'Board Registration', d: 'Registration process' },
-                             { k: 'include_student_card', ak: 'student_card_amount', l: 'Student ID Card', d: 'Physical card print' },
-                             { k: 'include_annual_charges', ak: 'annual_charges_amount', l: 'Annual Charges', d: 'Campus maintenance' },
-                           ].map(item => (
-                             <div key={item.k} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                               <div className="flex items-center gap-3">
-                                 <button onClick={() => setF(item.k, !(admForm as any)[item.k])} className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-all', (admForm as any)[item.k] ? 'bg-orange-600 border-orange-600' : 'border-slate-300')}>
-                                   {(admForm as any)[item.k] && <Check size={12} className="text-white" />}
-                                 </button>
-                                 <div><p className="text-xs font-black text-slate-700">{item.l}</p><p className="text-[9px] font-bold text-slate-400 uppercase">{item.d}</p></div>
-                               </div>
-                               <div className="w-24"><TI type="number" value={(admForm as any)[item.ak]} onChange={(e:any)=>setF(item.ak, e.target.value)} placeholder="Amount" /></div>
-                             </div>
-                           ))}
                         </div>
-                      </div>
-                      {/* ══ FEE PACKAGE ══ */}
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest mt-6" style={{ background: ACCENT }}>Fee Package</div>
                       <div className="pb-5 border-b border-slate-100 space-y-4">
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Fee Package</div>
-                        {admForm.student_type === 'Summer Camp' ? (
-                          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-100">
-                             <p className="text-sm font-black text-amber-700">Summer Camp Fee Applied</p>
-                             <p className="text-xs text-amber-600 mt-1">A total package of 7,000 (Summer Camp Fee) will be applied.</p>
+                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Fee Package Settings</div>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <F label="Total Package Amount (Accountant Defined)" req>
+                              <TI type="number" value={admForm.fee_package} onChange={(e: any) => {
+                                const pkgAmt = Number(e.target.value);
+                                setF('fee_package', pkgAmt);
+                                const count = Number(admForm.num_installments) || 1;
+                                const perInst = Math.floor(pkgAmt / count);
+                                setInstData(Array.from({ length: count }, (_, j) => ({
+                                  date: new Date().toISOString().split('T')[0],
+                                  amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                })));
+                              }} placeholder="e.g. 50000" />
+                            </F>
+                            <F label="No. of Installments" req>
+                              <TS value={admForm.num_installments} onChange={(e: any) => {
+                                const count = Number(e.target.value);
+                                setF('num_installments', count);
+                                const pkgAmt = Number(admForm.fee_package) || 0;
+                                const perInst = Math.floor(pkgAmt / count);
+                                setInstData(Array.from({ length: count }, (_, j) => ({
+                                  date: new Date().toISOString().split('T')[0],
+                                  amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                })));
+                              }}>
+                                {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}</option>)}
+                              </TS>
+                            </F>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <F label="Total Package Amount (Accountant Defined)" req>
-                                <TI type="number" value={admForm.fee_package} onChange={(e: any) => setF('fee_package', e.target.value)} placeholder="e.g. 50000" />
-                              </F>
-                              <F label="No. of Installments" req>
-                                <TS value={admForm.num_installments} onChange={(e: any) => setF('num_installments', Number(e.target.value))}>
-                                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}</option>)}
-                                </TS>
-                              </F>
-                            </div>
-                            {admForm.num_installments > 0 && instData.length === Number(admForm.num_installments) && (
-                              <div className="mt-4 p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
-                                <div className="flex items-center gap-2">
-                                  <Calendar size={16} className="text-sky-500" />
-                                  <div className="flex-1">
-                                     <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Scheduled Installments</h4>
-                                     <p className="text-[9px] text-slate-400 font-bold italic">Adjust dates and amounts manually</p>
-                                  </div>
+                          {admForm.num_installments > 0 && (
+                            <div className="mt-4 p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
+                              <div className="flex items-center gap-2">
+                                <Calendar size={16} className="text-sky-500" />
+                                <div className="flex-1">
+                                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Scheduled Installments</h4>
+                                    <p className="text-[9px] text-slate-400 font-bold italic">Adjust dates and amounts manually</p>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                  {instData.map((d, i) => (
+                                <button onClick={() => {
+                                   const count = Number(admForm.num_installments) || 1;
+                                   const pkgAmt = Number(admForm.fee_package) || 0;
+                                   const perInst = Math.floor(pkgAmt / count);
+                                   setInstData(Array.from({ length: count }, (_, j) => ({
+                                     date: new Date().toISOString().split('T')[0],
+                                     amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                   })));
+                                }} className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-black text-blue-600 shadow-sm hover:bg-blue-50">Reset to Equal</button>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {Array.from({ length: Number(admForm.num_installments) }).map((_, i) => {
+                                  const d = instData[i] || { date: new Date().toISOString().split('T')[0], amount: 0 };
+                                  return (
                                     <div key={i} className="space-y-2 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm focus-within:border-sky-200 transition-colors">
                                       <label className="text-[10px] font-black text-slate-400 uppercase">Inst #{i+1}</label>
                                       <div className="space-y-1.5">
@@ -3922,6 +4119,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                           value={d.date} 
                                           onChange={(e) => {
                                             const next = [...instData];
+                                            while(next.length <= i) next.push({date: new Date().toISOString().split('T')[0], amount: 0});
                                             next[i] = { ...next[i], date: e.target.value };
                                             setInstData(next);
                                           }}
@@ -3934,6 +4132,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                             value={d.amount}
                                             onChange={(e) => {
                                               const next = [...instData];
+                                              while(next.length <= i) next.push({date: new Date().toISOString().split('T')[0], amount: 0});
                                               next[i] = { ...next[i], amount: Number(e.target.value) };
                                               setInstData(next);
                                             }}
@@ -3943,31 +4142,62 @@ const active = tab === id; const badgeN = getBadge(id);
                                         </div>
                                       </div>
                                     </div>
-                                  ))}
-                                </div>
+                                  );
+                                })}
                               </div>
-                            )}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <F label="Include Summer Camp Fee">
-                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                                  <input type="checkbox" checked={admForm.include_summer_camp} onChange={e => setF('include_summer_camp', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600" />
-                                  <span className="text-xs font-bold text-slate-600 italic">Add 7,000 charges</span>
-                                </label>
-                              </F>
-                              <F label="Include Uniform Fee">
-                                <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                                  <input type="checkbox" checked={admForm.include_uniform} onChange={e => setF('include_uniform', e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600" />
-                                  <span className="text-xs font-bold text-slate-600 italic">Add 1,000 charges</span>
-                                </label>
-                              </F>
                             </div>
-                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                              <p className="text-xs text-slate-500 font-bold flex items-center gap-2 italic">
-                                <AlertTriangle size={14} className="text-slate-400"/> Note: Selected optional fees will be added to the student's final package.
-                              </p>
-                            </div>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-5 rounded-3xl bg-blue-50/50 border border-blue-100">
+                            {[
+                              { label: 'Summer Camp Fee', id: 'include_summer_camp', amt: 'summer_camp_amount', def: 7000 },
+                              { label: 'Uniform Fee', id: 'include_uniform', amt: 'uniform_amount', def: 1000 },
+                              { label: 'Welcome Party', id: 'include_welcome_party', amt: 'welcome_party_amount', def: 0 },
+                              { label: 'Exam Fee', id: 'include_exam_fee', amt: 'exam_fee_amount', def: 0 },
+                              { label: 'Registration Fee', id: 'include_registration_fee', amt: 'registration_fee_amount', def: 0 },
+                              { label: 'Student Card', id: 'include_student_card', amt: 'student_card_amount', def: 500 },
+                              { label: 'Annual Charges', id: 'include_annual_charges', amt: 'annual_charges_amount', def: 0 },
+                            ].map(opt => (
+                              <div key={opt.id} className="space-y-2">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                  <div className="relative">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={admForm[opt.id]} 
+                                      onChange={e => {
+                                        setF(opt.id, e.target.checked);
+                                        if (e.target.checked && !admForm[opt.amt]) setF(opt.amt, opt.def);
+                                      }} 
+                                      className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500 transition-all cursor-pointer" 
+                                    />
+                                  </div>
+                                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider group-hover:text-blue-600 transition-colors">{opt.label}</span>
+                                </label>
+                                <AnimatePresence>
+                                  {admForm[opt.id] && (
+                                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="relative bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
+                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
+                                      <div className="relative flex items-center">
+                                        <span className="pl-3 text-[10px] font-black text-slate-400">Rs</span>
+                                        <input 
+                                          type="number" 
+                                          value={admForm[opt.amt] || 0} 
+                                          onChange={e => setF(opt.amt, e.target.value)}
+                                          className="w-full bg-transparent p-2 text-xs font-black text-blue-700 outline-none placeholder:text-slate-300"
+                                          placeholder="Amount"
+                                        />
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            ))}
                           </div>
-                        )}
+                          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                            <p className="text-xs text-slate-500 font-bold flex items-center gap-2 italic">
+                              <AlertTriangle size={14} className="text-slate-400"/> Note: Selected optional fees will be added to the student's final package.
+                            </p>
+                          </div>
+                        </div>
                       </div>
 
                       {/* ══ NOTES FIELD — at the end of admission form ══ */}
@@ -4966,13 +5196,7 @@ const active = tab === id; const badgeN = getBadge(id);
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50" style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
         <div className="flex items-center justify-around px-2 py-2">
           {MOBILE_PRIMARY.map(({ id, label, icon: Icon }) => {
-            if (id === 'academics') return (
-  <motion.button key={id} onClick={() => setShowAcademicsPortal(true)} whileHover={{ x: 2 }}
-    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all text-left text-slate-500 hover:bg-slate-50 hover:text-slate-800">
-    <GraduationCap size={16} /><span className="flex-1">Academics Portal</span>
-  </motion.button>
-);
-const active = tab === id; const badgeN = getBadge(id);
+            const active = tab === id; const badgeN = getBadge(id);
             return (
               <button key={id} onClick={() => id === 'academics' ? setShowAcademicsPortal(true) : setTab(id)} className="flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-1 min-w-0" style={{ color: active ? ACCENT : '#94a3b8' }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={active ? { background: `${ACCENT}18` } : {}}>
@@ -5427,74 +5651,51 @@ const active = tab === id; const badgeN = getBadge(id);
                               const updated = {...preview, fee_package: Number(e.target.value)};
                               setPreview(updated);
                               setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
-                            }} 
-                            className="w-full px-4 py-3 bg-white rounded-xl border border-slate-200 text-sm font-black text-slate-900 outline-none focus:border-slate-400 shadow-sm"
+                            }}
+                            className="w-full p-3 text-xs font-black text-blue-700 bg-white border border-slate-200 rounded-xl outline-none focus:border-blue-400 transition-all"
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Installments count</label>
-                          <input 
-                            type="number" 
-                            value={preview.num_installments || preview.installments || 1} 
-                            onChange={(e) => {
-                              const count = Math.max(1, Number(e.target.value));
-                              const updated = {...preview, num_installments: count, installments: count};
-                              setPreview(updated);
-                              setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
-                              
-                              // Recalculate installments
-                              const pkgAmt = Number(preview.fee_package) || 0;
-                              const perInst = Math.floor(pkgAmt / count);
-                              setInstData(Array.from({ length: count }, (_, j) => ({
-                                date: new Date().toISOString().split('T')[0],
-                                amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                              })));
-                            }} 
-                            className="w-full px-4 py-3 bg-white rounded-xl border border-slate-200 text-sm font-black text-slate-900 outline-none focus:border-slate-400 shadow-sm"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3 mb-6 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2"><Tag size={12} className="text-amber-500" /> Additional Charges</p>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                          {[
-                            { id: 'include_welcome_party', amt: 'welcome_party_amount', label: 'Welcome Party' },
-                            { id: 'include_exam_fee', amt: 'exam_fee_amount', label: 'Exam Fee' },
-                            { id: 'include_registration_fee', amt: 'registration_fee_amount', label: 'Registration' },
-                            { id: 'include_student_card', amt: 'student_card_amount', label: 'Student Card' },
-                            { id: 'include_annual_charges', amt: 'annual_charges_amount', label: 'Annual Charges' },
-                            { id: 'include_uniform', amt: 'include_uniform', label: 'Uniform Fee', static: 1000 },
-                            { id: 'include_summer_camp', amt: 'include_summer_camp', label: 'Summer Camp', static: 7000 },
-                          ].map(opt => (
-                            <div key={opt.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
-                              <div className="flex items-center gap-2">
-                                <input 
-                                  type="checkbox" 
-                                  checked={!!preview[opt.id]} 
-                                  onChange={(e) => {
-                                    const updated = { ...preview, [opt.id]: e.target.checked };
-                                    if (e.target.checked && opt.static && !preview[opt.amt]) updated[opt.amt] = opt.static;
-                                    setPreview(updated);
-                                    setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
-                                  }}
-                                  className="w-4 h-4 rounded text-blue-600 outline-none transition-all cursor-pointer"
-                                />
-                                <span className="text-[11px] font-bold text-slate-700">{opt.label}</span>
-                              </div>
-                              <input 
-                                type="number" 
-                                value={preview[opt.amt] || 0}
-                                disabled={!preview[opt.id]}
-                                onChange={(e) => {
-                                  const updated = { ...preview, [opt.amt]: Number(e.target.value) };
-                                  setPreview(updated);
-                                  setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
-                                }}
-                                className="w-16 p-1 text-[10px] font-black text-right text-blue-700 bg-white border border-slate-200 rounded-lg disabled:opacity-30 outline-none focus:border-blue-400"
-                              />
-                            </div>
-                          ))}
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Optional Fees</label>
+                          <div className="space-y-2">
+                             {[
+                               { id: 'include_welcome_party',    amt: 'welcome_party_amount',    label: 'Welcome Party' },
+                               { id: 'include_exam_fee',         amt: 'exam_fee_amount',         label: 'Exam Fee' },
+                               { id: 'include_registration_fee', amt: 'registration_fee_amount', label: 'Registration' },
+                               { id: 'include_student_card',     amt: 'student_card_amount',     label: 'Student Card' },
+                               { id: 'include_annual_charges',   amt: 'annual_charges_amount',   label: 'Annual Charges' },
+                               { id: 'include_uniform',          amt: 'uniform_amount',          label: 'Uniform Fee', static: 1000 },
+                               { id: 'include_summer_camp',      amt: 'summer_camp_amount',      label: 'Summer Camp', static: 7000 },
+                             ].map(opt => (
+                               <div key={opt.id} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100 shadow-sm">
+                                 <div className="flex items-center gap-2">
+                                   <input 
+                                     type="checkbox" 
+                                     checked={!!preview[opt.id]} 
+                                     onChange={(e) => {
+                                       const updated = { ...preview, [opt.id]: e.target.checked };
+                                       if (e.target.checked && opt.static && !preview[opt.amt]) updated[opt.amt] = opt.static;
+                                       setPreview(updated);
+                                       setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
+                                     }}
+                                     className="w-4 h-4 rounded text-blue-600 outline-none transition-all cursor-pointer"
+                                   />
+                                   <span className="text-[10px] font-bold text-slate-600">{opt.label}</span>
+                                 </div>
+                                 <input 
+                                   type="number" 
+                                   value={preview[opt.amt] || 0}
+                                   disabled={!preview[opt.id]}
+                                   onChange={(e) => {
+                                     const updated = { ...preview, [opt.amt]: Number(e.target.value) };
+                                     setPreview(updated);
+                                     setAdmForms(prev => prev.map(form => form.id === preview.id ? updated : form));
+                                   }}
+                                   className="w-20 p-1.5 text-[10px] font-black text-right text-blue-700 bg-slate-50 border border-slate-100 rounded-lg disabled:opacity-30 outline-none focus:border-blue-400"
+                                 />
+                               </div>
+                             ))}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -5549,7 +5750,7 @@ const active = tab === id; const badgeN = getBadge(id);
               </div>
               {preview.status === 'Pending' && (
                 <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-shrink-0">
-                  <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={() => confirmToDatabase(preview)} className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+                  <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={() => confirmToDatabase(preview, manualRoll)} className="flex-1 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
                     {saving ? <Loader2 size={15} className="animate-spin" /> : <><Database size={15} /> Confirm to DB</>}
                   </motion.button>
                   <button onClick={() => rejectForm(preview)} className="flex-1 py-3 rounded-2xl text-rose-700 font-bold text-sm bg-rose-50 border border-rose-200">Reject</button>
