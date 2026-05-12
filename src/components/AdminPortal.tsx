@@ -1387,9 +1387,16 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
         </div>
         <table>
           <thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map(r => `<tr>${r.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>
+          <tbody>
+            ${rows.map(r => `<tr>${r.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+            ${summary ? `
+              <tr style="background: #f8fafc; font-weight: 900;">
+                <td colspan="${columns.length - 1}" style="text-align: right; border-top: 2px solid #cbd5e1;">Grand Total</td>
+                <td style="border-top: 2px solid #cbd5e1;">${summary.split(':').pop()?.trim() || summary}</td>
+              </tr>
+            ` : ''}
+          </tbody>
         </table>
-        ${summary ? `<div class="summary">${summary}</div>` : ''}
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
       </body>
     </html>
@@ -1497,7 +1504,13 @@ const handlePrintReport = (data: any) => {
             <thead>
               <tr><th>Date</th><th>Roll #</th><th>Group</th><th>Method</th><th class="amt">Amount</th></tr>
             </thead>
-            <tbody>${txRows}</tbody>
+            <tbody>
+              ${txRows}
+              <tr style="background: #f8fafc; font-weight: 900;">
+                <td colspan="4" style="text-align: right; border-top: 2px solid #cbd5e1;">Total Collections</td>
+                <td class="amt" style="border-top: 2px solid #cbd5e1;">${PKR(data.feeRev)}</td>
+              </tr>
+            </tbody>
           </table>
         ` : ''}
 
@@ -1507,7 +1520,13 @@ const handlePrintReport = (data: any) => {
             <thead>
               <tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th class="amt">Amount</th></tr>
             </thead>
-            <tbody>${otherRows}</tbody>
+            <tbody>
+              ${otherRows}
+              <tr style="background: #f8fafc; font-weight: 900;">
+                <td colspan="4" style="text-align: right; border-top: 2px solid #cbd5e1;">Net Direct Cash Flow</td>
+                <td class="amt" style="border-top: 2px solid #cbd5e1;">${PKR(data.otherInc - data.totalExp)}</td>
+              </tr>
+            </tbody>
           </table>
         ` : ''}
 
@@ -3655,7 +3674,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                    <button 
                                      onClick={() => {
                                        const rows = filteredList.map(x => [(x.expense_date || '').slice(0, 10), x.name || '—', x.category, x.description, PKR(x.amount)]);
-                                       handlePrintList(`Expense Report (${reportFrom} to ${reportTo})`, ['Date','Payer/Recipient','Category','Description','Amount'], rows);
+                                       handlePrintList(`Expense Report (${reportFrom} to ${reportTo})`, ['Date','Payer/Recipient','Category','Description','Amount'], rows, `Total Expenditure: ${PKR(totalAmount)}`);
                                      }}
                                      className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
                                    >
@@ -3703,6 +3722,12 @@ const active = tab === id; const badgeN = getBadge(id);
                                     <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
                                   </tr>
                                 ))}
+                                {filteredList.length > 0 && (
+                                  <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
+                                    <td colSpan={3} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Expenditure</td>
+                                    <td className="px-6 py-3 text-right text-rose-600">{PKR(totalAmount)}</td>
+                                  </tr>
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -4631,10 +4656,10 @@ const active = tab === id; const badgeN = getBadge(id);
                                      onClick={() => {
                                        if (viewType === 'other') {
                                          const rows = filteredOther.map(x => [(x.income_date || '').slice(0, 10), x.category, x.description, PKR(x.amount)]);
-                                         handlePrintList(`Income Report (${reportFrom} to ${reportTo})`, ['Date','Category','Description','Amount'], rows);
+                                         handlePrintList(`Income Report (${reportFrom} to ${reportTo})`, ['Date','Category','Description','Amount'], rows, `Total Income: ${PKR(totalOther)}`);
                                        } else {
                                          const rows = filteredFees.map(x => [(x.payment_date || '').slice(0, 10), x.id?.slice(0,8) || '—', x.student_roll || x.student_roll_link || '—', PKR(Number(x.amount_paid) || 0), x.payment_method || 'Cash']);
-                                         handlePrintList(`Fee Income Report - ${selectedIncomeClass} (${reportFrom} to ${reportTo})`, ['Date','TX ID','Roll #','Paid Amount','Method'], rows);
+                                         handlePrintList(`Fee Income Report - ${selectedIncomeClass} (${reportFrom} to ${reportTo})`, ['Date','TX ID','Roll #','Paid Amount','Method'], rows, `Total Fee Income: ${PKR(totalFees)}`);
                                        }
                                      }}
                                      className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
@@ -4721,6 +4746,12 @@ const active = tab === id; const badgeN = getBadge(id);
                                     <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(viewType === 'other' ? x.amount : x.amount_paid)}</td>
                                   </tr>
                                 ))}
+                                {(viewType === 'other' ? filteredOther : filteredFees).length > 0 && (
+                                  <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
+                                    <td colSpan={viewType === 'other' ? 3 : 3} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total {viewType === 'other' ? 'Other Income' : 'Fee Collection'}</td>
+                                    <td className="px-6 py-3 text-right text-emerald-600">{PKR(viewType === 'other' ? totalOther : totalFees)}</td>
+                                  </tr>
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -4777,6 +4808,13 @@ const active = tab === id; const badgeN = getBadge(id);
                             </tr>
                           );
                         })}
+                        {teachers.length > 0 && (
+                          <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
+                            <td colSpan={2} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Monthly Liability</td>
+                            <td className="px-6 py-3 text-right text-rose-600 font-mono">{PKR(teachers.reduce((s,t)=>s+(t.monthly_salary||0),0))}</td>
+                            <td colSpan={2}></td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -4786,7 +4824,11 @@ const active = tab === id; const badgeN = getBadge(id);
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="font-black text-slate-900 text-sm">Recent Salary Payments</h3>
-                    <button onClick={() => handlePrintList('Teacher Salary Report', ['Date', 'Teacher', 'Base', 'Bonus', 'Fine', 'Net Paid'], salaries.map(s => [new Date(s.payment_date).toLocaleDateString('en-GB'), s.teacher_name, PKR(s.monthly_salary), PKR(s.bonus), PKR(s.fine), PKR(s.net_salary)]))} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline"><Printer size={12} /> Print History</button>
+                    <button onClick={() => {
+                        const total = salaries.reduce((s,x)=>s+(x.net_salary||0),0);
+                        const rows = salaries.map(s => [new Date(s.payment_date).toLocaleDateString('en-GB'), s.teacher_name, PKR(s.monthly_salary), PKR(s.bonus), PKR(s.fine), PKR(s.net_salary)]);
+                        handlePrintList('Teacher Salary Report', ['Date', 'Teacher', 'Base', 'Bonus', 'Fine', 'Net Paid'], rows, `Total Paid: ${PKR(total)}`);
+                    }} className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline"><Printer size={12} /> Print History</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-[11px]">
@@ -5111,16 +5153,24 @@ const active = tab === id; const badgeN = getBadge(id);
                         <span className="font-black text-rose-600">{PKR(e.amount)}</span>
                       </motion.div>
                     ))}
-                    {!expenses.length && <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>}
+                    {!expenses.length ? (
+                      <p className="p-6 text-center text-slate-400 text-sm">No expenses recorded</p>
+                    ) : (
+                      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Expenses</span>
+                        <span className="font-black text-rose-600 font-mono">{PKR(expenses.reduce((s, e) => s + e.amount, 0))}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm flex flex-col">
                     <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                       <div className="flex items-center gap-3">
                         <h3 className="font-black text-slate-900">💵 Other Income</h3>
                         <button 
                           onClick={() => {
+                            const total = income.reduce((s,e)=>s+e.amount,0);
                             const rows = income.map(e => [e.income_date, e.description, e.category, PKR(e.amount), e.recorded_by || '—']);
-                            handlePrintList('Other Income Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Other Income: ${PKR(income.reduce((s,e)=>s+e.amount,0))}`);
+                            handlePrintList('Other Income Report', ['Date','Description','Category','Amount','Recorded By'], rows, `Total Other Income: ${PKR(total)}`);
                           }}
                           className="text-slate-400 hover:text-blue-600 transition-colors" title="Print Income"
                         >
@@ -5129,13 +5179,21 @@ const active = tab === id; const badgeN = getBadge(id);
                       </div>
                       <p className="font-black text-emerald-600">{PKR(income.reduce((s, e) => s + e.amount, 0))}</p>
                     </div>
-                    {income.slice(0, 8).map((e, i) => (
-                      <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
-                        <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
-                        <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
-                      </motion.div>
-                    ))}
-                    {!income.length && <p className="p-6 text-center text-slate-400 text-sm">No income recorded</p>}
+                    <div className="flex-1">
+                      {income.slice(0, 8).map((e, i) => (
+                        <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.04 }} className="flex items-center justify-between px-5 py-3 border-b border-slate-50 last:border-0">
+                          <div><p className="text-sm font-bold text-slate-800">{e.description}</p><p className="text-[11px] text-slate-400">{e.category} · {e.income_date}</p></div>
+                          <span className="font-black text-emerald-600">{PKR(e.amount)}</span>
+                        </motion.div>
+                      ))}
+                      {!income.length && <p className="p-6 text-center text-slate-400 text-sm">No income recorded</p>}
+                    </div>
+                    {income.length > 0 && (
+                      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Income</span>
+                        <span className="font-black text-emerald-600 font-mono">{PKR(income.reduce((s, e) => s + e.amount, 0))}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
