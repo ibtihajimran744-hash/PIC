@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   UserPlus, Users, Search, X, GraduationCap, LogOut,
   RefreshCw, Plus, Loader2, CheckCircle, AlertTriangle,
-  FileText, Database, Eye, Save, UserCheck
+  FileText, Database, Eye, Save, UserCheck, Upload
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
 import { cn } from '../lib/utils';
 
@@ -124,6 +125,7 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('');
   const [toast,   setToast]   = useState<{msg:string;type:'ok'|'err'|'info'}|null>(null);
+  const [showUpload, setShowUpload] = useState(false);
   const [preview, setPreview] = useState<any>(null);
   const [confirming, setConfirming] = useState<any>(null);
   const [instData, setInstData] = useState<{ date: string; amount: number }[]>([]);
@@ -224,6 +226,67 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
       loadForms();
     } catch(e:any){ showToast(e.message||'Error','err'); }
     finally{ setSaving(false); }
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSaving(true);
+    showToast('Parsing file...', 'info');
+    
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        if (!data || data.length === 0) {
+          showToast('No data found in file', 'err');
+          setSaving(false);
+          return;
+        }
+
+        const pendingAdmissions = data.map((row: any) => ({
+          ...EMPTY,
+          student_name: (row['Student Name'] || row['Name'] || '').toString().trim().toUpperCase(),
+          father_name: (row['Father Name'] || row['Father'] || '').toString().trim().toUpperCase(),
+          b_form_nic: (row['B-Form'] || row['NIC'] || '').toString().trim(),
+          cell_no: (row['Cell'] || row['Contact'] || '').toString().trim(),
+          program: row['Program'] || 'ICS Physics',
+          applied_for: row['Applied For'] || 'Intermediate',
+          part: Number(row['Part']) || 1,
+          matric_marks: Number(row['Matric Marks']) || null,
+          matric_percentage: Number(row['Matric %']) || null,
+          gender: row['Gender'] || 'Male',
+          session: row['Session'] || '2026-27',
+          status: 'Pending',
+          synced_to_db: false,
+          created_by: adminData.full_name,
+        })).filter(s => s.student_name && s.father_name);
+
+        if (pendingAdmissions.length === 0) {
+          showToast('No valid records found. Make sure columns "Student Name" and "Father Name" exist.', 'err');
+          setSaving(false);
+          return;
+        }
+
+        const { error } = await supabase.from('admission_forms').insert(pendingAdmissions);
+        if (error) throw error;
+
+        showToast(`✅ ${pendingAdmissions.length} admissions uploaded as pending`);
+        setShowUpload(false);
+        loadForms();
+      };
+      reader.readAsBinaryString(file);
+    } catch (err: any) {
+      showToast(err.message || 'CSV/Excel processing failed', 'err');
+    } finally {
+      setSaving(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   const confirmToDatabase = async (f:any, installmentData: any[], overrideRoll?: string) => {
@@ -893,6 +956,11 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
                     <option value="">All Status</option>
                     <option>Pending</option><option>Approved</option><option>Rejected</option>
                   </select>
+                  {isAccountant && (
+                    <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-black bg-indigo-600 shadow-lg shadow-indigo-600/20">
+                      <Upload size={15}/> Bulk Upload
+                    </button>
+                  )}
                   {!isAccountant&&<button onClick={()=>setTab('form')} className="flex items-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-black" style={{background:'#c0392b'}}><Plus size={15}/> New Form</button>}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
@@ -1017,6 +1085,43 @@ export const AdmissionPortal: React.FC<AdmissionPortalProps> = ({ onLogout, admi
           </AnimatePresence>
         </div>
       </main>
+
+      {/* BULK UPLOAD MODAL */}
+      <AnimatePresence>
+        {showUpload && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setShowUpload(false)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"/>
+            <motion.div initial={{opacity:0,scale:0.94,y:20}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.94}}
+              className="relative bg-white rounded-3xl w-full max-w-md overflow-hidden z-10 p-8 shadow-2xl">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Upload size={32}/>
+                </div>
+                <h3 className="text-xl font-black text-slate-900 mb-2">Bulk Students Upload</h3>
+                <p className="text-sm text-slate-500 mb-6">
+                  Select an Excel or CSV file containing student information. The system will create pending admission forms for each valid record.
+                </p>
+                <div className="bg-slate-50 rounded-2xl p-4 border border-dashed border-slate-200 mb-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Required Columns</p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {['Student Name', 'Father Name', 'Program', 'Gender', 'NIC'].map(c => (
+                      <span key={c} className="px-2 py-1 bg-white border border-slate-200 rounded text-[9px] font-bold text-slate-600 uppercase">{c}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <button onClick={() => document.getElementById('bulk-file-input')?.click()} disabled={saving}
+                    className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50">
+                    {saving ? <Loader2 size={18} className="animate-spin"/> : <><FileText size={18}/> Select File to Upload</>}
+                  </button>
+                  <input id="bulk-file-input" type="file" hidden accept=".xlsx, .xls, .csv" onChange={handleBulkUpload} />
+                  <button onClick={() => setShowUpload(false)} className="w-full py-3 text-slate-500 font-bold text-sm hover:bg-slate-50 rounded-2xl">Cancel</button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* PREVIEW/CONFIRM MODAL */}
       <AnimatePresence>

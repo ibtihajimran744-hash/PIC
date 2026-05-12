@@ -5,8 +5,9 @@ import {
   CreditCard, Calendar, BarChart3, BookOpen,
   Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
-  Zap, ZapOff, ExternalLink, CheckCircle2, FileText
+  Zap, ZapOff, ExternalLink, CheckCircle2, FileText, Users
 } from 'lucide-react';
+import { LMSModule } from './LMSModule';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 
@@ -534,6 +535,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
   const NAV = [
     { id:'dashboard',     label:'Home',          icon:Home     },
+    { id:'teams',         label:'Virtual Class',  icon:Users    },
     { id:'fees',          label:'My Fees',        icon:CreditCard},
     { id:'attendance',    label:'Attendance',     icon:Calendar },
     { id:'results',       label:'Results',        icon:BarChart3},
@@ -1376,6 +1378,20 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
                   )}
                 </div>
               </motion.div>
+            )}
+
+            {/* ══ TEAMS (LMS) ══ */}
+            {tab==='teams' && (
+              <div className="fixed inset-0 md:top-[80px] md:left-[224px] z-40 bg-white">
+                <LMSModule 
+                  user={{
+                    id: studentData.roll_no,
+                    full_name: studentData.full_name,
+                    role: 'STUDENT',
+                    class_section: studentData.class_section
+                  }}
+                />
+              </div>
             )}
 
             {/* ══ COURSES ══ */}

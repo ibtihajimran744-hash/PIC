@@ -79,6 +79,21 @@ const TA = (p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
   <textarea {...p} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-indigo-400 bg-white resize-none transition-all" />
 );
 
+const TableWrap = ({ children }: any) => <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">{children}</div>;
+const Th = ({ children }: any) => <th className="px-5 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{children}</th>;
+const Td = ({ children, className }: any) => <td className={cn("px-5 py-4 text-xs font-medium", className)}>{children}</td>;
+
+const SubTabs = ({ tabs, active, onChange, accent }: { tabs: { id: string; label: string }[]; active: string; onChange: (id: string) => void; accent: string }) => (
+  <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit mb-4">
+    {tabs.map(t => (
+      <button key={t.id} onClick={() => onChange(t.id)}
+        className={cn('px-4 py-1.5 rounded-xl text-xs font-black transition-all',
+          active === t.id ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+        )} style={active === t.id ? { color: accent } : {}}>{t.label}</button>
+    ))}
+  </div>
+);
+
 export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [tab,      setTab]      = useState<Tab>('dashboard');
   const [sideOpen, setSideOpen] = useState(false);
@@ -97,6 +112,12 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [dutyChart,    setDutyChart]    = useState<any[]>([]);
   const [performaList, setPerformaList] = useState<any[]>([]);
   const [examNotifs,   setExamNotifs]   = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount,   setUnreadCount]   = useState(0);
+  const [showNotifs,    setShowNotifs]    = useState(false);
+  const [examTab,      setExamTab]      = useState('list');
+  const [examMarks,    setExamMarks]    = useState<any[]>([]);
+  const [selectedExam, setSelectedExam] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
@@ -119,7 +140,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }] = await Promise.all([
+    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }, { data: an }] = await Promise.all([
       supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
       supabase.from('exams').select('*').order('date', { ascending: false }),
       supabase.from('exam_seating').select('*').order('created_at', { ascending: false }),
@@ -134,9 +155,11 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('duty_chart').select('*').order('exam_date', { ascending: false }),
       supabase.from('paper_receiving_performa').select('*').order('created_at', { ascending: false }),
       supabase.from('exam_notifications').select('*').order('created_at', { ascending: false }),
+      supabase.from('admin_notifications').select('*').in('target', ['ALL', 'Examiner', 'EXAMINER', adminData.username]).order('created_at', { ascending: false }).limit(30),
     ]);
 
     setUploadedDocs(ud || []); setRollSlips(rs || []); setDutyChart(dc || []); setPerformaList(pl || []); setExamNotifs(en || []);
+    setNotifications(an || []); setUnreadCount((an || []).filter((n: any) => !n.is_read).length);
 
     let scData = sc || [];
     let grData = gr || [];
@@ -201,6 +224,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   }, [adminData.full_name]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    if (!selectedExam) return;
+    (async () => {
+      const { data } = await supabase.from('exam_marks').select('*').eq('exam_id', selectedExam);
+      setExamMarks(data || []);
+    })();
+  }, [selectedExam]);
 
   const getGradeLetter = (score: number, total: number) => {
     const p = (score / total) * 100;
@@ -572,6 +603,25 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       setPerfForm({ teacher_id: '', subject: '', class_section: '', exam_date: '', bundle_count: 0 });
       loadAll();
     } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
+  };
+
+  const saveExam = async () => {
+    if (!examForm.subject || !examForm.class_section) return showToast('Subject and Class are required', false);
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('exams').insert([{ 
+        ...examForm, 
+        title: examForm.title || `${examForm.subject} - ${examForm.exam_type}`,
+        total_marks: Number(examForm.total_marks),
+        created_by: adminData.full_name 
+      }]);
+      if (error) throw error;
+      showToast('Exam created successfully');
+      setModal(null);
+      setExamForm({ title: '', class_section: '', subject: '', date: '', total_marks: 100, exam_type: 'Chapter Test', chapter_name: '', teacher_id: '' });
+      loadAll();
+    } catch (e: any) { showToast(e.message || 'Failed to save exam', false); }
     finally { setSaving(false); }
   };
 
@@ -1032,6 +1082,10 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button onClick={() => setShowNotifs(true)} className="relative w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100">
+              <Megaphone size={14} />
+              {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">{unreadCount}</span>}
+            </button>
             <button onClick={loadAll}
               className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -1218,39 +1272,210 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
-            {/* ══════════ EXAMS (AUTOMATIC) ══════════ */}
+            {/* ══════════ EXAMINATION (PORTED FROM VP) ══════════ */}
             {tab === 'exams' && (
               <motion.div key="exams" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-indigo-50/50 p-5 rounded-3xl border border-indigo-100 mb-6 shadow-sm">
-                   <h2 className="text-lg font-black text-indigo-900">Upcoming Exams</h2>
-                   <p className="text-xs text-indigo-600">This list is automatically populated from the Academic Schedule upload.</p>
+                <div className="flex justify-between items-center bg-indigo-50/50 p-5 rounded-3xl border border-indigo-100 shadow-sm">
+                   <div>
+                     <h2 className="text-lg font-black text-indigo-900">Examination Management</h2>
+                     <p className="text-xs text-indigo-600">Sync with VP's refined examination features & manual result entry.</p>
+                   </div>
+                   <button onClick={() => setModal('exam')} className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-black text-white shadow-lg" style={{ background: GRADIENT }}>
+                     <Plus size={18} /> New Exam
+                   </button>
                 </div>
-                <div className="relative">
-                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                   <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exams by subject or class…"
-                     className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-400 bg-white shadow-sm" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {exams.filter(e => !search || e.subject?.toLowerCase().includes(search.toLowerCase()) || e.class_section?.toLowerCase().includes(search.toLowerCase())).map((e) => (
-                    <div key={e.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow">
-                       <div className="flex items-center gap-3 mb-3">
-                         <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                           <FileText size={20} />
-                         </div>
-                         <div>
-                           <h3 className="font-black text-slate-900">{e.subject}</h3>
-                           <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{e.exam_type}</p>
-                         </div>
-                       </div>
-                       <div className="space-y-2 mt-4 text-xs font-bold text-slate-600">
-                         <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg"><Users size={12} className="text-slate-400" /> Class: {e.class_section}</p>
-                         <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg"><Calendar size={12} className="text-slate-400" /> Date: {e.date}</p>
-                         <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg"><Clock size={12} className="text-slate-400" /> Time: {e.time || '—'}</p>
-                       </div>
+
+                <SubTabs 
+                  tabs={[
+                    { id: 'list',   label: 'List Exams' },
+                    { id: 'result', label: 'Exam Results' },
+                    { id: 'print',  label: 'Print Marks' }
+                  ]} 
+                  active={examTab} 
+                  onChange={setExamTab} 
+                  accent={ACCENT} 
+                />
+
+                {examTab === 'list' && (
+                  <div className="space-y-4">
+                    <div className="relative">
+                       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exams by subject or class…"
+                         className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-400 bg-white shadow-sm" />
                     </div>
-                  ))}
-                  {!exams.length && <div className="col-span-full py-20 text-center text-slate-400 font-bold">No automatic exams populated yet.</div>}
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {exams.filter(e => !search || e.subject?.toLowerCase().includes(search.toLowerCase()) || e.class_section?.toLowerCase().includes(search.toLowerCase())).map((e) => (
+                        <div key={e.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow">
+                           <div className="flex items-center justify-between gap-3 mb-3">
+                             <div className="flex items-center gap-3">
+                               <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                 <FileText size={20} />
+                               </div>
+                               <div>
+                                 <h3 className="font-black text-slate-900">{e.subject}</h3>
+                                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{e.exam_type}</p>
+                               </div>
+                             </div>
+                             <Badge c={e.grading_status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'} label={e.grading_status || 'Pending'} />
+                           </div>
+                           <div className="space-y-2 mt-4 text-xs font-bold text-slate-600">
+                             <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg"><Users size={12} className="text-slate-400" /> Class: {e.class_section}</p>
+                             <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg"><Calendar size={12} className="text-slate-400" /> Date: {e.date}</p>
+                             <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg font-black text-slate-800"><Award size={12} className="text-slate-400" /> Marks: {e.total_marks}</p>
+                           </div>
+                           <div className="mt-4 flex gap-2">
+                             <button onClick={() => { setTab('grades'); setSearch(e.subject); }} className="flex-1 py-2 rounded-xl text-[10px] font-black border border-slate-200 text-slate-600 hover:bg-slate-50">Enter Grades</button>
+                             <button onClick={() => { setSelectedExam(String(e.id)); setExamTab('result'); }} className="flex-1 py-2 rounded-xl text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 transition-colors">View Results</button>
+                           </div>
+                        </div>
+                      ))}
+                      {!exams.length && <div className="col-span-full py-20 text-center text-slate-400 font-bold">No exams found.</div>}
+                    </div>
+                  </div>
+                )}
+
+                {examTab === 'result' && (
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm flex flex-col md:flex-row items-end gap-4">
+                      <div className="flex-1">
+                        <FM label="Select Exam">
+                          <TS value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
+                            <option value="">-- Choose an Exam --</option>
+                            {exams.map(e => <option key={e.id} value={e.id}>{e.title || e.subject} — {e.class_section} — {e.subject}</option>)}
+                          </TS>
+                        </FM>
+                      </div>
+                      {selectedExam && (
+                        <div className="flex gap-2">
+                          <button onClick={() => window.print()} className="px-6 py-2.5 rounded-2xl bg-slate-100 text-slate-600 font-black text-xs border border-slate-200">Print Table</button>
+                        </div>
+                      )}
+                    </div>
+                    {selectedExam ? (
+                      <TableWrap>
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                          <h3 className="font-black text-slate-900">Results: {exams.find(e => String(e.id) === selectedExam)?.subject}</h3>
+                          <Badge c="bg-indigo-100 text-indigo-700 border-indigo-200" label={`${examMarks.length} Students`} />
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 border-b border-slate-100">
+                              <tr>
+                                <Th>Roll No</Th>
+                                <Th>Student Name</Th>
+                                <Th>Obtained</Th>
+                                <Th>Total</Th>
+                                <Th>% Age</Th>
+                                <Th>Grade</Th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {examMarks.map(m => {
+                                const stu = students.find(s => s.roll_no === m.student_roll || s.roll_no === m.student_roll_no);
+                                const exam = exams.find(e => String(e.id) === selectedExam);
+                                const pct = exam?.total_marks ? Math.round((m.marks_obtained / exam.total_marks) * 100) : 0;
+                                return (
+                                  <tr key={m.id} className="hover:bg-slate-50/50">
+                                    <Td className="font-mono text-indigo-600 font-black">#{m.student_roll || m.student_roll_no}</Td>
+                                    <Td className="font-bold text-slate-800">{stu?.full_name || '—'}</Td>
+                                    <Td className="font-black text-slate-900">{m.marks_obtained}</Td>
+                                    <Td className="text-slate-400 font-bold">{exam?.total_marks}</Td>
+                                    <Td className={cn('font-black', pct >= 40 ? 'text-emerald-600' : 'text-rose-600')}>{pct}%</Td>
+                                    <Td>
+                                      <Badge 
+                                        c={pct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : pct >= 50 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-rose-50 text-rose-700 border-rose-200'}
+                                        label={getGradeLetter(m.marks_obtained, exam?.total_marks || 100)}
+                                      />
+                                    </Td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          {!examMarks.length && <div className="p-12 text-center text-slate-400 font-bold italic">No marks entered for this exam yet.</div>}
+                        </div>
+                      </TableWrap>
+                    ) : (
+                      <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                         <Award className="mx-auto text-slate-300 mb-4" size={40} />
+                         <p className="text-slate-400 font-bold">Select an exam to view the full marks table.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {examTab === 'print' && (
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm space-y-4">
+                       <FM label="Select Exam for Mark Sheet">
+                          <TS value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
+                            <option value="">-- Choose an Exam --</option>
+                            {exams.map(e => <option key={e.id} value={e.id}>{e.title || e.subject} — {e.class_section}</option>)}
+                          </TS>
+                       </FM>
+                       <button onClick={() => window.print()} className="w-full py-3 rounded-2xl text-white font-black text-sm shadow-xl" style={{ background: GRADIENT }}>
+                         <Printer className="inline-block mr-2" size={18} /> Print Official Mark Sheets
+                       </button>
+                    </div>
+                    {selectedExam && (
+                      <div id="printable-marks" className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm">
+                        <div className="text-center mb-10">
+                          <img src={LOGO_BASE64} className="h-20 mx-auto mb-4" />
+                          <h2 className="font-black text-2xl text-slate-900 uppercase tracking-tight">{BRANDING.name}</h2>
+                          <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">Unified Examination Result Sheet</p>
+                          <div className="w-20 h-1 rounded-full bg-indigo-600 mx-auto mt-6" />
+                        </div>
+                        <div className="flex justify-between items-end mb-8 border-b border-slate-100 pb-6">
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Exam Title</p>
+                              <p className="text-lg font-black text-slate-900">{exams.find(e => String(e.id) === selectedExam)?.title || exams.find(e => String(e.id) === selectedExam)?.subject}</p>
+                           </div>
+                           <div className="text-right space-y-1">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Class</p>
+                              <p className="text-sm font-bold text-slate-700">{exams.find(e => String(e.id) === selectedExam)?.date} — {exams.find(e => String(e.id) === selectedExam)?.class_section}</p>
+                           </div>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b-2 border-slate-200">
+                               <th className="py-3 text-left text-[11px] font-black text-slate-900 uppercase">Roll No</th>
+                               <th className="py-3 text-left text-[11px] font-black text-slate-900 uppercase">Candidate Name</th>
+                               <th className="py-3 text-right text-[11px] font-black text-slate-900 uppercase">Obtained</th>
+                               <th className="py-3 text-right text-[11px] font-black text-slate-900 uppercase">% Age</th>
+                               <th className="py-3 text-right text-[11px] font-black text-slate-900 uppercase">Grade</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {examMarks.map(m => {
+                              const stu = students.find(s => s.roll_no === m.student_roll || s.roll_no === m.student_roll_no);
+                              const exam = exams.find(e => String(e.id) === selectedExam);
+                              const pct = exam?.total_marks ? Math.round((m.marks_obtained / exam.total_marks) * 100) : 0;
+                              return (
+                                <tr key={m.id}>
+                                  <td className="py-3 font-mono font-bold">{m.student_roll || m.student_roll_no}</td>
+                                  <td className="py-3 font-bold text-slate-700">{stu?.full_name || '—'}</td>
+                                  <td className="py-3 text-right font-black">{m.marks_obtained} / {exam?.total_marks}</td>
+                                  <td className="py-3 text-right font-bold">{pct}%</td>
+                                  <td className="py-3 text-right font-black text-indigo-700">{getGradeLetter(m.marks_obtained, exam?.total_marks || 100)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div className="mt-20 flex justify-between">
+                           <div className="text-center">
+                              <div className="w-48 border-b-2 border-slate-900 mb-2 mx-auto" />
+                              <p className="text-[10px] font-black uppercase text-slate-500">Controller of Examinations</p>
+                           </div>
+                           <div className="text-center">
+                              <div className="w-48 border-b-2 border-slate-900 mb-2 mx-auto" />
+                              <p className="text-[10px] font-black uppercase text-slate-500">Principal Signature / Seal</p>
+                           </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -2099,6 +2324,79 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   {saving ? 'Saving...' : 'Save Grade'}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Create Exam Modal */}
+        {modal === 'exam' && (
+          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl p-8 overflow-hidden">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600"><FileText size={24} /></div>
+                  <h3 className="text-xl font-black text-slate-900">Create New Exam</h3>
+                </div>
+                <button onClick={() => setModal(null)} className="p-2 rounded-xl hover:bg-slate-50 text-slate-400"><X size={20} /></button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2 text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2 mb-2">Basic Information</div>
+                <FM label="Exam Title (Optional)"><TI placeholder="e.g. Monthly Quiz 1" value={examForm.title} onChange={(e: any) => setExamForm({ ...examForm, title: e.target.value })} /></FM>
+                <FM label="Exam Type">
+                  <TS value={examForm.exam_type} onChange={(e: any) => setExamForm({ ...examForm, exam_type: e.target.value })}>
+                    <option value="Chapter Test">Chapter Test</option>
+                    <option value="Monthly Test">Monthly Test</option>
+                    <option value="Mid-Term">Mid-Term</option>
+                    <option value="Final-Term">Final-Term</option>
+                    <option value="Quiz">Quiz</option>
+                  </TS>
+                </FM>
+                <FM label="Subject" req><TI placeholder="e.g. Mathematics" value={examForm.subject} onChange={(e: any) => setExamForm({ ...examForm, subject: e.target.value })} /></FM>
+                <FM label="Class / Section" req>
+                  <TS value={examForm.class_section} onChange={(e: any) => setExamForm({ ...examForm, class_section: e.target.value })}>
+                    <option value="">-- Select Class --</option>
+                    {Array.from(new Set(students.map(s => s.class_section))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                  </TS>
+                </FM>
+                <FM label="Exam Date" req><TI type="date" value={examForm.date} onChange={(e: any) => setExamForm({ ...examForm, date: e.target.value })} /></FM>
+                <FM label="Total Marks" req><TI type="number" value={examForm.total_marks} onChange={(e: any) => setExamForm({ ...examForm, total_marks: Number(e.target.value) })} /></FM>
+              </div>
+              <div className="mt-8 flex gap-3">
+                <button onClick={() => setModal(null)} className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-200 transition-colors">Cancel</button>
+                <button onClick={saveExam} disabled={saving} className="flex-2 py-3.5 rounded-2xl text-white font-black text-sm shadow-xl shadow-indigo-600/20 hover:opacity-90 transition-all flex items-center justify-center gap-2" style={{ background: GRADIENT }}>
+                  {saving ? <RefreshCw className="animate-spin" size={18} /> : <CheckCircle size={18} />}
+                  {saving ? 'Creating...' : 'Create Exam Group'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showNotifs && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNotifs(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-white rounded-3xl w-full max-w-md z-10 shadow-2xl overflow-hidden">
+               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                 <h3 className="font-black text-slate-900">Notifications</h3>
+                 <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+               </div>
+               <div className="p-2 max-h-[60vh] overflow-y-auto">
+                 {notifications.map((n, i) => (
+                   <div key={n.id} className={cn("p-4 rounded-2xl flex gap-3 transition-colors", !n.is_read ? 'bg-indigo-50/50' : 'hover:bg-slate-50')}>
+                      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", !n.is_read ? 'bg-indigo-600' : 'bg-slate-200')} />
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{n.title}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
+                        <p className="text-[9px] text-slate-300 mt-1 font-bold uppercase tracking-wider">{new Date(n.created_at).toLocaleString()}</p>
+                      </div>
+                   </div>
+                 ))}
+                 {notifications.length === 0 && <div className="p-10 text-center text-slate-400 font-bold italic text-sm">No notifications found</div>}
+               </div>
             </motion.div>
           </div>
         )}

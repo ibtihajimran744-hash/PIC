@@ -22,6 +22,7 @@ import { SchemeEntry } from '../services/academicManagement';
 import { Leaderboard } from './Leaderboard';
 import { toast, Toaster } from 'react-hot-toast';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LMSModule } from './LMSModule';
 
 interface TeacherPortalProps {
   onLogout: () => void;
@@ -1523,6 +1524,20 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                 </motion.div>
               )}
+              {activeTab === 'Teams' && teacherData && (
+                <div className="fixed inset-0 top-[70px] bottom-[80px] z-40 bg-white">
+                  <LMSModule 
+                    user={{
+                      id: teacherData.id,
+                      full_name: teacherData.full_name,
+                      role: 'TEACHER',
+                      class_section: assignedStudents[0]?.class_section || 'General',
+                      subject: teacherData.subject_dept
+                    }}
+                  />
+                </div>
+              )}
+
               {activeTab === 'Leave' && (
                 <motion.div key="leave" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
                   <div className="flex items-center gap-4">
@@ -1789,7 +1804,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-4 py-3 flex justify-around items-center z-50 overflow-x-auto scrollbar-hide">
         {[
           { id: 'Home', icon: LayoutDashboard },
-          { id: 'Students', icon: Users },
+          { id: 'Teams', icon: Users, label: 'LMS' },
+          { id: 'Students', icon: GraduationCap },
           { id: 'Academics', icon: GraduationCap },
           { id: 'Grading', icon: CheckSquare },
           { id: 'Leave', icon: Calendar },

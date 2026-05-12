@@ -233,7 +233,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Student
                 </button>
-                <button type="button" onClick={() => onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'admin')}
+                <button type="button" onClick={() => onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'examiner')}
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Examiner
                 </button>
