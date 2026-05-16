@@ -18,28 +18,21 @@ const FileImage = ({ size }: { size: number }) => (
 interface Props {
   onLogout?: () => void;
   onBack?: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }
 
 const ACCENT  = '#059669';
 const GRADIENT = 'linear-gradient(135deg,#059669,#10b981)';
 
-const PROGRAMS = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
+const PROGRAMS = ['FSC Pre-Medical','FSC Pre-Engineering','ICS Physics','ICS Statistics','I.Com','FA General','FA IT'];
 
-type Tab = 'dashboard'|'scheme'|'teachers'|'classes'|'students'|'announcements'|'messages'|'timetable'|'programs'|'tracking'|'exams';
+type Tab = 'dashboard'|'scheme'|'timetable'|'reports'|'announcements'|'messages'|'teachers'|'classes'|'students'|'exams'|'programs'|'tracking';
 
 const TABS = [
-  { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
-  { id: 'programs',      label: 'Academic Setup',   icon: BookMarked },
-  { id: 'classes',       label: 'Class Management', icon: Users },
-  { id: 'teachers',      label: 'Teacher Management', icon: Users },
-  { id: 'scheme',        label: 'Scheme of Study',  icon: BookMarked },
-  { id: 'timetable',     label: 'Timetable',        icon: Calendar },
-  { id: 'tracking',      label: 'Track Progress',   icon: TrendingUp },
-  { id: 'exams',         label: 'Exam Schedules',   icon: BookOpen },
-  { id: 'students',      label: 'Student Academics',icon: GraduationCap },
-  { id: 'announcements', label: 'Announcements',    icon: Megaphone },
-  { id: 'messages',      label: 'Messages',         icon: Mail },
+  { id: 'dashboard', label: 'Dashboard',      icon: LayoutDashboard },
+  { id: 'scheme',    label: 'Scheme of Study',icon: BookMarked },
+  { id: 'timetable', label: 'Timetable',      icon: Calendar },
+  { id: 'reports',   label: 'SOS Reports',    icon: BarChart2 },
 ];
 
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
@@ -97,6 +90,9 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [grades,         setGrades]         = useState<any[]>([]);
   const [attendance,     setAttendance]     = useState<any[]>([]);
   const [examSchedules,  setExamSchedules]  = useState<any[]>([]);
+  const [sosFeedbacks,   setSosFeedbacks]   = useState<any[]>([]);
+  const [dailyQuizzes,   setDailyQuizzes]   = useState<any[]>([]);
+  const [quizAttempts,   setQuizAttempts]   = useState<any[]>([]);
 
   const [activeSession, setActiveSession] = useState<any>(null);
   const [sessions,       setSessions]       = useState<any[]>([]);
@@ -113,9 +109,18 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
 
+  const SUBJECTS_17 = [
+    'Physics','Chemistry','Biology','Mathematics','Computer Science',
+    'Statistics','English','Urdu','Islamiyat','Pakistan Studies',
+    'Education','Civics','Economics','Commerce','Accounting',
+    'Principles of Commerce','Sociology'
+  ];
+
   const [schemeForm, setSchemeForm] = useState<any>({
-    title: '', subject: '', program: 'ICS Physics', part: 1, class_section: '',
-    week_no: '', month: '', topic: '', description: '', uploaded_by: '',
+    subject: '', book_name: '', author: '', teacher_name: '', department: '',
+    program: 'ICS Physics', part: 1, class_section: '',
+    date: '', day: '', lecture_no: '', topic: '', description: '',
+    uploaded_by: '', is_leave: false, leave_reason: '', month: '',
   });
   const [announceForm, setAnnounceForm] = useState<any>({
     title: '', body: '', target_type: 'all', target_value: '', priority: 'Normal', expires_at: '',
@@ -146,7 +151,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       { data: sc }, { data: tc }, { data: tp }, { data: st }, { data: cp }, 
       { data: tt }, { data: an }, { data: ms }, { data: gr }, { data: at }, 
       { data: exS }, { data: cls }, { data: sess }, { data: progs }, { data: subjs },
-      { data: qrz }, { data: nRes }
+      { data: qrzReg }, { data: sosF }, { data: dq }, { data: qa }, { data: nRes }
     ] = await Promise.all([
       supabase.from('scheme_of_study').select('*').order('created_at', { ascending: false }),
       supabase.from('teachers').select('*').order('full_name'),
@@ -164,6 +169,9 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('academic_programs').select('*').order('created_at', { ascending: false }),
       supabase.from('subjects').select('*').order('name'),
       supabase.from('quiz_results').select('*'),
+      supabase.from('sos_feedback').select('*').order('feedback_date', { ascending: false }),
+      supabase.from('daily_quizzes').select('*').order('quiz_date', { ascending: false }),
+      supabase.from('quiz_attempts').select('*').order('completed_at', { ascending: false }),
       supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Academics},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6)
     ]);
     setSchemes(sc || []); setTeachers(tc || []); setTeacherProfs(tp || []);
@@ -171,15 +179,16 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     setAnnouncements(an || []); setMessages(ms || []); setGrades(gr || []); setAttendance(at || []);
     setExamSchedules(exS || []); setClasses(cls || []);
     setSessions(sess || []); setActivePrograms(progs || []); setAllSubjects(subjs || []);
+    setSosFeedbacks(sosF || []); setDailyQuizzes(dq || []); setQuizAttempts(qa || []);
     setNotices(nRes || []);
     
     const active = sess?.find(s => s.is_active);
     setActiveSession(active);
 
     // Calculate quiz analytics
-    if (qrz && qrz.length > 0) {
-      const avg = qrz.reduce((acc, curr) => acc + (curr.score / (curr.total || 5)), 0) / qrz.length;
-      setQuizAnalytics({ avg_score: (avg * 100).toFixed(1), total_attempts: qrz.length });
+    if (qrzReg && qrzReg.length > 0) {
+      const avg = qrzReg.reduce((acc: any, curr: any) => acc + (curr.score / (curr.total || 5)), 0) / qrzReg.length;
+      setQuizAnalytics({ avg_score: (avg * 100).toFixed(1), total_attempts: qrzReg.length });
     }
 
     setLoading(false);
@@ -189,27 +198,50 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const [ttForm, setTtForm] = useState({
     session_id: '', program_id: '', subject_id: '', teacher_id: '',
-    day_of_week: 'Monday', start_time: '08:00', end_time: '09:00',
-    class_section: '', room: '', campus: 'Main'
+    day_of_week: 'Monday', start_time: '08:00', end_time: '08:40',
+    class_section: '', room: '', campus: 'Main',
+    gender_group: 'Girls-I',  // matches Summer Camp format (Girls-I / Boys-I)
   });
 
   const saveScheduleEntry = async () => {
-    if (!ttForm.program_id || !ttForm.subject_id || !ttForm.teacher_id || !ttForm.class_section) {
+    if (!ttForm.subject_id || !ttForm.teacher_id || !ttForm.class_section) {
       toast.error('Please fill all required fields');
       return;
     }
     setSaving(true);
     try {
-      const subj = allSubjects.find(s => s.id === ttForm.subject_id);
-      
+      const subj = allSubjects.find(s => String(s.id) === String(ttForm.subject_id));
+      const teacherObj = teachers.find(t => String(t.id) === String(ttForm.teacher_id));
+
       const { error } = await supabase.from('timetable').insert([{
-        ...ttForm,
-        program: activePrograms.find(p => p.id === ttForm.program_id)?.name,
-        subject: subj?.name,
-        period_number: 1 
+        teacher_id: ttForm.teacher_id,
+        day_of_week: ttForm.day_of_week,
+        start_time: ttForm.start_time,
+        end_time: ttForm.end_time,
+        class_section: ttForm.class_section,
+        room: ttForm.room,
+        campus: ttForm.campus,
+        gender_group: ttForm.gender_group,
+        program: activePrograms.find(p => String(p.id) === String(ttForm.program_id))?.name || '',
+        subject: subj?.name || '',
+        teacher_name: teacherObj?.full_name || null,
+        period_number: 1,
       }]);
       if (error) throw error;
-      toast.success('Schedule entry added');
+
+      // Notify the assigned teacher
+      if (teacherObj?.username) {
+        await supabase.from('teacher_messages').insert([{
+          from_user: adminData.username,
+          from_role: adminData.role,
+          to_teacher_username: teacherObj.username,
+          subject: `🗓️ Timetable Updated: ${subj?.name}`,
+          body: `You have been assigned "${subj?.name}" for ${ttForm.class_section} (${ttForm.gender_group}) on ${ttForm.day_of_week}s from ${ttForm.start_time} to ${ttForm.end_time}. Please check your schedule in the Teacher Portal.`,
+          is_read: false,
+        }]);
+      }
+
+      toast.success('Schedule entry added' + (teacherObj ? ' & teacher notified' : ''));
       setModal(null);
       loadAll();
     } catch (err: any) {
@@ -268,19 +300,61 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   };
 
   const saveScheme = async () => {
-    if (!schemeForm.title || !schemeForm.subject || !schemeForm.topic) {
-      showToast('Title, subject and topic are required', false); return;
+    if (!schemeForm.subject || !schemeForm.topic) {
+      showToast('Subject and topic are required', false); return;
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from('scheme_of_study').insert([{
-        ...schemeForm, part: Number(schemeForm.part),
-        week_no: schemeForm.week_no ? Number(schemeForm.week_no) : null,
-        uploaded_by: schemeForm.uploaded_by || adminData.full_name,
-      }]);
+      // Build the teacher lookup to get their id
+      const matchedTeacher = teachers.find(t =>
+        t.full_name?.toLowerCase() === schemeForm.teacher_name?.toLowerCase()
+      );
+
+      const payload: any = {
+        title: schemeForm.subject + ' SOS',
+        subject: schemeForm.subject,
+        program: schemeForm.program,
+        part: Number(schemeForm.part),
+        class_section: schemeForm.class_section,
+        week_no: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
+        month: schemeForm.month || null,
+        topic: schemeForm.is_leave ? `LEAVE DAY${schemeForm.leave_reason ? ': ' + schemeForm.leave_reason : ''}` : schemeForm.topic,
+        description: schemeForm.date
+          ? `${schemeForm.date} (${schemeForm.day || ''}) | Lecture ${schemeForm.lecture_no || '—'}`
+          : schemeForm.description || null,
+        uploaded_by: schemeForm.teacher_name || adminData.full_name,
+        teacher_id: matchedTeacher?.id || null,
+        scheduled_date: schemeForm.date || null,
+        is_delivered: false,
+        is_skipped: false,
+        is_leave: schemeForm.is_leave || false,
+        leave_reason: schemeForm.leave_reason || null,
+      };
+
+      const { error } = await supabase.from('scheme_of_study').insert([payload]);
       if (error) throw error;
-      showToast('Scheme of study entry uploaded');
-      setSchemeForm({ title: '', subject: '', program: 'ICS Physics', part: 1, class_section: '', week_no: '', month: '', topic: '', description: '', uploaded_by: '' });
+
+      // Notify the matched teacher if found
+      if (matchedTeacher?.username) {
+        await supabase.from('teacher_messages').insert([{
+          from_user: adminData.username,
+          from_role: adminData.role,
+          to_teacher_username: matchedTeacher.username,
+          subject: `📅 SOS Update: ${schemeForm.subject}`,
+          body: schemeForm.is_leave
+            ? `A leave day has been recorded on ${schemeForm.date} (${schemeForm.day}). Reason: ${schemeForm.leave_reason || 'Not specified'}.`
+            : `New topic added to your scheme: "${schemeForm.topic}" scheduled for ${schemeForm.date} (${schemeForm.day}), Lecture #${schemeForm.lecture_no}.`,
+          is_read: false,
+        }]);
+      }
+
+      showToast('SOS entry saved' + (matchedTeacher ? ' & teacher notified' : ''));
+      setSchemeForm({
+        subject: '', book_name: '', author: '', teacher_name: '', department: '',
+        program: 'ICS Physics', part: 1, class_section: '',
+        date: '', day: '', lecture_no: '', topic: '', description: '',
+        uploaded_by: '', is_leave: false, leave_reason: '', month: '',
+      });
       setModal(null); loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
@@ -516,7 +590,26 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const unreadMessages = messages.filter(m => !m.is_read && m.from_role !== adminData.role).length;
 
   const getStudentStats = (roll: number) => {
-    const cp = courseProgress.filter(c => c.student_roll === roll);
+    const student = allStudents.find(s => s.roll_no === roll);
+    const studentClass = student?.class_section;
+    
+    // Calculate CP dynamically based on student's class and SOS
+    const studentSchemes = schemes.filter(s => s.class_section === studentClass);
+    const uniqueSubjects = [...new Set(studentSchemes.map(s => s.subject))];
+    
+    const cp = uniqueSubjects.map((sub, idx) => {
+      const subSchemes = studentSchemes.filter(s => s.subject === sub);
+      const done = subSchemes.filter(s => s.status === 'Completed').length;
+      const total = subSchemes.length;
+      return {
+        id: `cp-${idx}`,
+        subject: sub,
+        topics_done: done,
+        topics_total: total,
+        progress_pct: total > 0 ? Math.round((done / total) * 100) : 0
+      };
+    });
+
     const sg = grades.filter(g => g.student_roll === roll);
     const sa = attendance.filter(a => a.student_roll === roll);
     const presentDays = sa.filter(a => a.status === 'Present').length;
@@ -544,9 +637,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const TAB_TITLE: Record<string, string> = {
-    dashboard: 'Dashboard', scheme: 'Scheme of Study', teachers: 'Teacher Profiles',
-    students: 'Student Academics', tracking: 'Track Progress', timetable: 'Timetable',
-    announcements: 'Announcements', messages: 'Messages', programs: 'Academic Setup'
+    dashboard: 'Dashboard',
+    scheme: 'Scheme of Study',
+    timetable: 'Timetable',
+    reports: 'SOS Reports',
   };
 
   return (
@@ -716,7 +810,13 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   <StatCard label="Total Programs"    value={activePrograms.length} sub={`${allSubjects.length} subjects total`} color={ACCENT}   icon={BookOpen} />
                   <StatCard label="Quiz Attempts"    value={quizAnalytics?.total_attempts || 0} sub="Participated students"   color="#0891B2" icon={CheckCircle} />
                   <StatCard label="Scheme Entries"    value={totalSchemes}   sub={`${[...new Set(schemes.map(s => s.subject))].length} subjects`} color="#7C3AED" icon={BookMarked} />
-                  <StatCard label="Overall Progress"  value={`${(courseProgress.reduce((acc, c) => acc + (c.progress_pct || 0), 0) / (courseProgress.length || 1)).toFixed(0)}%`} sub="Syllabus coverage" color="#D97706" icon={TrendingUp} />
+                  <StatCard 
+                    label="Overall Progress"  
+                    value={`${totalSchemes > 0 ? Math.round((schemes.filter(s => s.status === 'Completed').length / totalSchemes) * 100) : 0}%`} 
+                    sub="Syllabus coverage (Student Verified)" 
+                    color="#D97706" 
+                    icon={TrendingUp} 
+                  />
                 </div>
 
                 {/* Notices & Documents */}
@@ -1264,6 +1364,126 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
+            {/* ══════════ SOS & QUIZ REPORTS ══════════ */}
+            {tab === 'reports' && (
+              <motion.div key="reports" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* SOS Feedback Summary */}
+                  <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><BarChart2 size={20} /></div>
+                      <h3 className="font-black text-slate-800">SOS Execution Feedback</h3>
+                    </div>
+                    <div className="space-y-4">
+                      {(() => {
+                        const summary: Record<string, { taught: number, notTaught: number }> = {};
+                        sosFeedbacks.forEach(f => {
+                          if (!summary[f.subject]) summary[f.subject] = { taught: 0, notTaught: 0 };
+                          if (f.was_taught) summary[f.subject].taught++;
+                          else summary[f.subject].notTaught++;
+                        });
+                        return Object.entries(summary).map(([subj, stats]) => {
+                          const total = stats.taught + stats.notTaught;
+                          const pct = total > 0 ? Math.round((stats.taught / total) * 100) : 0;
+                          return (
+                            <div key={subj} className="space-y-1.5">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-700">{subj}</span>
+                                <span className={cn("font-black", pct < 70 ? "text-rose-500" : "text-emerald-600")}>{pct}% Taught</span>
+                              </div>
+                              <div className="h-1.5 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct < 70 ? '#f43f5e' : ACCENT }} />
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                      {!sosFeedbacks.length && <p className="text-center py-8 text-slate-400 text-xs italic">No SOS feedback reports yet.</p>}
+                    </div>
+                  </div>
+
+                  {/* Daily Quiz Analytics */}
+                  <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center"><TrendingUp size={20} /></div>
+                      <h3 className="font-black text-slate-800">Daily Quiz Performance</h3>
+                    </div>
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                          <p className="text-2xl font-black text-slate-800">{quizAttempts.length}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Attempts</p>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                          <p className="text-2xl font-black text-emerald-600">
+                            {quizAttempts.length > 0 ? Math.round(quizAttempts.filter(a => a.score / a.total_questions >= 0.8).length / quizAttempts.length * 100) : 0}%
+                          </p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pass Rate (80%+)</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Activity</h4>
+                        {quizAttempts.slice(0, 5).map(a => {
+                          const student = students.find(s => s.roll_no === a.student_roll);
+                          return (
+                            <div key={a.id} className="flex items-center justify-between text-xs py-2 border-b border-slate-50 last:border-0 pb-2">
+                              <div>
+                                <p className="font-bold text-slate-700">{student?.full_name || a.student_roll}</p>
+                                <p className="text-[10px] text-slate-400">{new Date(a.completed_at).toLocaleTimeString()}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-black text-slate-900">{a.score}/{a.total_questions}</p>
+                                <Badge c={a.score / a.total_questions >= 0.8 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"} label={a.score / a.total_questions >= 0.8 ? "Pass" : "Fail"} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* detailed SOS Feedback Log */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                    <h3 className="font-black text-slate-800">SOS Subject Feedback Log</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          <th className="px-6 py-3 text-left">Date</th>
+                          <th className="px-6 py-3 text-left">Student</th>
+                          <th className="px-6 py-3 text-left">Teacher</th>
+                          <th className="px-6 py-3 text-left">Topic</th>
+                          <th className="px-6 py-3 text-left">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sosFeedbacks.slice(0, 50).map(f => {
+                          const student = students.find(s => s.roll_no === f.student_roll);
+                          return (
+                            <tr key={f.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-3 text-xs text-slate-500">{new Date(f.feedback_date).toLocaleDateString()}</td>
+                              <td className="px-6 py-3 font-bold text-slate-700">{student?.full_name || f.student_roll}</td>
+                              <td className="px-6 py-3 text-slate-600">{f.teacher_name}</td>
+                              <td className="px-6 py-3 text-xs text-slate-500 font-medium">{f.topic}</td>
+                              <td className="px-6 py-3">
+                                {f.was_taught ? 
+                                  <span className="flex items-center gap-1 text-emerald-600 font-black text-[10px] uppercase"><CheckCircle size={12} /> Taught</span> : 
+                                  <span className="flex items-center gap-1 text-rose-500 font-black text-[10px] uppercase"><AlertCircle size={12} /> Not Taught</span>
+                                }
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {/* ══════════ EXAM SCHEDULES ══════════ */}
             {tab === 'exams' && (
               <motion.div key="exams" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -1496,6 +1716,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
+            
+
           </AnimatePresence>
         </div>
       </main>
@@ -1526,7 +1748,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
                       <select value={ttForm.subject_id} onChange={e => setTtForm({...ttForm, subject_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
                         <option value="">Select Subject</option>
-                        {allSubjects.filter(s => s.program_id === ttForm.program_id).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        {allSubjects.filter(s => !ttForm.program_id || String(s.program_id) === String(ttForm.program_id)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -1539,16 +1761,26 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Section</p>
-                      <TI placeholder="e.g. ICS-A" value={ttForm.class_section} onChange={e => setTtForm({...ttForm, class_section: e.target.value})} />
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Class Section</p>
+                      <input value={ttForm.class_section} onChange={e => setTtForm({...ttForm, class_section: e.target.value})} placeholder="e.g. ICS-Phy-A-B" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Day</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Group</p>
+<TS value={ttForm.gender_group} onChange={e => setTtForm({...ttForm, gender_group: e.target.value})}>
+  <option>Girls-I</option><option>Boys-I</option><option>Girls-II</option><option>Boys-II</option>
+</TS>
+</div>
+<div className="space-y-1.5">
+<p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Day</p>
                       <select value={ttForm.day_of_week} onChange={e => setTtForm({...ttForm, day_of_week: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
                         {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</p>
+                      <input value={ttForm.room} onChange={e => setTtForm({...ttForm, room: e.target.value})} placeholder="e.g. 101" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
                     </div>
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">From</p>
@@ -1792,46 +2024,117 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         )}
 
         {modal === 'scheme' && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
-              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-              <div className="h-1" style={{ background: GRADIENT }} />
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f0fdf4' }}><BookMarked size={16} style={{ color: ACCENT }} /></div>
-                  <h3 className="font-black text-slate-900">Upload Scheme Entry</h3>
-                </div>
-                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
-              </div>
-              <div className="p-6 space-y-4 overflow-y-auto">
-                <FM label="Scheme Title" req><TI placeholder="e.g. Annual Scheme of Study 2026" value={schemeForm.title} onChange={e => setSchemeForm((p: any) => ({ ...p, title: e.target.value }))} /></FM>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Subject" req><TI placeholder="e.g. Physics" value={schemeForm.subject} onChange={e => setSchemeForm((p: any) => ({ ...p, subject: e.target.value }))} /></FM>
-                  <FM label="Class Section"><TI placeholder="e.g. ICS-Phy-A-B" value={schemeForm.class_section} onChange={e => setSchemeForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Program" req><TS value={schemeForm.program} onChange={e => setSchemeForm((p: any) => ({ ...p, program: e.target.value }))}>{PROGRAMS.map(p => <option key={p}>{p}</option>)}</TS></FM>
-                  <FM label="Part"><TS value={schemeForm.part} onChange={e => setSchemeForm((p: any) => ({ ...p, part: e.target.value }))}><option value={1}>Part 1</option><option value={2}>Part 2</option></TS></FM>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Week No."><TI type="number" placeholder="e.g. 3" value={schemeForm.week_no} onChange={e => setSchemeForm((p: any) => ({ ...p, week_no: e.target.value }))} /></FM>
-                  <FM label="Month"><TS value={schemeForm.month} onChange={e => setSchemeForm((p: any) => ({ ...p, month: e.target.value }))}><option value="">Select Month</option>{MONTHS.map(m => <option key={m}>{m}</option>)}</TS></FM>
-                </div>
-                <FM label="Topic / Unit" req><TI placeholder="e.g. Chapter 3: Forces and Motion" value={schemeForm.topic} onChange={e => setSchemeForm((p: any) => ({ ...p, topic: e.target.value }))} /></FM>
-                <FM label="Description"><TA rows={3} placeholder="Detailed description…" value={schemeForm.description} onChange={e => setSchemeForm((p: any) => ({ ...p, description: e.target.value }))} /></FM>
-                <FM label="Uploaded By"><TI placeholder="Teacher name (defaults to your name)" value={schemeForm.uploaded_by} onChange={e => setSchemeForm((p: any) => ({ ...p, uploaded_by: e.target.value }))} /></FM>
-              </div>
-              <div className="px-6 pb-6 flex gap-3 flex-shrink-0">
-                <button onClick={() => setModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
-                <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveScheme}
-                  className="flex-1 py-3 rounded-2xl text-sm font-black text-white disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: GRADIENT }}>
-                  {saving ? 'Saving…' : <><CheckCircle size={14} /> Upload Topic</>}
-                </motion.button>
-              </div>
-            </motion.div>
+  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+    <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+      className="relative bg-white rounded-3xl w-full max-w-2xl z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="h-1" style={{ background: GRADIENT }} />
+      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f0fdf4' }}><BookMarked size={16} style={{ color: ACCENT }} /></div>
+          <div>
+            <h3 className="font-black text-slate-900">Scheme of Study Entry</h3>
+            <p className="text-[10px] text-slate-400">PIC Format · One lecture per row</p>
           </div>
-        )}
+        </div>
+        <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+      </div>
+      <div className="p-6 space-y-5 overflow-y-auto">
+        {/* Header info — matches SOS format top section */}
+        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-4">
+          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Subject Info</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FM label="Subject" req>
+              <TS value={schemeForm.subject} onChange={e => setSchemeForm((p: any) => ({ ...p, subject: e.target.value }))}>
+                <option value="">Select Subject</option>
+                {SUBJECTS_17.map(s => <option key={s}>{s}</option>)}
+              </TS>
+            </FM>
+            <FM label="Book Name" req><TI placeholder="e.g. Physics Part I" value={schemeForm.book_name} onChange={e => setSchemeForm((p: any) => ({ ...p, book_name: e.target.value }))} /></FM>
+            <FM label="Author"><TI placeholder="e.g. Halliday & Resnick" value={schemeForm.author} onChange={e => setSchemeForm((p: any) => ({ ...p, author: e.target.value }))} /></FM>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FM label="Teacher Name" req>
+              <TS value={schemeForm.teacher_name} onChange={e => setSchemeForm((p: any) => ({ ...p, teacher_name: e.target.value }))}>
+                <option value="">Select Teacher</option>
+                {teachers.map(t => <option key={t.id} value={t.full_name}>{t.full_name} ({t.subject_dept})</option>)}
+              </TS>
+            </FM>
+            <FM label="Department"><TI placeholder="e.g. Physics" value={schemeForm.department} onChange={e => setSchemeForm((p: any) => ({ ...p, department: e.target.value }))} /></FM>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <FM label="Program" req>
+              <TS value={schemeForm.program} onChange={e => setSchemeForm((p: any) => ({ ...p, program: e.target.value }))}>
+                {PROGRAMS.map(p => <option key={p}>{p}</option>)}
+              </TS>
+            </FM>
+            <FM label="Part">
+              <TS value={schemeForm.part} onChange={e => setSchemeForm((p: any) => ({ ...p, part: e.target.value }))}>
+                <option value={1}>Part 1</option><option value={2}>Part 2</option>
+              </TS>
+            </FM>
+            <FM label="Section"><TI placeholder="e.g. ICS-Phy-A-B" value={schemeForm.class_section} onChange={e => setSchemeForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
+          </div>
+        </div>
+
+        {/* Per-lecture row — matches DATE / DAY / LECT.s / SYLLABUS columns */}
+        <div className="border border-slate-100 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Lecture Entry</p>
+            <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="DATE · DAY · LECT · SYLLABUS" />
+          </div>
+          <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <FM label="Date" req><TI type="date" value={schemeForm.date} onChange={e => setSchemeForm((p: any) => ({ ...p, date: e.target.value }))} /></FM>
+            <FM label="Day">
+              <TS value={schemeForm.day} onChange={e => setSchemeForm((p: any) => ({ ...p, day: e.target.value }))}>
+                <option value="">Select</option>
+                {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d}>{d}</option>)}
+              </TS>
+            </FM>
+            <FM label="Lecture No."><TI type="number" placeholder="e.g. 7" value={schemeForm.lecture_no} onChange={e => setSchemeForm((p: any) => ({ ...p, lecture_no: e.target.value }))} /></FM>
+            <FM label="Month">
+              <TS value={schemeForm.month} onChange={e => setSchemeForm((p: any) => ({ ...p, month: e.target.value }))}>
+                <option value="">Select</option>
+                {MONTHS.map(m => <option key={m}>{m}</option>)}
+              </TS>
+            </FM>
+          </div>
+          <div className="px-4 pb-4 space-y-3">
+
+  {/* LEAVE TOGGLE */}
+  <div className="flex items-center justify-between p-3 bg-rose-50 border border-rose-100 rounded-xl">
+    <div>
+      <p className="text-sm font-black text-rose-700">Mark as Leave Day</p>
+      <p className="text-[10px] text-rose-400">No lecture on this date</p>
+    </div>
+    <button type="button"
+      onClick={() => setSchemeForm((p: any) => ({ ...p, is_leave: !p.is_leave }))}
+      className={`w-12 h-6 rounded-full transition-all relative ${schemeForm.is_leave ? 'bg-rose-500' : 'bg-slate-200'}`}>
+      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${schemeForm.is_leave ? 'left-6' : 'left-0.5'}`} />
+    </button>
+  </div>
+
+  {/* SHOW LEAVE REASON if leave, otherwise show Topic */}
+  {schemeForm.is_leave
+    ? <FM label="Leave Reason"><TI placeholder="e.g. Eid Holiday, College Event…" value={schemeForm.leave_reason} onChange={e => setSchemeForm((p: any) => ({ ...p, leave_reason: e.target.value }))} /></FM>
+    : <FM label="Syllabus / Topic" req><TI placeholder="e.g. Chapter 1: Physical Quantities and Their Units" value={schemeForm.topic} onChange={e => setSchemeForm((p: any) => ({ ...p, topic: e.target.value }))} /></FM>
+  }
+
+  <FM label="Description / Notes"><TA rows={2} placeholder="Extra notes, sub-topics, references…" value={schemeForm.description} onChange={e => setSchemeForm((p: any) => ({ ...p, description: e.target.value }))} /></FM>
+
+</div>
+        </div>
+      </div>
+      <div className="px-6 pb-6 flex gap-3 flex-shrink-0">
+        <button onClick={() => setModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100">Cancel</button>
+        <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveScheme}
+          className="flex-1 py-3 rounded-2xl text-sm font-black text-white disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: GRADIENT }}>
+          {saving ? 'Saving…' : <><CheckCircle size={14} /> Save Lecture</>}
+        </motion.button>
+      </div>
+    </motion.div>
+  </div>
+)}
       </AnimatePresence>
 
       <AnimatePresence>
