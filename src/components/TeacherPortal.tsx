@@ -5,7 +5,8 @@ import {
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
   CheckCircle2, User, RefreshCw, AlertCircle, Loader2,
-  BookMarked, BookCheck, UserCheck, Inbox, FileSpreadsheet
+  BookMarked, BookCheck, UserCheck, Inbox, FileSpreadsheet,
+  HelpCircle, Zap
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { 
@@ -42,6 +43,14 @@ interface RescheduleRequest {
   created_at: string;
   scheme_of_study?: SchemeEntry;
 }
+
+// Section display helper
+const displaySection = (section: string, program?: string) => {
+  if (!section) return '—';
+  // Simple section logic as requested.
+  // Example: ICS Physics B-Boys, I.Com A-Girls
+  return section;
+};
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 const StatCard = ({ icon: Icon, label, value, color }: any) => (
@@ -92,6 +101,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [gradingLoading, setGradingLoading] = useState(false);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [selectedNotif, setSelectedNotif] = useState<any | null>(null);
+  const [showNotifModal, setShowNotifModal] = useState(false);
 
   const [todaySchedule, setTodaySchedule] = useState<TeacherScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
@@ -105,6 +116,23 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   ]);
 
   const [showGradeModal, setShowGradeModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [showQuizCreator, setShowQuizCreator] = useState(false);
+  const [quizForm, setQuizForm] = useState<{
+    targetClass: string;
+    questions: { q: string; a: string[]; correct_index: number }[];
+  }>({
+    targetClass: "",
+    questions: [
+      { q: "", a: ["", "", "", ""], correct_index: 0 },
+      { q: "", a: ["", "", "", ""], correct_index: 0 },
+      { q: "", a: ["", "", "", ""], correct_index: 0 },
+      { q: "", a: ["", "", "", ""], correct_index: 0 },
+      { q: "", a: ["", "", "", ""], correct_index: 0 },
+    ]
+  });
+  const [submittingQuiz, setSubmittingQuiz] = useState(false);
   const [showStudentProfile, setShowStudentProfile] = useState(false);
   const [selectedStudentProfile, setSelectedStudentProfile] = useState<Student | null>(null);
   const [studentFees, setStudentFees] = useState<any[]>([]);
@@ -136,7 +164,13 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [fullWeeklySchedule, setFullWeeklySchedule] = useState<TeacherScheduleEntry[]>([]);
   const [courseProgressData, setCourseProgressData] = useState<any[]>([]);
   const [loadingAcademics, setLoadingAcademics] = useState(false);
-  const [seeding, setSeeding] = useState(false);
+  const [weekSos, setWeekSos] = useState<any[]>([]);
+const [seeding, setSeeding] = useState(false);
+const [todayScheduleNew, setTodayScheduleNew]   = useState<any[]>([]);
+const [weekScheduleNew,  setWeekScheduleNew]    = useState<any[]>([]);
+const [schedLoadingNew,  setSchedLoadingNew]    = useState(false);
+const [schedSearch,      setSchedSearch]        = useState('');
+const [schedView,        setSchedView]          = useState<'today'|'week'>('today');
 
   const handleLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,18 +181,37 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     }
     setSubmittingLeave(true);
     try {
-      await submitTeacherLeaveRequest({
+      const from = new Date(leaveForm.from_date);
+      const to = new Date(leaveForm.to_date);
+      const days = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86400000) + 1);
+      const { error } = await supabase.from('teacher_leave_requests').insert([{
         teacher_id: teacherData.id,
         teacher_name: teacherData.full_name,
-        reason: leaveForm.reason,
+        username: teacherData.username,
         from_date: leaveForm.from_date,
-        to_date: leaveForm.to_date
-      });
+        to_date: leaveForm.to_date,
+        days_count: days,
+        reason: leaveForm.reason,
+        leave_type: 'General',
+        status: 'Pending',
+      }]);
+      if (error) throw error;
+      // Notify VP
+      await supabase.from('admin_notifications').insert([{
+        sender: teacherData.full_name,
+        title: `📋 Leave Request: ${teacherData.full_name}`,
+        message: `${teacherData.full_name} has requested leave from ${leaveForm.from_date} to ${leaveForm.to_date} (${days} day${days > 1 ? 's' : ''}). Reason: ${leaveForm.reason}`,
+        target: 'VP',
+        target_role: 'vp',
+        is_read: false,
+        type: 'leave_request',
+      }]);
       toast.success('Leave request submitted to VP');
       setLeaveForm({ reason: '', from_date: '', to_date: '' });
       setActiveTab('Home');
-    } catch (err) {
-      toast.error('Failed to submit leave request');
+    } catch (err: any) {
+      console.error('Leave error:', err);
+      toast.error(`Failed to submit: ${err?.message || 'Unknown error'}`);
     } finally {
       setSubmittingLeave(false);
     }
@@ -215,12 +268,27 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
 
   const handleConfirmPaper = async (perfId: string) => {
     try {
+      const perf = performaRequests.find(p => p.id === perfId);
       const { error } = await supabase.from('paper_receiving_performa').update({
         status: 'Confirmed',
         confirmed_at: new Date().toISOString()
       }).eq('id', perfId);
       if (error) throw error;
       toast.success('Paper receipt confirmed');
+      
+      // Notify Examiner (Broadcasting to admin_notifications)
+      if (teacherData) {
+        await supabase.from('admin_notifications').insert([{
+          sender: teacherData.full_name,
+          title: '📄 Paper Performa Received',
+          message: `Teacher ${teacherData.full_name} has confirmed receipt of paper performa for ${perf?.subject || 'subject'} (${perf?.class_section || 'N/A'}).`,
+          target: 'EXAMINER',
+          target_role: 'examiner',
+          is_read: false,
+          type: 'performa_received'
+        }]);
+      }
+
       loadExamManagement();
     } catch (err) {
       toast.error('Failed to confirm paper receipt');
@@ -294,39 +362,24 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
         }
       }
 
-      // 4. Fallback if no students found via sections
+      // 4. If still empty, try matching by teacher_name in timetable
       if (finalStudents.length === 0) {
-        console.log('No students found via sections, trying department fallback');
-        const dept = (teacherData.subject_dept || '').split(' ')[0];
-        if (dept) {
-          const { data: deptData } = await supabase
+        const { data: nameMatch } = await supabase
+          .from('timetable')
+          .select('class_section')
+          .ilike('teacher_name', `%${teacherData.full_name.split(' ').slice(-1)[0]}%`);
+        if (nameMatch && nameMatch.length > 0) {
+          const nameSections = [...new Set(nameMatch.map((r: any) => r.class_section))];
+          const { data: nd } = await supabase
             .from('students')
             .select('*')
-            .ilike('class_section', `%${dept}%`)
+            .in('class_section', nameSections)
             .neq('status', 'Deleted')
-            .limit(100);
-          if (deptData) finalStudents = deptData;
+            .order('full_name');
+          if (nd) finalStudents = nd;
         }
       }
-
-      // 5. Final global fallback to prevent empty screen
-      if (finalStudents.length === 0) {
-        console.log('Still no students, fetching random 100 students');
-        const { data: globalData } = await supabase
-          .from('students')
-          .select('*')
-          .neq('status', 'Deleted')
-          .limit(100);
-        if (globalData && globalData.length > 0) {
-          finalStudents = globalData;
-        }
-      }
-
-      // 6. Ultra-fallback for verification/guest mode
-      if (finalStudents.length === 0) {
-        console.log('Database empty, no students to show');
-        finalStudents = [];
-      }
+      // No global fallback — show empty if truly no match
 
       // Dedup by Roll No
       const uniqueStudents = Array.from(new Map(finalStudents.map(s => [s.roll_no, s])).values());
@@ -376,7 +429,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       try {
         const sections = Array.from(new Set(assignedStudents.map(s => s.class_section)));
         const [schedule, trend] = await Promise.all([
-          getTeacherTodaySchedule(teacherData.id, teacherData.full_name),
+          getTeacherTodaySchedule(teacherData.id, teacherData.full_name, teacherData.subject_dept),
           getTeacherAttendanceTrend(sections),
         ]);
         setTodaySchedule(schedule);
@@ -394,8 +447,12 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       if (!teacherData) return;
       const notifs = await getNotifications(teacherData.id, 'TEACHER');
       setNotifications(notifs);
-      const [exs] = await Promise.all([getExamsByTeacher(teacherData.id)]);
-      setExams(exs);
+      const { data: exs } = await supabase
+        .from('exams')
+        .select('*')
+        .or(`teacher_id.eq.${teacherData.id},subject.eq.${teacherData.subject_dept}`)
+        .order('created_at', { ascending: false });
+      setExams(exs || []);
       const { data: grds } = await supabase.from('grades').select('*').eq('subject', teacherData.subject_dept);
       if (grds) setGrades(grds);
     };
@@ -414,7 +471,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     const { data: schemeData } = await supabase
       .from('scheme_of_study')
       .select('*')
-      .eq('teacher_id', teacherData.id)
+      .or(`teacher_id.eq.${teacherData.id},subject.ilike.%${teacherData.subject_dept}%`)
       .lte('scheduled_date', today)
       .order('scheduled_date', { ascending: false })
       .limit(30);
@@ -428,16 +485,57 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     setLoadingReschedule(false);
   };
 
+  const loadNewSchedule = async () => {
+    if (!teacherData) return;
+    setSchedLoadingNew(true);
+    try {
+      const today     = new Date();
+      const dayName   = today.toLocaleDateString('en-US', { weekday: 'long' });
+      const monday    = new Date(today);
+      const diff      = today.getDay() === 0 ? -6 : 1 - today.getDay();
+      monday.setDate(today.getDate() + diff);
+      const weekStart = monday.toISOString().split('T')[0];
+      const todayStr  = today.toISOString().split('T')[0];
+
+      const [{ data: todaySlots }, { data: weekSlots }] = await Promise.all([
+        supabase.from('weekly_schedule').select('*').eq('teacher_id', teacherData.id).eq('week_start', weekStart).eq('day_of_week', dayName).order('period_number'),
+        supabase.from('weekly_schedule').select('*').eq('teacher_id', teacherData.id).eq('week_start', weekStart).order('day_of_week').order('period_number'),
+      ]);
+
+      const addAttendance = async (slots: any[]) =>
+        Promise.all(slots.map(async slot => {
+          const { count: total }   = await supabase.from('students').select('id', { count: 'exact', head: true }).eq('class_section', slot.class_section).eq('status', 'Active');
+          const { count: present } = await supabase.from('attendance').select('id', { count: 'exact', head: true }).eq('subject', slot.subject).eq('date', todayStr).eq('status', 'Present');
+          return { ...slot, total_students: total || 0, present_count: present || 0, att_pct: total ? Math.round(((present || 0) / total) * 100) : 0 };
+        }));
+
+      setTodayScheduleNew(await addAttendance(todaySlots || []));
+      setWeekScheduleNew(await addAttendance(weekSlots || []));
+    } catch(e) { console.error(e); }
+    finally { setSchedLoadingNew(false); }
+  };
+
   const loadAcademicsData = async () => {
     if (!teacherData) return;
     setLoadingAcademics(true);
+    loadNewSchedule();
     try {
-      const [weekly, scheme] = await Promise.all([
-        getTeacherWeeklySchedule(teacherData.id, teacherData.full_name),
-        getSchemeOfStudy(teacherData.id)
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const [weekly, scheme, sosRes] = await Promise.all([
+        getTeacherWeeklySchedule(teacherData.id, teacherData.full_name, teacherData.subject_dept),
+        getSchemeOfStudy(teacherData.id, teacherData.subject_dept),
+        supabase.from('sos').select('lecture_date,subject,topic,chapter,lecture_no,status,topic_type,class_section')
+          .eq('teacher_username', teacherData.username)
+          .gte('lecture_date', weekStart.toISOString().split('T')[0])
+          .lte('lecture_date', weekEnd.toISOString().split('T')[0])
+          .order('lecture_date'),
       ]);
       setFullWeeklySchedule(weekly);
       setCourseProgressData(scheme);
+      setWeekSos(sosRes.data || []);
     } catch (err) {
       console.error('Error loading academics data:', err);
     } finally {
@@ -615,6 +713,47 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     }
   };
 
+  const submitDailyQuiz = async () => {
+    if (!teacherData) return;
+    if (!quizForm.targetClass) {
+      toast.error('Select a target class');
+      return;
+    }
+    const emptyQ = quizForm.questions.find(q => !q.q || q.a.some(opt => !opt));
+    if (emptyQ) {
+      toast.error('Please fill all questions and options');
+      return;
+    }
+
+    setSubmittingQuiz(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { error } = await supabase.from('daily_quizzes').insert([{
+        teacher_id: teacherData.id,
+        teacher_name: teacherData.full_name,
+        target_class: quizForm.targetClass,
+        questions: quizForm.questions,
+        quiz_date: today,
+        is_active: true,
+        xp_reward: 30,
+        coin_reward: 10
+      }]);
+
+      if (error) throw error;
+
+      toast.success(`Quiz successfully sent to ${quizForm.targetClass}`);
+      setShowQuizCreator(false);
+      setQuizForm({
+        targetClass: "",
+        questions: Array(5).fill(0).map(() => ({ q: "", a: ["", "", "", ""], correct_index: 0 }))
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create quiz');
+    } finally {
+      setSubmittingQuiz(false);
+    }
+  };
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const classes = allSections.length > 0 ? allSections : Array.from(new Set(assignedStudents.map(s => s.class_section)));
   const filteredStudents = assignedStudents.filter(s => {
@@ -727,15 +866,41 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                 </div>
                 {[
                   { icon: Clock, label: 'Time', value: `${formatTime(selectedItem.start_time).time} ${formatTime(selectedItem.start_time).period} — ${formatTime(selectedItem.end_time).time} ${formatTime(selectedItem.end_time).period}` },
-                  { icon: MapPin, label: 'Room', value: selectedItem.room ? `Room ${selectedItem.room}` : 'Not assigned' },
+                  { icon: MapPin, label: 'Room', value: selectedItem.room || 'Not assigned' },
                   { icon: GraduationCap, label: 'Campus', value: selectedItem.campus || 'Main Campus' },
-                  { icon: Users, label: 'Students', value: String(selectedItem.total_students || 0) },
+                  { icon: Users, label: 'Students Present Today', value: (() => {
+                    const total = assignedStudents.filter(s => s.class_section === selectedItem.class_section).length;
+                    const present = Object.entries(markedToday).filter(([roll, status]) => 
+                      status === 'Present' && assignedStudents.find(s => s.roll_no === Number(roll) && s.class_section === selectedItem.class_section)
+                    ).length;
+                    return `${present} / ${total}`;
+                  })() },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
                     <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-slate-400 shadow-sm"><Icon size={20} /></div>
                     <div><p className="text-[10px] text-slate-400 font-bold uppercase">{label}</p><p className="text-sm font-bold text-slate-800">{value}</p></div>
                   </div>
                 ))}
+              {/* Today's SOS Topic */}
+                {(() => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const sosTopic = weekSos.find(s =>
+                    s.subject === selectedItem?.subject &&
+                    s.lecture_date === todayStr
+                  );
+                  return sosTopic ? (
+                    <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
+                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">📖 Today's Topic (SOS)</p>
+                      <p className="text-sm font-black text-indigo-900">{sosTopic.topic}</p>
+                      <p className="text-[10px] text-indigo-400 mt-1">{sosTopic.chapter} · Lecture #{sosTopic.lecture_no}</p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">📖 Today's Topic</p>
+                      <p className="text-xs text-slate-400 mt-1 italic">No SOS entry found for today's lecture</p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </motion.div>
@@ -803,10 +968,21 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
             </div>
             <div className="space-y-4">
               {notifications.length > 0 ? notifications.map(n => (
-                <div key={`n-${n.id}`} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                  <div className="flex justify-between items-start mb-1"><h4 className="font-bold text-slate-800 text-sm">{n.title}</h4><span className="text-[10px] text-slate-400 font-bold">{new Date(n.created_at).toLocaleDateString()}</span></div>
-                  <p className="text-xs text-slate-500">{n.message}</p>
-                </div>
+                <motion.div 
+                  key={`n-${n.id}`} 
+                  whileHover={{ y: -2 }}
+                  onClick={() => { setSelectedNotif(n); setShowNotifModal(true); }}
+                  className={cn(
+                    "bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm cursor-pointer hover:shadow-md transition-all relative overflow-hidden",
+                    !n.is_read && "border-l-4 border-l-blue-500"
+                  )}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-bold text-slate-800 text-sm line-clamp-1">{n.title}</h4>
+                    <span className="text-[10px] text-slate-400 font-bold whitespace-nowrap">{new Date(n.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 line-clamp-2">{n.message}</p>
+                </motion.div>
               )) : <div className="bg-white p-12 rounded-[2.5rem] border border-slate-100 text-center"><p className="text-slate-400">No new notifications</p></div>}
             </div>
           </motion.div>
@@ -844,8 +1020,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                           setLoadingReschedule(true);
                           try {
                             const { error } = await supabase.from('scheme_of_study').update({ 
-                              status: 'Completed', 
-                              completed_at: new Date().toISOString() 
+                              status: 'Scheduled',
+                              is_delivered: false,
+                              delivered_date: null,
+                              completed_at: null
                             }).eq('id', entry.id);
                             
                             if (error) throw error;
@@ -854,16 +1032,22 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                             // Note: In a real app, this would call an AI function or use a questions bank.
                             // Here we use a sample 5-MCQ set as a placeholder.
                             const questions = [
-                              { q: `Basic concept question 1 about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 0 },
-                              { q: `Key definition in ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 1 },
-                              { q: `Application of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 2 },
-                              { q: `What is true about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 3 },
-                              { q: `Example of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], c: 0 },
+                              { q: `Basic concept question 1 about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], correct_index: 0 },
+                              { q: `Key definition in ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], correct_index: 1 },
+                              { q: `Application of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], correct_index: 2 },
+                              { q: `What is true about ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], correct_index: 3 },
+                              { q: `Example of ${entry.topic}?`, a: ['Opt A', 'Opt B', 'Opt C', 'Opt D'], correct_index: 0 },
                             ];
                             
-                            await supabase.from('academic_quizzes').insert([{
-                              topic_id: entry.id,
-                              questions: questions
+                            await supabase.from('daily_quizzes').insert([{
+                              teacher_id: teacherData?.id,
+                              teacher_name: teacherData?.full_name,
+                              target_class: entry.class_section,
+                              questions: questions,
+                              quiz_date: new Date().toISOString().split('T')[0],
+                              is_active: true,
+                              xp_reward: 30,
+                              coin_reward: 10
                             }]);
 
                             toast.success('Topic completed! Quiz generated for students.');
@@ -1139,10 +1323,25 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                               </div>
                               <div className="flex-1">
                                 <p className="text-sm font-bold text-slate-900">{slot.subject}</p>
-                                <p className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 rounded-md w-fit mt-1">{slot.class_section}</p>
+                                <p className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 rounded-md w-fit mt-1">{displaySection(slot.class_section)}</p>
+                                {(() => {
+                                  const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day
+                                    ? new Date().toISOString().split('T')[0] : null;
+                                  const sosTopic = todayStr ? weekSos.find(s =>
+                                    s.subject === slot.subject &&
+                                    s.lecture_date === todayStr
+                                  ) : null;
+                                  return sosTopic ? (
+                                    <div className="mt-1.5 flex items-start gap-1.5">
+                                      <span className="text-[9px]">📖</span>
+                                      <p className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-md leading-snug">{sosTopic.topic}</p>
+                                    </div>
+                                  ) : null;
+                                })()}
                               </div>
-                              <div className="text-right">
+                              <div className="text-right shrink-0">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 justify-end"><MapPin size={10} /> {slot.room || 'TBA'}</p>
+                                {slot.campus && <p className="text-[9px] text-slate-300 mt-0.5">{slot.campus}</p>}
                               </div>
                             </div>
                           );
@@ -1230,6 +1429,99 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
     }
   };
 
+
+  const TUTORIAL_STEPS = [
+    {
+      title: "Welcome, Teacher!",
+      content: "This is your secondary home at PIC. Manage your classes, attendance, and academics from here.",
+      target: "Home"
+    },
+    {
+      title: "Attendance & Students",
+      content: "Quickly mark student attendance and view detailed profiles of your assigned students.",
+      target: "Students"
+    },
+    {
+      title: "Academic Progress",
+      content: "Track your syllabus coverage, chapters, and upcoming lesson plans seamlessly.",
+      target: "Academics"
+    },
+    {
+      title: "Grading & Results",
+      content: "Post test results and monitor your students' performance trends throughout the term.",
+      target: "Grading"
+    },
+    {
+      title: "Notifications",
+      content: "Never miss an update from the administration or coordinator.",
+      target: "Home"
+    }
+  ];
+
+  const TutorialOverlay = () => {
+    if (!showTutorial) return null;
+    const step = TUTORIAL_STEPS[tutorialStep];
+
+    const nextStep = () => {
+      if (tutorialStep < TUTORIAL_STEPS.length - 1) {
+        setTutorialStep(s => s + 1);
+        if (TUTORIAL_STEPS[tutorialStep + 1].target) {
+          setActiveTab(TUTORIAL_STEPS[tutorialStep + 1].target);
+        }
+      } else {
+        setShowTutorial(false);
+        setTutorialStep(0);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+          onClick={() => setShowTutorial(false)}
+        />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="relative bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl border border-slate-100"
+        >
+          <div className="h-2 w-full bg-slate-100">
+            <motion.div 
+              className="h-full bg-[#2D3494]" 
+              initial={{ width: 0 }}
+              animate={{ width: `${((tutorialStep + 1) / TUTORIAL_STEPS.length) * 100}%` }}
+            />
+          </div>
+          <div className="p-8">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-[#2D3494] mb-6">
+              <HelpCircle size={24} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-3 tracking-tight">{step.title}</h3>
+            <p className="text-slate-500 font-medium leading-relaxed mb-8">{step.content}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {tutorialStep + 1} of {TUTORIAL_STEPS.length}</p>
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                onClick={nextStep}
+                className="px-6 py-3 rounded-2xl bg-[#2D3494] text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-900/20"
+              >
+                {tutorialStep === TUTORIAL_STEPS.length - 1 ? "Finish Tour" : "Next Step"}
+              </motion.button>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowTutorial(false)}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-900"
+          >
+            <X size={20} />
+          </button>
+        </motion.div>
+      </div>
+    );
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -1259,6 +1551,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </button>
           <button onClick={fetchStudents} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Refresh Data">
             <RefreshCw size={18} className={cn("text-slate-600", studentsLoading && "animate-spin")} />
+          </button>
+          <button onClick={() => { setTutorialStep(0); setShowTutorial(true); }} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Help Guide">
+            <HelpCircle size={18} className="text-slate-600" />
           </button>
               <button onClick={() => setSubPage('Notifications')} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center relative hover:bg-slate-100 transition-colors">
             <Bell size={20} className="text-slate-600" />
@@ -1342,6 +1637,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                         { label: 'Full Schedule', icon: Calendar, color: 'bg-indigo-500 text-white hover:bg-indigo-600', action: () => setSubPage('WeeklySchedule') },
                         { label: 'Post Grades', icon: GraduationCap, color: 'bg-orange-500 text-white hover:bg-orange-600', action: () => setShowGradeModal(true) },
                         { label: 'Academic Roadmap', icon: BookMarked, color: 'bg-emerald-500 text-white hover:bg-emerald-600', action: () => setSubPage('FullScheme') },
+                        { label: 'Daily Quiz', icon: Zap, color: 'bg-amber-500 text-white hover:bg-amber-600', action: () => setShowQuizCreator(true) },
                       ].map(qa => (
                         <button key={qa.label} onClick={qa.action} className={cn('p-4 rounded-3xl flex flex-col items-center gap-2 transition-all shadow-md', qa.color)}>
                           <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-sm"><qa.icon size={20} /></div>
@@ -1350,38 +1646,131 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                       ))}
                     </div>
                   </div>
-                  {/* My Schedule */}
+                  {/* ── NEW: Weekly Schedule from Examiner ── */}
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex items-center justify-between">
                       <h3 className="text-2xl font-black text-slate-900">My Schedule</h3>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                      <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                        <button onClick={() => setSchedView('today')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${schedView === 'today' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>Today</button>
+                        <button onClick={() => setSchedView('week')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${schedView === 'week' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}>Week</button>
+                      </div>
                     </div>
-                    {scheduleLoading ? (
-                      [1, 2, 3].map(i => <div key={i} className="h-24 bg-white rounded-[2rem] border border-slate-100 animate-pulse" />)
-                    ) : todaySchedule.length === 0 ? (
-                      <div className="bg-white border border-dashed border-slate-200 p-12 rounded-[2rem] text-center"><p className="text-slate-400 font-bold">No lectures scheduled today</p></div>
-                    ) : todaySchedule.map(item => {
-                      const { time, period } = formatTime(item.start_time);
-                      const { time: endTime } = formatTime(item.end_time);
-                      return (
-                        <div key={`sched-${item.timetable_id}`} onClick={() => { setSelectedItem(item); setSubPage('LectureInfo'); }} className="bg-white border border-slate-100 p-6 rounded-[2rem] flex gap-6 shadow-sm cursor-pointer hover:border-blue-200 hover:shadow-md transition-all">
-                          <div className="text-center shrink-0 w-16">
-                            <p className="text-lg font-black text-slate-900">{time}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">{period}</p>
-                            <p className="text-[9px] text-slate-300 mt-1">–{endTime}</p>
+
+                    <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={15} />
+                      <input value={schedSearch} onChange={e => setSchedSearch(e.target.value)} placeholder="Search subject, class, room…"
+                        className="w-full bg-white border border-slate-100 rounded-2xl py-3 pl-11 pr-4 text-sm outline-none shadow-sm" />
+                    </div>
+
+                    {schedLoadingNew ? (
+                      [1,2,3].map(i => <div key={i} className="h-24 bg-white rounded-[2rem] border border-slate-100 animate-pulse" />)
+                    ) : schedView === 'today' ? (
+                      (() => {
+                        const nowMins = new Date().getHours()*60 + new Date().getMinutes();
+                        const filtered = todayScheduleNew.filter(s => !schedSearch || s.subject?.toLowerCase().includes(schedSearch.toLowerCase()) || s.class_section?.toLowerCase().includes(schedSearch.toLowerCase()) || s.room?.toLowerCase().includes(schedSearch.toLowerCase()));
+                        const nextSlot = filtered.find(s => { const [h,m] = (s.start_time||'').split(':').map(Number); return (h*60+m) > nowMins; });
+                        if (filtered.length === 0) return (
+                          <div className="bg-white border border-dashed border-slate-200 p-12 rounded-[2.5rem] text-center">
+                            <p className="text-slate-400 font-bold">No classes scheduled today</p>
+                            <p className="text-xs text-slate-300 mt-1">Check with the Examiner if this seems wrong</p>
                           </div>
-                          <div className="flex-1 space-y-2">
-                            <h4 className="text-slate-900 font-bold text-lg">{item.subject}</h4>
-                            <p className="text-xs font-bold text-[#2D3494] bg-blue-50 px-2 py-0.5 rounded-md w-fit">{item.class_section}</p>
-                            <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                              <span className="flex items-center gap-1.5"><MapPin size={14} />{item.room ? `Room ${item.room}` : 'TBA'}</span>
-                              <span className="flex items-center gap-1.5"><Users size={14} />{item.total_students} Students</span>
-                              {item.campus && <span className="flex items-center gap-1.5"><GraduationCap size={14} />{item.campus}</span>}
+                        );
+                        return (
+                          <div className="space-y-3">
+                            {filtered.map(slot => {
+                              const [sh,sm] = (slot.start_time||'').split(':').map(Number);
+                              const [eh,em] = (slot.end_time||'').split(':').map(Number);
+                              const isNow  = nowMins >= sh*60+sm && nowMins <= eh*60+em;
+                              const isDone = (eh*60+em) < nowMins;
+                              const attColor = slot.att_pct >= 80 ? '#059669' : slot.att_pct >= 60 ? '#D97706' : '#C0392B';
+                              const { time, period } = formatTime(slot.start_time);
+                              return (
+                                <div key={slot.id} className={`bg-white border rounded-[2rem] overflow-hidden shadow-sm transition-all ${isNow ? 'border-[#2D3494] shadow-lg shadow-blue-100' : isDone ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
+                                  {isNow && <div className="h-1 w-full bg-[#2D3494]" />}
+                                  <div className="p-5 flex items-center gap-4">
+                                    {/* Period + time */}
+                                    <div className="text-center w-14 shrink-0">
+                                      <div className={`w-10 h-10 rounded-xl mx-auto flex items-center justify-center font-black text-sm mb-1 ${isNow ? 'bg-[#2D3494] text-white' : 'bg-slate-100 text-slate-500'}`}>P{slot.period_number}</div>
+                                      <p className="text-[9px] font-bold text-slate-400">{time}</p>
+                                      <p className="text-[8px] text-slate-300">{period}</p>
+                                    </div>
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="font-black text-slate-900">{slot.subject}</p>
+                                        {isNow && <span className="px-2 py-0.5 rounded-full text-[9px] font-black text-white bg-[#2D3494]">NOW</span>}
+                                        {isDone && <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-400">Done</span>}
+                                      </div>
+                                      <p className="text-xs text-slate-500 mt-0.5">{slot.class_section}</p>
+                                      {/* Attendance bar */}
+                                      <div className="mt-2">
+                                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                          <div className="h-full rounded-full transition-all" style={{ width: `${slot.att_pct}%`, background: attColor }} />
+                                        </div>
+                                        <div className="flex justify-between mt-1">
+                                          <p className="text-[10px] text-slate-400 font-bold">{slot.present_count}/{slot.total_students} present</p>
+                                          <p className="text-[10px] font-black" style={{ color: attColor }}>{slot.att_pct}%</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Room — big and clear */}
+                                    <div className="text-right shrink-0">
+                                      <p className="text-[9px] font-black text-slate-400 uppercase flex items-center gap-1 justify-end"><MapPin size={9} />Room</p>
+                                      <p className="text-2xl font-black text-slate-900">{slot.room || '?'}</p>
+                                      <p className="text-[9px] text-slate-300">{slot.campus}</p>
+                                    </div>
+                                  </div>
+                                  {slot.notes && <div className="px-5 pb-3"><p className="text-[10px] text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">📝 {slot.notes}</p></div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      // Week view
+                      <div className="space-y-4">
+                        {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(day => {
+                          const daySlots = weekScheduleNew.filter(s => s.day_of_week === day && (!schedSearch || s.subject?.toLowerCase().includes(schedSearch.toLowerCase()) || s.room?.toLowerCase().includes(schedSearch.toLowerCase())));
+                          const isToday  = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
+                          return (
+                            <div key={day} className={`bg-white rounded-[2rem] border overflow-hidden ${isToday ? 'border-[#2D3494]/30' : 'border-slate-100'}`}>
+                              <div className={`px-5 py-3 flex items-center justify-between ${isToday ? 'bg-blue-50' : 'bg-slate-50'}`}>
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${isToday ? 'bg-[#2D3494] text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>{day.slice(0,2)}</div>
+                                  <p className={`font-black text-sm ${isToday ? 'text-[#2D3494]' : 'text-slate-700'}`}>{day}{isToday && <span className="ml-2 text-[9px] bg-[#2D3494] text-white px-2 py-0.5 rounded-full">Today</span>}</p>
+                                </div>
+                                <p className="text-xs font-bold text-slate-400">{daySlots.length} classes</p>
+                              </div>
+                              {daySlots.length === 0 ? (
+                                <p className="px-5 py-4 text-sm text-slate-300 font-bold text-center">No classes</p>
+                              ) : daySlots.map(slot => (
+                                <div key={slot.id} className="flex items-center gap-4 px-5 py-3.5 border-t border-slate-50">
+                                  <div className="w-14 shrink-0">
+                                    <p className="text-xs font-black text-slate-700">P{slot.period_number}</p>
+                                    <p className="text-[10px] font-bold text-slate-400">{slot.start_time?.slice(0,5)}</p>
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-black text-slate-900 truncate">{slot.subject}</p>
+                                    <p className="text-xs text-slate-500 truncate">{slot.class_section}</p>
+                                  </div>
+                                  {/* Room — always prominent */}
+                                  <div className="shrink-0 flex items-center gap-1.5">
+                                    <MapPin size={12} className="text-slate-400" />
+                                    <p className="text-base font-black text-slate-900">{slot.room || '?'}</p>
+                                  </div>
+                                  {/* Student count */}
+                                  <div className="shrink-0 flex items-center gap-1">
+                                    <Users size={12} className="text-emerald-500" />
+                                    <p className="text-xs font-bold text-slate-600">{slot.present_count}/{slot.total_students}</p>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -1390,7 +1779,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
               {activeTab === 'Students' && (
                 <motion.div key="students" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
                   <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-black text-slate-900">Class Directory</h1>
+                    <h1 className="text-2xl font-black text-slate-900">Assigned Students</h1>
                     <span className="bg-slate-100 text-slate-600 text-[10px] px-3 py-1.5 rounded-full font-bold uppercase">{studentsLoading ? 'Loading...' : `${assignedStudents.length} Students`}</span>
                   </div>
                   {studentsLoading ? (
@@ -1399,7 +1788,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                     <>
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         <button onClick={() => setSelectedClass(null)} className={cn("px-6 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all", selectedClass === null ? "bg-[#2D3494] text-white" : "bg-white text-slate-500 border border-slate-100")}>All Classes</button>
-                        {classes.map(cls => <button key={cls} onClick={() => setSelectedClass(cls)} className={cn("px-6 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all", selectedClass === cls ? "bg-[#2D3494] text-white" : "bg-white text-slate-500 border border-slate-100")}>{cls}</button>)}
+                        {classes.map(cls => {
+  const prog = assignedStudents.find(s => s.class_section === cls)?.program;
+  return <button key={cls} onClick={() => setSelectedClass(cls)} className={cn("px-6 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all", selectedClass === cls ? "bg-[#2D3494] text-white" : "bg-white text-slate-500 border border-slate-100")}>{displaySection(cls, prog)}</button>;
+})}
                       </div>
                       <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} /><input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search by name or ID..." className="w-full bg-white border border-slate-100 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" /></div>
                       {assignedStudents.length === 0 ? (
@@ -1419,7 +1811,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                                   <div className={cn("w-14 h-14 rounded-full flex items-center justify-center font-black text-lg", group.accent === 'rose' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600')}>{student.full_name?.charAt(0)}</div>
                                   <div className="flex-1">
                                     <h4 className="text-slate-900 font-black text-sm">{student.full_name}</h4>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{student.roll_no} • {student.class_section}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{student.roll_no} • {displaySection(student.class_section, student.program)}</p>
                                     <div className="mt-1 flex items-center gap-2">{getAttendanceBadge(student.roll_no)}</div>
                                   </div>
                                   <div className="flex gap-2">
@@ -1452,17 +1844,18 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                       <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Syllabus Overview</h3>
                       <button onClick={() => setSubPage('FullScheme')} className="text-[10px] font-bold text-blue-600 uppercase">View Details</button>
                     </div>
-                    {courseProgressData.length === 0 ? (
+                    {weekSos.length === 0 && courseProgressData.length === 0 ? (
                       <div className="bg-white p-8 rounded-[2rem] border border-dashed border-slate-200 text-center text-slate-400 font-bold">No scheme data found</div>
                     ) : (
                       <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
                         {(() => {
-                           // Group by subject to show progress per subject
+                           // Use SOS data — group by subject
+                           const sourceData = weekSos.length > 0 ? weekSos : courseProgressData;
                            const subjMap: Record<string, { total: number, comp: number }> = {};
-                           courseProgressData.forEach(e => {
+                           sourceData.forEach((e: any) => {
                              if (!subjMap[e.subject]) subjMap[e.subject] = { total: 0, comp: 0 };
                              subjMap[e.subject].total++;
-                             if (e.status === 'Completed') subjMap[e.subject].comp++;
+                             if (e.status === 'Delivered' || e.status === 'Completed') subjMap[e.subject].comp++;
                            });
                            return Object.entries(subjMap).map(([subj, stats]) => {
                              const pct = Math.round((stats.comp / stats.total) * 100);
@@ -1601,10 +1994,10 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                   <div className="space-y-3">
                     <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Pending / Unmarked</h3>
-                    {exams.filter(exam => !grades.some(g => g.exam_id === exam.id)).length === 0 ? (
+                    {exams.filter(exam => !grades.some(g => String(g.exam_id) === String(exam.id))).length === 0 ? (
                       <div className="bg-white p-8 rounded-[2.5rem] border border-dashed border-slate-200 text-center"><p className="text-slate-400 font-bold">No pending tests.</p></div>
                     ) : (
-                      exams.filter(exam => !grades.some(g => g.exam_id === exam.id)).map(exam => (
+                      exams.filter(exam => !grades.some(g => String(g.exam_id) === String(exam.id))).map(exam => (
                         <div key={`exam-${exam.id}`} onClick={() => { setSelectedExam(exam); setModalSelectedClass(exam.class_section); setTotalMarks(exam.total_marks); setShowGradeModal(true); }} className="bg-white border border-slate-100 p-6 rounded-[2rem] flex items-center justify-between shadow-sm cursor-pointer hover:border-orange-200 hover:shadow-md transition-all group">
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all"><FileText size={24} /></div>
@@ -1617,7 +2010,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   </div>
                   <div className="space-y-3">
                     <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Graded</h3>
-                    {exams.filter(exam => grades.some(g => g.exam_id === exam.id)).length === 0 ? (
+                    {exams.filter(exam => grades.some(g => String(g.exam_id) === String(exam.id))).length === 0 ? (
                       <div className="bg-white p-8 rounded-[2.5rem] border border-dashed border-slate-200 text-center"><p className="text-slate-400 font-bold">No graded tests yet.</p></div>
                     ) : (
                       exams.filter(exam => grades.some(g => g.exam_id === exam.id)).map(exam => {
@@ -1731,12 +2124,14 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Filter by Class</label>
                   <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                     <button onClick={() => setModalSelectedClass(null)} className={cn("px-4 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all", !modalSelectedClass ? "bg-[#2D3494] text-white" : "bg-slate-50 text-slate-500 border border-slate-100")}>All</button>
-                    {classes.map(cls => <button key={`mc-${cls}`} onClick={() => setModalSelectedClass(cls)} className={cn("px-4 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all", modalSelectedClass === cls ? "bg-[#2D3494] text-white" : "bg-slate-50 text-slate-500 border border-slate-100")}>{cls}</button>)}
+                    {Array.from(new Set(assignedStudents.map(s => s.program))).filter(Boolean).sort().map(prog => (
+                      <button key={prog} onClick={() => setModalSelectedClass(prog)} className={cn("px-4 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap transition-all", modalSelectedClass === prog ? "bg-[#2D3494] text-white" : "bg-slate-50 text-slate-500 border border-slate-100")}>{prog}</button>
+                    ))}
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="flex justify-between px-1"><label className="text-[10px] font-black text-slate-400 uppercase">Students ({assignedStudents.filter(s => modalSelectedClass ? s.class_section === modalSelectedClass : true).length})</label><span className="text-[10px] font-black text-slate-400 uppercase">/ {selectedExam ? selectedExam.total_marks : totalMarks}</span></div>
-                  {assignedStudents.filter(s => modalSelectedClass ? s.class_section === modalSelectedClass : true).map((s, idx) => (
+                  <div className="flex justify-between px-1"><label className="text-[10px] font-black text-slate-400 uppercase">Students ({assignedStudents.filter(s => modalSelectedClass ? s.program === modalSelectedClass : true).length})</label><span className="text-[10px] font-black text-slate-400 uppercase">/ {selectedExam ? selectedExam.total_marks : totalMarks}</span></div>
+                  {assignedStudents.filter(s => modalSelectedClass ? s.program === modalSelectedClass : true).map((s, idx) => (
                     <div key={`gi-${s.id || s.roll_no || idx}`} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                       <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-[#2D3494] font-black text-xs border border-slate-100">{s.full_name?.charAt(0)}</div>
                       <div className="flex-1"><p className="text-sm font-bold text-slate-800 truncate">{s.full_name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{s.roll_no} • {s.class_section}</p></div>
@@ -1747,6 +2142,107 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
               </div>
               <div className="p-6 sm:p-8 border-t border-slate-100 bg-white shrink-0">
                 <button onClick={handleSubmitGrades} disabled={gradingLoading} className="w-full py-5 bg-[#2D3494] text-white rounded-[2rem] font-black text-lg shadow-xl hover:bg-blue-800 transition-all disabled:opacity-60">{gradingLoading ? 'Submitting...' : 'Submit All Grades'}</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ DAILY QUIZ CREATOR MODAL ══════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {showQuizCreator && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowQuizCreator(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl z-10 overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">Create Daily Quiz</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">5 MCQs · 30 XP · 10 Coins</p>
+                </div>
+                <button onClick={() => setShowQuizCreator(false)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
+                {/* Target Class Selection */}
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Target Class / Section</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {classes.map(c => (
+                      <button 
+                        key={c}
+                        onClick={() => setQuizForm({...quizForm, targetClass: c})}
+                        className={cn(
+                          "px-4 py-3 rounded-2xl text-[10px] font-black uppercase transition-all border",
+                          quizForm.targetClass === c ? "bg-[#2D3494] text-white border-blue-600 shadow-lg shadow-blue-200" : "bg-slate-50 text-slate-500 border-slate-100 hover:border-blue-200"
+                        )}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Questions */}
+                <div className="space-y-10">
+                  {quizForm.questions.map((question, qIdx) => (
+                    <div key={qIdx} className="space-y-4 pt-6 first:pt-0 border-t first:border-t-0 border-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm">{qIdx + 1}</div>
+                        <input 
+                          value={question.q} 
+                          onChange={e => {
+                            const newQs = [...quizForm.questions];
+                            newQs[qIdx].q = e.target.value;
+                            setQuizForm({...quizForm, questions: newQs});
+                          }}
+                          placeholder={`Enter question ${qIdx + 1}...`} 
+                          className="flex-1 bg-slate-50 border border-slate-100 rounded-xl py-3 px-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" 
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-11">
+                        {question.a.map((opt, oIdx) => (
+                          <div key={oIdx} className="flex items-center gap-2">
+                            <input 
+                              type="radio"
+                              name={`correct-${qIdx}`}
+                              checked={question.correct_index === oIdx}
+                              onChange={() => {
+                                const newQs = [...quizForm.questions];
+                                newQs[qIdx].correct_index = oIdx;
+                                setQuizForm({...quizForm, questions: newQs});
+                              }}
+                              className="w-4 h-4 text-emerald-600 bg-slate-100 border-slate-300 focus:ring-emerald-500"
+                              title="Mark as correct answer"
+                            />
+                            <input 
+                              value={opt}
+                              onChange={e => {
+                                const newQs = [...quizForm.questions];
+                                newQs[qIdx].a[oIdx] = e.target.value;
+                                setQuizForm({...quizForm, questions: newQs});
+                              }}
+                              placeholder={`Option ${String.fromCharCode(65 + oIdx)}${question.correct_index === oIdx ? ' ✓ Correct' : ''}`} 
+                              className={cn(
+                                "flex-1 bg-white border border-slate-100 rounded-xl py-2.5 px-4 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-400",
+                                question.correct_index === oIdx && "border-emerald-400 bg-emerald-50/50 text-emerald-800 font-black"
+                              )}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+                <button 
+                  onClick={submitDailyQuiz}
+                  disabled={submittingQuiz || !quizForm.targetClass}
+                  className="w-full py-5 bg-[#2D3494] text-white rounded-[2rem] font-black text-lg shadow-xl shadow-blue-200 hover:bg-blue-800 transition-all disabled:opacity-60 flex items-center justify-center gap-3"
+                >
+                  {submittingQuiz ? <Loader2 size={24} className="animate-spin" /> : <><Plus size={24} /> Launch Daily Quiz</>}
+                </button>
               </div>
             </motion.div>
           </div>
@@ -1801,23 +2297,69 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
       </AnimatePresence>
 
       {/* ══ BOTTOM NAV ══════════════════════════════════════════════════════════ */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-4 py-3 flex justify-around items-center z-50 overflow-x-auto scrollbar-hide">
-        {[
-          { id: 'Home', icon: LayoutDashboard },
-          { id: 'Teams', icon: Users, label: 'LMS' },
-          { id: 'Students', icon: GraduationCap },
-          { id: 'Academics', icon: GraduationCap },
-          { id: 'Grading', icon: CheckSquare },
-          { id: 'Leave', icon: Calendar },
-          { id: 'Leaderboard', icon: Trophy },
-          { id: 'Profile', icon: User }
-        ].map(tab => (
-    <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSubPage(null); }} className={cn("flex flex-col items-center gap-1 transition-all shrink-0 px-2", activeTab === tab.id ? "text-[#2D3494]" : "text-slate-400")}>
-      <div className={cn("p-2 rounded-2xl transition-all", activeTab === tab.id ? "bg-blue-50" : "")}><tab.icon size={22} /></div>
-      <span className={cn("text-[8px] font-black uppercase transition-opacity", activeTab === tab.id ? "opacity-100" : "opacity-0")}>{(tab as any).label || tab.id}</span>
-    </button>
-  ))}
+      <nav className="fixed bottom-0 left-0 right-0 z-50" style={{background:'rgba(255,255,255,0.96)',backdropFilter:'blur(20px)',borderTop:'1px solid rgba(0,0,0,0.06)',boxShadow:'0 -4px 24px rgba(0,0,0,0.08)'}}>
+  <div className="flex items-center gap-1 px-2 overflow-x-auto scrollbar-hide" style={{paddingBottom:'max(8px, env(safe-area-inset-bottom))',paddingTop:8}}>
+    {[
+      {id:'Home',label:'Home',icon:LayoutDashboard},
+      {id:'Students',label:'Students',icon:GraduationCap},
+      {id:'Academics',label:'Academics',icon:BookOpen},
+      {id:'Grading',label:'Grades',icon:CheckSquare},
+      {id:'Teams',label:'LMS',icon:Users},
+      {id:'Leave',label:'Leave',icon:Calendar},
+      {id:'Leaderboard',label:'Ranks',icon:Trophy},
+      {id:'Profile',label:'Profile',icon:User},
+    ].map(({id,label,icon:Icon})=>{
+      const isActive=activeTab===id;
+      return (
+        <button key={id} onClick={()=>{setActiveTab(id);setSubPage(null);}}
+          className="relative flex flex-col items-center justify-center gap-0.5 rounded-2xl transition-colors duration-200 flex-shrink-0 min-w-[56px] px-3 py-2"
+          style={isActive?{background:'linear-gradient(135deg,#2D3494,#4F46E5)',color:'#fff',boxShadow:'0 4px 14px rgba(45,52,148,0.4)'}:{color:'#94a3b8'}}>
+          <motion.div animate={isActive?{rotate:[0,-15,10,-5,0],scale:[1,1.15,1]}:{rotate:0,scale:1}} transition={{duration:0.45,ease:[0.34,1.56,0.64,1]}}>
+            <Icon size={20}/>
+          </motion.div>
+          <AnimatePresence>
+            {isActive&&(
+              <motion.span key="lbl" initial={{opacity:0,y:4,scale:0.8}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:4,scale:0.8}} transition={{duration:0.2}}
+                className="text-[9px] font-black uppercase tracking-tight leading-none" style={{maxWidth:48,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {label}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+      );
+    })}
+  </div>
 </nav>
+
+      {/* ══ NOTIFICATION MODAL ══════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {showNotifModal && selectedNotif && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNotifModal(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="relative bg-white rounded-3xl w-full max-w-md z-10 shadow-2xl overflow-hidden">
+              <div className="h-1.5 w-full bg-blue-600" />
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-black text-slate-900 flex items-center gap-2 text-base"><Bell size={18} className="text-blue-500" /> Notification Details</h3>
+                <button onClick={() => setShowNotifModal(false)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
+              </div>
+              <div className="p-8 space-y-4">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="text-xl font-black text-slate-900 leading-tight">{selectedNotif.title}</h4>
+                  <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-1 rounded-lg shrink-0 ml-4">{new Date(selectedNotif.created_at).toLocaleDateString()}</span>
+                </div>
+                <div className="w-12 h-1 bg-blue-500 rounded-full mb-6" />
+                <p className="text-sm text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">{selectedNotif.message}</p>
+              </div>
+              <div className="p-6 border-t border-slate-50 bg-slate-50/50 flex flex-col gap-2">
+                <button onClick={() => setShowNotifModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-sm font-black transition-all active:scale-95 shadow-xl shadow-slate-900/10">
+                  Close Message
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ══ STUDENT PROFILE MODAL ═══════════════════════════════════════════════ */}
       <AnimatePresence>
@@ -1880,6 +2422,7 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
           </div>
         )}
       </AnimatePresence>
+      <TutorialOverlay />
     </div>
   );
 };
