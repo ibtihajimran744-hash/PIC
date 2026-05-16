@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { HelpCircle, X } from 'lucide-react';
 
 // ── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,7 @@ interface AdminData {
   full_name: string;
   role: string;
   username: string;
+  coordinator_type?: string;
 }
 
 interface PortalProps {
@@ -84,6 +86,95 @@ export function PrincipalPortal({ onLogout, adminData }: PortalProps) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeSubTab, setActiveSubTab] = useState('');
   const [isOpen, setIsOpen] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+
+  const TUTORIAL_STEPS = [
+    {
+      title: "CampusCore Executive View",
+      content: "Welcome to your principal dashboard. This console gives you high-level visibility across all campus operations.",
+      target: "dashboard"
+    },
+    {
+      title: "Institutional Search",
+      content: "Instantly find students, staff, or documents using our powerful global search system.",
+      target: "dashboard"
+    },
+    {
+      title: "Real-time Notifications",
+      content: "Stay updated on critical events, performance alerts, and administrative tasks as they happen.",
+      target: "dashboard"
+    },
+    {
+      title: "Module Navigation",
+      content: "Access your different modules—from Finance and HR to Exams and Academics—using the sidebar.",
+      target: "students"
+    }
+  ];
+
+  const TutorialOverlay = () => {
+    if (!showTutorial) return null;
+    const step = TUTORIAL_STEPS[tutorialStep];
+
+    const nextStep = () => {
+      if (tutorialStep < TUTORIAL_STEPS.length - 1) {
+        setTutorialStep(s => s + 1);
+        if (TUTORIAL_STEPS[tutorialStep + 1].target) {
+          setActiveTab(TUTORIAL_STEPS[tutorialStep + 1].target);
+        }
+      } else {
+        setShowTutorial(false);
+        setTutorialStep(0);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+          onClick={() => setShowTutorial(false)}
+        />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="relative bg-slate-800 rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl border border-slate-700"
+        >
+          <div className="h-2 w-full bg-slate-700">
+            <motion.div 
+              className="h-full bg-emerald-500" 
+              initial={{ width: 0 }}
+              animate={{ width: `${((tutorialStep + 1) / TUTORIAL_STEPS.length) * 100}%` }}
+            />
+          </div>
+          <div className="p-8">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-6 border border-emerald-500/20">
+              <HelpCircle size={24} />
+            </div>
+            <h3 className="text-xl font-black text-white mb-3 tracking-tight">{step.title}</h3>
+            <p className="text-slate-400 font-medium leading-relaxed mb-8">{step.content}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Step {tutorialStep + 1} of {TUTORIAL_STEPS.length}</p>
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                onClick={nextStep}
+                className="px-6 py-3 rounded-2xl bg-emerald-500 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20"
+              >
+                {tutorialStep === TUTORIAL_STEPS.length - 1 ? "Finish Tour" : "Next Step"}
+              </motion.button>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowTutorial(false)}
+            className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </motion.div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     const tab = NAVIGATION.find(n => n.id === activeTab);
@@ -123,6 +214,9 @@ export function PrincipalPortal({ onLogout, adminData }: PortalProps) {
             </div>
           </div>
           <div className="flex items-center gap-6">
+            <button onClick={() => { setTutorialStep(0); setShowTutorial(true); }} className="w-10 h-10 rounded-xl bg-slate-800/50 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all">
+              <HelpCircle size={20} />
+            </button>
             <div className="relative cursor-pointer">{Icons.Bell('#94a3b8')}<span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span></div>
             <div className="flex items-center gap-3 border-l border-slate-700 pl-6">
               <div className="text-right hidden sm:block">
@@ -161,6 +255,7 @@ export function PrincipalPortal({ onLogout, adminData }: PortalProps) {
             </motion.div>
           </AnimatePresence>
         </div>
+        <TutorialOverlay />
       </main>
     </div>
   );
