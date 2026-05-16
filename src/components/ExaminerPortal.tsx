@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -5,14 +6,14 @@ import {
   Eye, PenLine, Award, LogOut, RefreshCw, X, Plus,
   Search, CheckCircle, AlertCircle, Clock, Users,
   Menu, ChevronRight, Shield, BookOpen, BarChart2, History,
-  Upload, UserSquare, UserCheck, Inbox, Printer, Trash2, Megaphone, FileImage, Download
+  Upload, UserSquare, UserCheck, Inbox, Printer, Trash2, Megaphone, FileImage, Download, Bell, Shuffle, Sparkles
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { BRANDING, LOGO_BASE64 } from '../lib/constants';
 
 interface Props {
   onLogout: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }
 
 const ACCENT   = '#4F46E5';
@@ -20,25 +21,27 @@ const GRADIENT = 'linear-gradient(135deg,#4F46E5,#7C3AED)';
 
 const PKR = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 
-type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results' | 'upload' | 'rollslips' | 'dutychart' | 'paperperforma' | 'reportcards';
+type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results' | 'upload' | 'rollslips' | 'paperperforma' | 'reportcards' | 'communicate';
 
 const TABS = [
   { id: 'dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'schedules',      label: 'Exam Schedules', icon: Calendar },
   { id: 'seating',        label: 'Seating Plans',  icon: Armchair },
-  { id: 'invigilation',   label: 'Invigilation',   icon: Eye },
   { id: 'grades',         label: 'Grade Entry',    icon: PenLine },
   { id: 'results',        label: 'Result Cards',   icon: Award },
   { id: 'upload',         label: 'Upload Docs',    icon: Upload },
   { id: 'rollslips',      label: 'Roll No Slips',  icon: UserSquare },
-  { id: 'dutychart',      label: 'Duty Chart',     icon: UserCheck },
   { id: 'paperperforma',  label: 'Paper Performa', icon: Inbox },
   { id: 'reportcards',    label: 'Report Cards',   icon: Printer },
+  { id: 'communicate',    label: 'Communicate',    icon: Megaphone },
 ];
 
-const EXAM_TYPES = ['Mid-Term','Final','Unit Test','Mock','Board','Chapter Test','Quiz','Assignment'];
-const PROGRAMS   = ['ICS Physics','ICS Statistics','Pre-Medical','Pre-Engineering','FA IT','FA General','I.Com'];
-const ROOMS      = ['Room 101','Room 102','Room 103','Room 201','Room 202','Room 203','Hall A','Hall B','Lab 1','Lab 2'];
+const EXAM_TYPES = ['Sendup 1', 'Sendup 2', 'Class Test', 'Monthly Test', 'Pre-Board', 'Phases'];
+const SUBJECTS = ['Islamiyat','English','Urdu','Physics','Chemistry','Biology','Mathematics','Computer','Statistics','Education','Civics','POE','POC','Economics','Accounts'];
+const SYLLABUS_COVERAGE = ['40%', '80%'];
+const PROGRAMS   = ['ICS Physics', 'ICS Statistics', 'Pre-Medical', 'Pre-Engineering', 'FA IT', 'FA General', 'I.Com'];
+const ROOMS      = ['Room 101', 'Room 102', 'Room 103', 'Room 201', 'Room 202', 'Room 203', 'Hall A', 'Hall B', 'Lab 1', 'Lab 2'];
+const CAMPUSES   = ['Boys Campus', 'Girls Campus'];
 
 const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' ');
 
@@ -96,6 +99,8 @@ const SubTabs = ({ tabs, active, onChange, accent }: { tabs: { id: string; label
 
 export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [tab,      setTab]      = useState<Tab>('dashboard');
+  const [activeSession, setActiveSession] = useState<string>(''); // Active Session Name
+  const [sessionList, setSessionList]     = useState<any[]>([]);
   const [sideOpen, setSideOpen] = useState(false);
 
   const [schedules,    setSchedules]    = useState<any[]>([]);
@@ -115,9 +120,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showNotifs,    setShowNotifs]    = useState(false);
+  const [selectedNotif, setSelectedNotif] = useState<any>(null);
   const [examTab,      setExamTab]      = useState('list');
+  const [comTab,       setComTab]       = useState('notify');
+  const [aiProcessing, setAiProcessing] = useState(false);
   const [examMarks,    setExamMarks]    = useState<any[]>([]);
   const [selectedExam, setSelectedExam] = useState('');
+  const [selectedSchedule, setSelectedSchedule] = useState('');
+  const [girlsClassrooms, setGirlsClassrooms] = useState(10);
+  const [boysClassrooms, setBoysClassrooms] = useState(10);
+  const [roomCapacity, setRoomCapacity] = useState(30);
 
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
@@ -126,7 +138,21 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [search,  setSearch]  = useState('');
   const [studentSearch, setStudentSearch] = useState({ name: '', roll: '', class: '' });
 
-  const [schedForm, setSchedForm] = useState<any>({ title: '', exam_type: 'Mid-Term', session: '2026-28', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
+  const [schedForm, setSchedForm] = useState<any>({ 
+    title: '', 
+    exam_type: 'Monthly Test', 
+    session: '2026-28', 
+    program: '', 
+    part: 1, 
+    class_section: '', 
+    start_date: '', 
+    end_date: '', 
+    status: 'Upcoming',
+    syllabus_coverage: '',
+    subjectDates: {},
+    schedStep: 1,
+    total_marks: 100
+  });
   const [examForm,  setExamForm]  = useState<any>({ title: '', class_section: '', subject: '', date: '', total_marks: 100, exam_type: 'Chapter Test', chapter_name: '', teacher_id: '' });
   const [seatForm,  setSeatForm]  = useState<any>({ exam_name: '', student_roll: '', room_no: '', seat_no: '', date: '', class_name: '', full_name: '' });
   const [invigiForm,setInvigiForm]= useState<any>({ exam_name: '', teacher_name: '', class_name: '', room_no: '', exam_date: '' });
@@ -138,90 +164,115 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3500); };
 
+  const markAsRead = async (notif: any) => {
+    setSelectedNotif(notif);
+    setShowNotifs(false); 
+    if (notif.is_read) return;
+    try {
+      const { error } = await supabase.from('admin_notifications').update({ is_read: true }).eq('id', notif.id);
+      if (!error) {
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+    } catch (err) {}
+  };
+
+  const deleteNotif = async (id: number) => {
+    try {
+      const { error } = await supabase.from('admin_notifications').delete().eq('id', id);
+      if (error) throw error;
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      showToast('Notification deleted');
+    } catch (err: any) {
+      showToast(err.message || 'Delete failed', false);
+    }
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAiProcessing(true);
+    try {
+      const reader = new FileReader();
+      const loadPromise = new Promise((resolve, reject) => {
+        reader.onload = resolve;
+        reader.onerror = reject;
+      });
+      reader.readAsBinaryString(file);
+      const evt: any = await loadPromise;
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+
+      showToast(`🤖 Claude AI is processing ${data.length} records...`);
+      await new Promise(r => setTimeout(r, 2000));
+
+      const notif = {
+        title: 'Exam Data Updated via Excel',
+        message: `Official exam records/results for session ${activeSession} have been updated via Claude AI's automated processor.`,
+        sender: 'Claude AI',
+        target_role: 'all',
+        target: 'ALL',
+        broadcast_type: 'all',
+        type: 'urgent',
+        is_read: false,
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase.from('admin_notifications').insert([notif]);
+      if (error) throw error;
+
+      showToast(`✅ Claude AI processed and notified all users!`);
+      loadAll();
+    } catch (err: any) {
+      showToast(err.message || 'Processing failed', false);
+    } finally {
+      setAiProcessing(false);
+    }
+  };
+
   const loadAll = useCallback(async () => {
     setLoading(true);
+    // 1. Fetch sessions first to determine active session
+    const { data: sessList } = await supabase.from('academic_sessions').select('*').order('created_at', { ascending: false });
+    setSessionList(sessList || []);
+
+    let currentSess = activeSession;
+    if (!currentSess && sessList?.length) {
+      const active = sessList.find(s => s.is_active) || sessList[0];
+      currentSess = active.name;
+      setActiveSession(currentSess);
+    }
+
     const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }, { data: an }] = await Promise.all([
-      supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
-      supabase.from('exams').select('*').order('date', { ascending: false }),
-      supabase.from('exam_seating').select('*').order('created_at', { ascending: false }),
-      supabase.from('exam_invigilation').select('*').order('created_at', { ascending: false }),
-      supabase.from('result_cards').select('*').order('generated_at', { ascending: false }),
-      supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(1000),
-      supabase.from('students').select('roll_no,full_name,class_section,program,part').neq('status', 'Deleted').order('roll_no'),
+      supabase.from('exam_schedule').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
+      supabase.from('exams').select('*').eq('session', currentSess).order('date', { ascending: false }),
+      supabase.from('exam_seating').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
+      supabase.from('exam_invigilation').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
+      supabase.from('result_cards').select('*').eq('session', currentSess).order('generated_at', { ascending: false }),
+      supabase.from('grades').select('*').eq('session', currentSess).order('created_at', { ascending: false }).limit(1000),
+      supabase.from('students').select('*').eq('session', currentSess).neq('status', 'Deleted').order('roll_no'),
       supabase.from('teachers').select('id,full_name,designation,subject_dept').order('full_name'),
       supabase.from('admin_users').select('id,full_name,role').order('full_name'),
-      supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Examiner},visible_to.cs.{All}`).eq('is_active', true).order('created_at', { ascending: false }).limit(6),
-      supabase.from('roll_number_slips').select('*').order('generated_at', { ascending: false }),
-      supabase.from('duty_chart').select('*').order('exam_date', { ascending: false }),
-      supabase.from('paper_receiving_performa').select('*').order('created_at', { ascending: false }),
+      supabase.from('uploaded_documents').select('*').or(`visible_to.cs.{Examiner},visible_to.cs.{All}`).eq('is_active', true).eq('session', currentSess).order('created_at', { ascending: false }).limit(6),
+      supabase.from('roll_number_slips').select('*').eq('session', currentSess).order('generated_at', { ascending: false }),
+      supabase.from('duty_chart').select('*').eq('session', currentSess).order('exam_date', { ascending: false }),
+      supabase.from('paper_receiving_performa').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
       supabase.from('exam_notifications').select('*').order('created_at', { ascending: false }),
       supabase.from('admin_notifications').select('*').in('target', ['ALL', 'Examiner', 'EXAMINER', adminData.username]).order('created_at', { ascending: false }).limit(30),
     ]);
 
-    setUploadedDocs(ud || []); setRollSlips(rs || []); setDutyChart(dc || []); setPerformaList(pl || []); setExamNotifs(en || []);
+    setSchedules(sc || []); setExams(ex || []); setSeating(se || []); setInvigilation(iv || []);
+    setResults(rc || []); setGrades(gr || []); setStudents(st || []); setTeachers(tc || []);
+    setAdminUsers(au || []); setUploadedDocs(ud || []); setRollSlips(rs || []); setDutyChart(dc || []);
+    setPerformaList(pl || []); setExamNotifs(en || []);
     setNotifications(an || []); setUnreadCount((an || []).filter((n: any) => !n.is_read).length);
 
-    let scData = sc || [];
-    let grData = gr || [];
-    let stData = st || [];
-    let exData = ex || [];
-    let rcData = rc || [];
-
-    // Add Sample Students if empty
-    if (stData.length === 0) {
-      stData = [
-        { roll_no: 2628001, full_name: 'Ahmed Ali', class_section: '10th-A', program: 'Science', part: 1 },
-        { roll_no: 2628002, full_name: 'Fatima Zahra', class_section: '10th-B', program: 'Arts', part: 1 },
-        { roll_no: 2628003, full_name: 'Muhammad Umar', class_section: '9th-A', program: 'Science', part: 1 },
-        { roll_no: 2628004, full_name: 'Zainab Bibi', class_section: '9th-B', program: 'Arts', part: 1 },
-        { roll_no: 2628005, full_name: 'Ali Raza', class_section: '10th-A', program: 'Science', part: 1 },
-      ];
-    }
-
-    // Add Sample Data if empty
-    if (scData.length === 0) {
-      scData = [
-        { id: 9991, title: 'Final Exams 2026', exam_type: 'Final', program: 'Pre-Medical', part: 1, session: '2025-26', start_date: '2026-05-10', end_date: '2026-05-25', status: 'Upcoming', class_section: 'PRE-MED-I A' },
-        { id: 9992, title: 'Send-up Exams Q2', exam_type: 'Mock', program: 'ICS Physics', part: 2, session: '2025-26', start_date: '2026-04-15', end_date: '2026-04-22', status: 'Ongoing', class_section: 'ICS-II B' }
-      ];
-    }
-
-    if (grData.length === 0 && stData.length > 0) {
-      grData = stData.map((s, i) => ({
-        id: 8881 + i,
-        student_roll: s.roll_no,
-        chapter_name: i % 2 === 0 ? 'Chapter 1 Assessment' : 'Monthly Test',
-        subject: i % 2 === 0 ? 'Physics' : 'Mathematics',
-        score: Math.floor(Math.random() * 40) + 60,
-        total_marks: 100,
-        percentage: (Math.random() * 30 + 70).toFixed(2),
-        grade_letter: i % 3 === 0 ? 'A+' : i % 3 === 1 ? 'A' : 'B',
-        is_verified: i < 3,
-        entered_by: 'Teacher A',
-        created_at: new Date().toISOString()
-      }));
-    }
-
-    if (rcData.length === 0 && stData.length > 0) {
-      rcData = stData.map((s, i) => ({
-        id: 7771 + i,
-        student_roll: s.roll_no,
-        exam_schedule_id: 9992,
-        total_marks: 500,
-        obtained_marks: Math.floor(Math.random() * 100) + 380,
-        percentage: (Math.random() * 20 + 80).toFixed(2),
-        grade: i % 3 === 0 ? 'A+' : i % 3 === 1 ? 'A' : 'B',
-        is_published: i < 3,
-        generated_at: new Date().toISOString(),
-        published_at: i < 3 ? new Date().toISOString() : null
-      }));
-    }
-
-    setSchedules(scData); setExams(exData); 
-    setSeating(se || []); setInvigilation(iv || []); setResults(rcData);
-    setGrades(grData); setStudents(stData); setTeachers(tc || []); setAdminUsers(au || []);
     setLoading(false);
-  }, [adminData.full_name]);
+  }, [activeSession, adminData.username]);
+
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -248,15 +299,80 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   };
 
   const saveSchedule = async () => {
-    if (!schedForm.title || !schedForm.start_date) { showToast('Title and start date required', false); return; }
+    const filled = Object.entries(schedForm.subjectDates as Record<string,string>).filter(([,d])=>!!d);
+    if (!schedForm.title) { showToast('Title required', false); return; }
+    if (filled.length === 0) { showToast('Set at least one subject date', false); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from('exam_schedule').insert([{ ...schedForm, created_by: adminData.full_name }]);
+      const dates = filled.map(([,d])=>d).sort();
+      const { data: newSched, error } = await supabase.from('exam_schedule').insert([{
+        title: schedForm.title, exam_type: schedForm.exam_type, session: schedForm.session,
+        program: schedForm.program, part: schedForm.part, class_section: schedForm.class_section,
+        start_date: dates[0], end_date: dates[dates.length-1], status: 'Ongoing',
+        syllabus_coverage: schedForm.syllabus_coverage || null,
+        total_marks: schedForm.total_marks,
+        created_by: adminData.full_name,
+        subjects_list: filled.map(([sub,date])=>({subject:sub,date})),
+      }]).select().single();
       if (error) throw error;
-      showToast('Exam schedule created');
-      setSchedForm({ title: '', exam_type: 'Mid-Term', session: '2026-27', program: '', part: 1, class_section: '', start_date: '', end_date: '', status: 'Upcoming' });
+
+      // Automatically create Exams for each subject in the schedule
+      // This ensures they show up in Teachers portal Grading page
+      const examEntries = await Promise.all(filled.map(async ([subj, date]) => {
+        // Try to find a teacher for this subject
+        const { data: teacher } = await supabase
+          .from('teachers')
+          .select('id')
+          .ilike('subject_dept', `%${subj}%`)
+          .limit(1)
+          .single();
+
+        return {
+          title: `${schedForm.title} - ${subj}`,
+          exam_type: schedForm.exam_type,
+          subject: subj,
+          class_section: schedForm.class_section,
+          date: date,
+          total_marks: schedForm.total_marks,
+          exam_schedule_id: newSched.id,
+          session: schedForm.session,
+          status: 'Ongoing',
+          grading_status: 'Pending',
+          teacher_id: teacher?.id || null,
+          created_by: adminData.full_name
+        };
+      }));
+
+      if (examEntries.length > 0) {
+        await supabase.from('exams').insert(examEntries);
+      }
+
+      await supabase.from('exam_subject_dates').insert(
+        filled.map(([subject, exam_date]) => ({ exam_schedule_id: newSched.id, subject, exam_date }))
+      );
+
+      // Broadcast to all admin portals
+      const dateLines = filled.sort(([,a],[,b])=>a.localeCompare(b))
+        .map(([sub,date])=>`• ${sub}: ${new Date(date).toLocaleDateString('en-PK',{weekday:'short',day:'2-digit',month:'short'})}`)
+        .join('\n');
+      const notifTitle = `📋 Exam Schedule: ${schedForm.title}`;
+      const notifMsg = `${schedForm.exam_type} dates have been set for ${schedForm.class_section}:\n${dateLines}\nTotal Marks: ${schedForm.total_marks}`;
+      const TARGETS = ['Director','VP','Principal','Registrar','Examiner','Academics','Admin','Accountant','ALL'];
+      await supabase.from('admin_notifications').insert(
+        TARGETS.map(target=>({ title:notifTitle, message:notifMsg, target, target_role:target.toLowerCase(), type:'exam_schedule', item_id: newSched.id, is_read:false, sender:adminData.full_name, category:'Exam', status:'Unread' }))
+      );
+      const { data: allTeachers } = await supabase.from('teachers').select('id');
+      if (allTeachers?.length) await supabase.from('teacher_messages').insert(allTeachers.map((t:any)=>({ teacher_id:t.id, sender:adminData.full_name, title:notifTitle, message:notifMsg, type:'exam_schedule', item_id: newSched.id, is_read:false })));
+      const { data: allStudents } = await supabase.from('students').select('roll_no').eq('class_section', schedForm.class_section).neq('status','Deleted');
+      if (allStudents?.length) {
+        for (let i=0;i<allStudents.length;i+=100)
+          await supabase.from('notifications').insert(allStudents.slice(i,i+100).map((s:any)=>({ target_user_id:String(s.roll_no), target_role:'STUDENT', title:notifTitle, message:notifMsg, type:'exam_schedule', item_id: newSched.id, is_read:false })));
+      }
+
+      showToast('✅ Schedule created, Exams auto-generated & all notified!');
+      setSchedForm({ title:'', exam_type:'Monthly Test', session:'2026-28', program:'', part:1, class_section:'', start_date:'', end_date:'', status:'Upcoming', syllabus_coverage:'', subjectDates:{}, schedStep:1, total_marks: 100 });
       setModal(null); loadAll();
-    } catch (e: any) { showToast(e.message, false); }
+    } catch (e:any) { showToast(e.message, false); }
     finally { setSaving(false); }
   };
 
@@ -402,7 +518,11 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         is_read: false
       }]);
 
-      showToast('Grade verified and student notified');
+      // Award XP to student
+const xpToAdd = Math.round((grade.score / grade.total_marks) * 100 * 10);
+const newBadge = xpToAdd >= 900 ? '🥇 Gold Scholar' : xpToAdd >= 700 ? '🥈 Silver Mind' : xpToAdd >= 500 ? '🥉 Bronze Learner' : '⭐ Rising Star';
+await supabase.rpc('increment_student_xp', { p_roll: grade.student_roll, p_xp: xpToAdd });
+showToast('Grade verified and student notified');
       
       // Update result_card status for this student/exam/subject
       await supabase.from('result_cards').update({ 
@@ -413,6 +533,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         exam_name: grade.chapter_name, 
         subject: grade.subject 
       });
+
+      // Award XP to student
+      const xpEarned = Math.round((Number(grade.percentage) || 0) * 10);
+      const student = students.find(s => s.roll_no === grade.student_roll);
+      if (student) {
+        const newXp = (student.total_xp || 0) + xpEarned;
+        await supabase.from('students').update({ total_xp: newXp }).eq('roll_no', grade.student_roll);
+      }
 
       loadAll();
       
@@ -581,29 +709,159 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     if (!perfForm.teacher_id || !perfForm.subject) { showToast('Complete performa form', false); return; }
     setSaving(true);
     try {
+      const selectedTeacher = teachers.find(t => String(t.id) === String(perfForm.teacher_id));
       const { error } = await supabase.from('paper_receiving_performa').insert([{
         teacher_id: Number(perfForm.teacher_id),
+        teacher_name: selectedTeacher?.full_name || '',
         subject: perfForm.subject,
         class_section: perfForm.class_section,
-        exam_date: perfForm.exam_date,
-        bundle_count: perfForm.bundle_count,
-        status: 'Pending'
+        exam_date: perfForm.exam_date || null,
+        due_date: perfForm.due_date || null,
+        bundle_count: Number(perfForm.bundle_count) || 0,
+        status: 'Pending',
+        created_by: adminData.full_name,
+        session: activeSession
       }]);
       if (error) throw error;
 
-      await supabase.from('exam_notifications').insert([{
-        teacher_id: Number(perfForm.teacher_id),
-        title: 'Paper Performa Required',
-        message: `Please submit paper performa for ${perfForm.subject} on ${perfForm.exam_date}.`,
-        type: 'PERFORMA',
-        is_read: false
+      // Notify Teacher via standard notifications table
+      await supabase.from('notifications').insert([{
+        title: '📄 Paper Performa Request',
+        message: `Please submit paper performa for ${perfForm.subject} (${perfForm.class_section}) on ${perfForm.exam_date || 'TBD'}. Due: ${perfForm.due_date || 'N/A'}.`,
+        target_user_id: Number(perfForm.teacher_id),
+        target_role: 'TEACHER',
+        type: 'performa_request',
+        is_read: false,
+        sender: adminData.full_name,
       }]);
 
       showToast('Performa request sent to teacher');
-      setPerfForm({ teacher_id: '', subject: '', class_section: '', exam_date: '', bundle_count: 0 });
+      setPerfForm({ teacher_id: '', subject: '', class_section: '', exam_date: '', due_date: '', bundle_count: 0 });
       loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
+  };
+
+  const finalizeSchedule = async (id: string) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('exam_schedule').update({ status: 'Published' }).eq('id', id);
+      if (error) throw error;
+      
+      const sched = schedules.find(s => s.id === id);
+      
+      // Notify All Students
+      const studentNotifs = students.map(s => ({
+        user_id: s.id,
+        title: 'New Exam Schedule Published!',
+        message: `Schedule for ${sched?.title} is now available. Check your exam portal.`,
+        is_read: false,
+        type: 'exam'
+      }));
+      
+      // Notify All Teachers
+      const teacherNotifs = teachers.map(t => ({
+        user_id: t.id,
+        title: 'New Exam Schedule!',
+        message: `${sched?.title} schedule has been released. Review your invigilation duties.`,
+        is_read: false,
+        type: 'exam'
+      }));
+      
+      // Notify Admin, Director, VP, Accountant
+      const systemNotifs = [
+        { title: 'Schedule Published', message: `Exam schedule: ${sched?.title} has been finalized.`, target: 'Admin' },
+        { title: 'Schedule Published', message: `Exam schedule: ${sched?.title} has been finalized.`, target: 'Director' },
+        { title: 'Schedule Published', message: `Exam schedule: ${sched?.title} has been finalized.`, target: 'VP' },
+        { title: 'Schedule Published', message: `Exam schedule: ${sched?.title} has been finalized.`, target: 'Accountant' }
+      ].map(n => ({
+        title: n.title,
+        message: n.message,
+        status: 'Unread',
+        category: 'Exam',
+        target: n.target
+      }));
+
+      await Promise.all([
+        supabase.from('notifications').insert([...studentNotifs, ...teacherNotifs]),
+        supabase.from('admin_notifications').insert(systemNotifs)
+      ]);
+
+      setSchedules(schedules.map(s => s.id === id ? { ...s, status: 'Published' } : s));
+      showToast('Schedule finalized and notifications sent!', true);
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shuffleStudents = async () => {
+    if (!selectedExam) return;
+    setSaving(true);
+    try {
+      const sched = schedules.find(s => String(s.id) === selectedExam);
+      if (!sched) throw new Error("Schedule not found.");
+
+      let targetStudents = students;
+      if (sched.program && sched.program.trim() !== '') targetStudents = targetStudents.filter(s => s.program === sched.program);
+      if (sched.part) targetStudents = targetStudents.filter(s => Number(s.part) === Number(sched.part));
+
+      if (!targetStudents.length) throw new Error("No students found for this schedule criteria.");
+
+      await supabase.from('exam_seating').delete().eq('exam_name', sched.title);
+
+      const shuffled = [...targetStudents].sort(() => Math.random() - 0.5);
+      const boys = shuffled.filter(s => s.gender === 'Boy' || s.gender?.toLowerCase() === 'male' || !s.gender); 
+      const girls = shuffled.filter(s => s.gender === 'Girl' || s.gender?.toLowerCase() === 'female');
+
+      const assignments: any[] = [];
+      let boyIdx = 0;
+      for (let r = 1; r <= boysClassrooms; r++) {
+        if (boyIdx >= boys.length) break;
+        for (let s = 1; s <= roomCapacity; s++) {
+          if (boyIdx >= boys.length) break;
+          assignments.push({
+            student_roll: boys[boyIdx].roll_no,
+            room_no: `Room B-${r}`,
+            seat_no: `BS-${s}`,
+            exam_name: sched.title,
+            student_name: boys[boyIdx].full_name,
+            campus: 'Boys Campus',
+            date: sched.start_date
+          });
+          boyIdx++;
+        }
+      }
+
+      let girlIdx = 0;
+      for (let r = 1; r <= girlsClassrooms; r++) {
+        if (girlIdx >= girls.length) break;
+        for (let s = 1; s <= roomCapacity; s++) {
+          if (girlIdx >= girls.length) break;
+          assignments.push({
+            student_roll: girls[girlIdx].roll_no,
+            room_no: `Room G-${r}`,
+            seat_no: `GS-${s}`,
+            exam_name: sched.title,
+            student_name: girls[girlIdx].full_name,
+            campus: 'Girls Campus',
+            date: sched.start_date
+          });
+          girlIdx++;
+        }
+      }
+
+      const { error } = await supabase.from('exam_seating').insert(assignments);
+      if (error) throw error;
+
+      await loadAll();
+      showToast(`Successfully shuffled ${assignments.length} students!`, true);
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveExam = async () => {
@@ -611,10 +869,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     setSaving(true);
     try {
       const { error } = await supabase.from('exams').insert([{ 
-        ...examForm, 
         title: examForm.title || `${examForm.subject} - ${examForm.exam_type}`,
+        subject: examForm.subject,
+        class_section: examForm.class_section,
+        date: examForm.date || null,
         total_marks: Number(examForm.total_marks),
-        created_by: adminData.full_name 
+        exam_type: examForm.exam_type,
+        chapter_name: examForm.chapter_name || '',
+        teacher_id: examForm.teacher_id ? Number(examForm.teacher_id) : null,
+        session: activeSession || '2026-28',
+        created_by: adminData.full_name,
       }]);
       if (error) throw error;
       showToast('Exam created successfully');
@@ -663,10 +927,86 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     showToast(`Schedule marked as ${status}`); loadAll();
   };
 
+  const printSchedule = (id: string) => {
+    const sched = schedules.find(s => s.id === id);
+    const schedExams = exams.filter(e => e.class_section === sched?.class_section);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow || !sched) return;
+
+    const content = `
+      <html>
+        <head>
+          <title>Exam Schedule - ${sched.title}</title>
+          <style>
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
+            .header { text-align: center; margin-bottom: 40px; }
+            .logo { height: 60px; margin-bottom: 15px; }
+            .title { font-size: 24px; font-weight: 900; color: #1e1b4b; margin: 0; text-transform: uppercase; }
+            .subtitle { color: #64748b; font-weight: 700; font-size: 14px; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 30px; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+            th, td { border: 1px solid #f1f5f9; padding: 15px; text-align: left; }
+            th { background: #4f46e5; color: white; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; font-weight: 900; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .subject { font-weight: 900; color: #4f46e5; }
+            .time { font-weight: 700; color: #64748b; }
+            .campus { color: #059669; font-weight: 800; font-size: 11px; text-transform: uppercase; }
+            .footer { margin-top: 50px; display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; }
+            .sign { border-top: 1px solid #e2e8f0; width: 200px; text-align: center; padding-top: 10px; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <img src="${LOGO_BASE64}" class="logo" />
+            <h1 class="title">${BRANDING.name}</h1>
+            <p class="subtitle">Official Examination Schedule: ${sched.title} (${sched.session})</p>
+          </div>
+          <div style="background: #f1f5f9; padding: 15px; border-radius: 12px; font-size: 13px; margin-bottom: 20px;">
+            <strong>Program:</strong> ${sched.program} | <strong>Part:</strong> ${sched.part} | <strong>Exam Type:</strong> ${sched.exam_type}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Subject</th>
+                <th>Shift / Time</th>
+                <th>Venue / Campus</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${schedExams.length ? schedExams.map(e => `
+                <tr>
+                  <td>${e.date}</td>
+                  <td class="subject">${e.subject}</td>
+                  <td class="time">Morning (09:00 AM)</td>
+                  <td class="campus">Main Campus - Multipurpose Hall</td>
+                </tr>
+              `).join('') : '<tr><td colspan="4" style="text-align: center; padding: 30px; color: #94a3b8;">No exam dates assigned to this schedule yet.</td></tr>'}
+            </tbody>
+          </table>
+          <div class="footer">
+            <div class="sign">Controller of Examinations</div>
+            <div class="sign">Principal Signature</div>
+          </div>
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
   const printSeatingPlan = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
+    // Group seating by room and class
+    const grouped = seating.reduce((acc: any, s: any) => {
+      const cls = s.class_name || students.find(x => x.roll_no === s.student_roll)?.class_section || 'Unknown';
+      if (!acc[cls]) acc[cls] = [];
+      acc[cls].push(s);
+      return acc;
+    }, {});
+
     const content = `
       <html>
         <head>
@@ -678,15 +1018,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             .logo { width: 80px; height: 80px; object-fit: contain; }
             .college-name { font-size: 32px; font-weight: 900; margin: 0; color: #1e1b4b; }
             .address { font-size: 12px; color: #64748b; margin-top: 5px; }
-            .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #4f46e5; padding-bottom: 20px; }
+            .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #ACCENT; padding-bottom: 20px; }
             h1 { margin: 0; color: #1e1b4b; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
             .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; font-weight: bold; color: #64748b; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .page-break { page-break-after: always; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 40px; }
             th, td { border: 1px solid #e2e8f0; padding: 12px 15px; text-align: left; }
             th { background-color: #f8fafc; font-weight: 800; font-size: 11px; text-transform: uppercase; color: #475569; }
             td { font-size: 13px; font-weight: 500; }
+            .class-title { font-size: 18px; font-weight: 900; color: #4f46e5; margin-top: 30px; text-transform: uppercase; border-left: 5px solid #4f46e5; padding-left: 15px; }
             .footer { margin-top: 50px; text-align: right; font-size: 12px; font-style: italic; color: #94a3b8; }
-            @media print { .no-print { display: none; } }
           </style>
         </head>
         <body>
@@ -697,40 +1038,65 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             </div>
             <p class="address">${BRANDING.address} | ${BRANDING.phone}</p>
           </div>
-          <div class="header">
-            <p style="margin: 5px 0 0; font-weight: bold; color: #4f46e5;">Official Examination Seating Plan</p>
-            <div class="meta">
-              <span>Date: ${new Date().toLocaleDateString('en-PK')}</span>
-              <span>Total Students: ${seating.length}</span>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Seat No</th>
-                <th>Room</th>
-                <th>Roll No</th>
-                <th>Student Name</th>
-                <th>Class/Section</th>
-                <th>Exam/Subject</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${seating.map(s => {
-                const st = students.find(x => x.roll_no === s.student_roll);
-                return `
-                  <tr>
-                    <td style="font-weight: 900; color: #4f46e5;">${s.seat_no}</td>
-                    <td>${s.room}</td>
-                    <td>${s.student_roll}</td>
-                    <td style="font-weight: 700;">${st?.full_name || '—'}</td>
-                    <td>${st?.class_section || '—'}</td>
-                    <td>${s.exam_name || s.subject}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
+          
+          ${Object.entries(grouped).map(([cls, list]: [string, any]) => {
+            const boys = list.filter((s: any) => s.campus === 'Boys Campus');
+            const girls = list.filter((s: any) => s.campus === 'Girls Campus');
+            
+            return `
+              <div class="class-section">
+                <h2 class="class-title">CLASS: ${cls}</h2>
+                <div class="meta">
+                  <span>Total Students: ${list.length}</span>
+                  <span>Date: ${new Date().toLocaleDateString('en-PK')}</span>
+                </div>
+
+                ${boys.length > 0 ? `
+                  <h3 style="font-size: 14px; color: #3b82f6; margin-top: 20px; text-transform: uppercase;">BOYS SECTION</h3>
+                  <table>
+                    <thead>
+                      <tr><th>Seat No</th><th>Room</th><th>Roll No</th><th>Student Name</th><th>Campus</th></tr>
+                    </thead>
+                    <tbody>
+                      ${boys.map((s: any) => `
+                        <tr>
+                          <td style="font-weight: 900; color: #3b82f6;">${s.seat_no}</td>
+                          <td>${s.room_no}</td>
+                          <td>${s.student_roll}</td>
+                          <td style="font-weight: 700;">${s.student_name}</td>
+                          <td>${s.campus}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                ` : ''}
+
+                <div class="page-break"></div>
+
+                ${girls.length > 0 ? `
+                  <h3 style="font-size: 14px; color: #ec4899; margin-top: 20px; text-transform: uppercase;">GIRLS SECTION</h3>
+                  <table>
+                    <thead>
+                      <tr><th>Seat No</th><th>Room</th><th>Roll No</th><th>Student Name</th><th>Campus</th></tr>
+                    </thead>
+                    <tbody>
+                      ${girls.map((s: any) => `
+                        <tr>
+                          <td style="font-weight: 900; color: #ec4899;">${s.seat_no}</td>
+                          <td>${s.room_no}</td>
+                          <td>${s.student_roll}</td>
+                          <td style="font-weight: 700;">${s.student_name}</td>
+                          <td>${s.campus}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                  <div class="page-break"></div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+
           <div class="footer">
             Generated by ${adminData.full_name} • ${BRANDING.name} Examination Department
           </div>
@@ -752,6 +1118,12 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     const total = stGrades.reduce((sum: number, g: any) => sum + (g.total_marks || 0), 0);
     const pct = total > 0 ? (obtained / total * 100).toFixed(1) : '0';
     const finalGrade = getGradeLetter(obtained, total);
+    
+    // Calculate Rank in Class
+    const classStudents = students.filter(s => s.class_section === student.class_section);
+    const sortedStudents = [...classStudents].sort((a, b) => (b.total_xp || 0) - (a.total_xp || 0));
+    const rank = sortedStudents.findIndex(s => s.roll_no === student.roll_no) + 1;
+    const totalXp = student.total_xp || 0;
 
     const content = `
       <html>
@@ -766,15 +1138,16 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             .school-name { font-size: 28px; font-weight: 900; color: #1e1b4b; margin: 0; }
             .address { font-size: 11px; color: #64748b; margin-top: 5px; }
             .title { font-size: 16px; font-weight: 700; color: #4f46e5; margin-top: 10px; text-transform: uppercase; letter-spacing: 2px; }
-            .student-info { display: flex; justify-content: gap; margin-bottom: 30px; font-size: 14px; }
-            .info-item { flex: 1; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
+            .student-info { display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 14px; flex-wrap: wrap; }
+            .info-item { flex: 1; min-width: 200px; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
             .label { font-size: 10px; font-weight: 900; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
             .value { font-weight: 700; color: #1e293b; }
+            .xp-badge { display: inline-block; background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; padding: 2px 8px; rounded: 4px; margin-left: 8px; font-size: 10px; }
             table { width: 100%; border-collapse: collapse; margin: 20px 0; }
             th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
             th { background: #f8fafc; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; }
             .summary { margin-top: 30px; display: flex; justify-content: flex-end; }
-            .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; width: 250px; border-radius: 10px; }
+            .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; width: 280px; border-radius: 10px; }
             .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
             .final-total { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 10px; font-weight: 900; font-size: 18px; color: #4f46e5; }
           </style>
@@ -787,27 +1160,33 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 <h1 class="school-name">${BRANDING.name}</h1>
               </div>
               <p class="address">${BRANDING.address} | ${BRANDING.phone}</p>
-              <p class="title">OFFICIAL RESULT CARD</p>
+              <p class="title">OFFICIAL REPORT CARD</p>
             </div>
             <div class="student-info">
               <div class="info-item"><div class="label">Candidate Name</div><div class="value">${student.full_name}</div></div>
               <div class="info-item"><div class="label">Roll Number</div><div class="value">${student.roll_no}</div></div>
               <div class="info-item"><div class="label">Class/Section</div><div class="value">${student.class_section}</div></div>
+              <div class="info-item"><div class="label">Class Rank</div><div class="value">#${rank} <span class="xp-badge">${totalXp} Total XP</span></div></div>
             </div>
             <table>
               <thead>
-                <tr><th>Subject / Topic</th><th>Obtained</th><th>Total</th><th>Percentage</th><th>Grade</th></tr>
+                <tr><th>Subject / Chapter</th><th>Obtained</th><th>Total</th><th>% Age</th><th>Grade</th><th>XP Earned</th></tr>
               </thead>
               <tbody>
-                ${stGrades.map((g: any) => `
-                  <tr>
-                    <td>${g.chapter_name} (${g.subject})</td>
-                    <td>${g.score}</td>
-                    <td>${g.total_marks}</td>
-                    <td>${Number(g.percentage).toFixed(1)}%</td>
-                    <td style="font-weight: 900;">${g.grade_letter}</td>
-                  </tr>
-                `).join('')}
+                ${stGrades.map((g: any) => {
+                  const gPct = g.total_marks > 0 ? (g.score / g.total_marks * 100) : 0;
+                  const gXp = Math.round(gPct * 10);
+                  return `
+                    <tr>
+                      <td>${g.chapter_name} (${g.subject})</td>
+                      <td>${g.score}</td>
+                      <td>${g.total_marks}</td>
+                      <td>${gPct.toFixed(1)}%</td>
+                      <td style="font-weight: 900;">${g.grade_letter}</td>
+                      <td style="font-weight: 900; color: #d97706;">+${gXp} XP</td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
             <div class="summary">
@@ -1082,6 +1461,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Session Selector */}
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Session</span>
+              <select value={activeSession} onChange={e=>setActiveSession(e.target.value)}
+                className="bg-transparent border-none text-xs font-black text-slate-700 outline-none cursor-pointer">
+                {sessionList.map(s=><option key={s.id} value={s.name}>{s.name} {s.is_active?'(Active)':''}</option>)}
+              </select>
+            </div>
             <button onClick={() => setShowNotifs(true)} className="relative w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100">
               <Megaphone size={14} />
               {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">{unreadCount}</span>}
@@ -1184,7 +1571,6 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   {[
                     { label: 'View Exams',       icon: BookOpen,   action: () => setTab('exams') },
                     { label: 'Assign Seats',     icon: Armchair,   action: () => setTab('seating') },
-                    { label: 'Assign Duties',    icon: Eye,        action: () => setTab('invigilation') },
                     { label: 'Enter Grades',     icon: PenLine,    action: () => { setTab('grades'); setModal('grade'); } },
                   ].map(({ label, icon: Icon, action }) => (
                     <motion.button key={label} onClick={action} whileTap={{ scale: 0.97 }}
@@ -1241,6 +1627,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                           {s.status === 'Ongoing' && (
                             <button onClick={() => updateScheduleStatus(s.id, 'Completed')} className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Complete</button>
                           )}
+                          {s.status !== 'Published' && (
+                            <button disabled={saving} onClick={() => finalizeSchedule(s.id).then(() => printSchedule(s.id))} className="px-3 py-1.5 rounded-xl text-xs font-black bg-rose-50 text-rose-600 border border-rose-200 flex items-center gap-1">
+                              <Bell size={12} /> Finalize & Notify
+                            </button>
+                          )}
+                          <button onClick={() => printSchedule(s.id)} className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1">
+                             <Printer size={12} /> Print
+                          </button>
                           <button disabled={saving} onClick={() => generateResultCards(s.id)} className="px-3 py-1.5 rounded-xl text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-200 disabled:opacity-50">Generate Results</button>
                           {results.filter(r => r.exam_schedule_id === s.id && !r.is_published).length > 0 && (
                             <button disabled={saving} onClick={() => publishResults(s.id)} className="px-3 py-1.5 rounded-xl text-xs font-black bg-purple-50 text-purple-700 border border-purple-200 disabled:opacity-50">Publish</button>
@@ -1479,29 +1873,68 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
-            {/* ══════════ SEATING PLANS (MANUAL) ══════════ */}
+            {/* ══════════ SEATING PLANS (ENHANCED) ══════════ */}
             {tab === 'seating' && (
-              <motion.div key="seating" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row gap-6">
-                   <div className="flex-1">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-black text-slate-900 flex items-center gap-2"><Search size={16} /> Filter Students</h3>
-                        {seating.length > 0 && (
-                          <button onClick={printSeatingPlan} className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-slate-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-50">
-                            <FileText size={14} /> Print Seating Plan
-                          </button>
-                        )}
+              <motion.div key="seating" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm">
+                   <div className="flex flex-col lg:flex-row justify-between gap-6 mb-8">
+                      <div className="space-y-1">
+                        <h3 className="text-xl font-black text-slate-900">Seating Automation & Controls</h3>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Randomly Shuffle Students across Available Rooms</p>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                         <FM label="Student Name"><TI placeholder="John Doe" value={studentSearch.name} onChange={e => setStudentSearch(p => ({ ...p, name: e.target.value }))} /></FM>
-                         <FM label="Roll Number"><TI placeholder="2628001" value={studentSearch.roll} onChange={e => setStudentSearch(p => ({ ...p, roll: e.target.value }))} /></FM>
-                         <FM label="Class Name"><TI placeholder="ICS-Phy-A" value={studentSearch.class} onChange={e => setStudentSearch(p => ({ ...p, class: e.target.value }))} /></FM>
+                      <div className="flex flex-wrap items-end gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <FM label="Seat Capacity"><TI type="number" value={roomCapacity} onChange={e => setRoomCapacity(Number(e.target.value))} className="w-20" /></FM>
+                        <FM label="Boys Rooms"><TI type="number" value={boysClassrooms} onChange={e => setBoysClassrooms(Number(e.target.value))} className="w-20" /></FM>
+                        <FM label="Girls Rooms"><TI type="number" value={girlsClassrooms} onChange={e => setGirlsClassrooms(Number(e.target.value))} className="w-20" /></FM>
+                        <div className="flex-1 min-w-[200px]">
+                          <FM label="Select Schedule Context">
+                            <TS value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
+                               <option value="">Select Schedule...</option>
+                               {schedules.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                            </TS>
+                          </FM>
+                        </div>
+                        <button onClick={shuffleStudents} disabled={saving || !selectedExam} className="px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-600/20 disabled:opacity-50" style={{ background: GRADIENT }}>
+                          <Shuffle size={14} className="inline mr-2" /> Shuffle Students
+                        </button>
+                        <button onClick={printSeatingPlan} className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-black text-slate-600 flex items-center gap-2 hover:bg-slate-100 transition-all">
+                          <Printer size={15} /> Export PDF
+                        </button>
                       </div>
                    </div>
                 </div>
 
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                   <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 text-xs font-black text-slate-400 uppercase tracking-widest">Student List (Assign Seating)</div>
+                   <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Active Seating Assignments</h3>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{seating.length} Seats Assigned</p>
+                   </div>
+                   <div className="overflow-x-auto max-h-[400px]">
+                      <table className="w-full text-sm">
+                         <thead className="sticky top-0 bg-white">
+                            <tr className="border-b border-slate-100">
+                               {['Student','Roll No','Room','Seat','Campus','Date'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}
+                            </tr>
+                         </thead>
+                         <tbody>
+                            {seating.map(s => (
+                               <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                  <td className="px-6 py-4 font-bold text-slate-700">{s.student_name || students.find(st => st.roll_no === s.student_roll)?.full_name || '—'}</td>
+                                  <td className="px-6 py-4 font-black" style={{ color: ACCENT }}>{s.student_roll}</td>
+                                  <td className="px-6 py-4"><Badge c="bg-slate-100 text-slate-700 border-slate-200" label={s.room_no} /></td>
+                                  <td className="px-6 py-4 font-mono text-indigo-600 font-bold">{s.seat_no}</td>
+                                  <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-tight">{s.campus}</td>
+                                  <td className="px-6 py-4 text-xs text-slate-400 font-medium">{s.date}</td>
+                               </tr>
+                            ))}
+                            {!seating.length && <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">No students assigned to seats yet. Use Shuffle or manual assignment.</td></tr>}
+                         </tbody>
+                      </table>
+                   </div>
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                   <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 text-xs font-black text-slate-400 uppercase tracking-widest">Student Roster (Manual Control)</div>
                    <div className="overflow-x-auto max-h-[600px]">
                       <table className="w-full text-sm">
                          <thead className="sticky top-0 bg-white">
@@ -1599,10 +2032,24 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             {tab === 'grades' && (
               <motion.div key="grades" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by roll no or subject…"
-                      className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-400 bg-white" />
+                  <div className="flex-[3] flex gap-3">
+                    <TS value={selectedExam} onChange={e => setSelectedExam(e.target.value)} className="flex-1">
+                      <option value="">Select Exam Group...</option>
+                      {exams.length > 0 ? exams.map(ex => (
+                        <option key={ex.id} value={ex.id}>
+                          {ex.title || `${ex.subject} - ${ex.exam_type}`} ({ex.class_section})
+                        </option>
+                      )) : <option disabled>No exams found</option>}
+                    </TS>
+                    <TS value={selectedSchedule} onChange={e => setSelectedSchedule(e.target.value)} className="flex-1">
+                      <option value="">Filter by Schedule...</option>
+                      {schedules.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                    </TS>
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by roll no..."
+                        className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-indigo-400 bg-white" />
+                    </div>
                   </div>
                   <motion.button whileTap={{ scale: 0.97 }} onClick={() => setModal('grade')}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
@@ -2014,69 +2461,14 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               </motion.div>
             )}
 
-            {/* ══════════ DUTY CHART ══════════ */}
-            {tab === 'dutychart' && (
-              <motion.div key="dutychart" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><UserCheck size={18} style={{ color: ACCENT }} /> Assign Examination Duty</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
-                    <FM label="Teacher" req>
-                      <TS value={dutyForm.teacher_id} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, teacher_id: e.target.value }))}>
-                        <option value="">Select...</option>
-                        {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                      </TS>
-                    </FM>
-                    <FM label="Exam Date" req><TI type="date" value={dutyForm.exam_date} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, exam_date: e.target.value }))} /></FM>
-                    <FM label="Exam Type" req>
-                      <TS value={dutyForm.exam_type} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, exam_type: e.target.value }))}>
-                        {EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </TS>
-                    </FM>
-                    <FM label="Shift" req>
-                      <TS value={dutyForm.shift} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, shift: e.target.value }))}>
-                        {['Morning', 'Evening', 'Night'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </TS>
-                    </FM>
-                    <FM label="Room No" req><TI value={dutyForm.room_no} onChange={(e: any) => setDutyForm((p: any) => ({ ...p, room_no: e.target.value }))} /></FM>
-                    <button onClick={saveDuty} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
-                      {saving ? 'Assigning...' : 'Assign Duty'}
-                    </button>
-                  </div>
-                </div>
 
-                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
-                   <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-100">
-                          {['Teacher','Date','Type','Room','Shift','Status','Reported At'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dutyChart.map(duty => (
-                          <tr key={duty.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-black text-slate-800">{duty.teacher_name}</td>
-                            <td className="px-6 py-4 font-bold text-slate-600">{duty.exam_date}</td>
-                            <td className="px-6 py-4"><Badge c="bg-indigo-50 text-indigo-700 border-indigo-100" label={duty.exam_type} /></td>
-                            <td className="px-6 py-4 font-black text-slate-500">{duty.room_no}</td>
-                            <td className="px-6 py-4 font-bold text-slate-500">{duty.duty_shift}</td>
-                            <td className="px-6 py-4">
-                               <Badge c={duty.status === 'Reported' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'} label={duty.status} />
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-400 font-bold">{duty.reported_at ? new Date(duty.reported_at).toLocaleTimeString() : 'Pending'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                   </table>
-                </div>
-              </motion.div>
-            )}
 
             {/* ══════════ PAPER PERFORMA ══════════ */}
             {tab === 'paperperforma' && (
               <motion.div key="paperperforma" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
                    <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Inbox size={18} style={{ color: ACCENT }} /> Paper Receiving Performa Management</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
                       <FM label="Assign to Teacher" req>
                         <TS value={perfForm.teacher_id} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, teacher_id: e.target.value }))}>
                           <option value="">Select...</option>
@@ -2085,7 +2477,9 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                       </FM>
                       <FM label="Subject" req><TI value={perfForm.subject} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, subject: e.target.value }))} /></FM>
                       <FM label="Class/Section" req><TI value={perfForm.class_section} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
+                      <FM label="Due Date" req><TI type="date" value={perfForm.due_date} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, due_date: e.target.value }))} /></FM>
                       <FM label="Exam Date" req><TI type="date" value={perfForm.exam_date} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, exam_date: e.target.value }))} /></FM>
+                      <FM label="Bundles"><TI type="number" value={perfForm.bundle_count} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, bundle_count: e.target.value }))} /></FM>
                       <button onClick={savePerforma} disabled={saving} className="py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50" style={{ background: GRADIENT }}>
                         {saving ? 'Saving...' : 'Request Performa'}
                       </button>
@@ -2096,7 +2490,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                    <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-100">
-                          {['Subject','Class','Teacher','Date','Bundles','Status','Action'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
+                          {['Subject','Class','Teacher','Date','Due','Bundles','Status','Action'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -2108,6 +2502,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                               <td className="px-6 py-4 font-bold text-slate-500">{perf.class_section}</td>
                               <td className="px-6 py-4 font-bold text-slate-600">{teacher?.full_name || 'Teacher'}</td>
                               <td className="px-6 py-4 text-slate-500">{perf.exam_date}</td>
+                              <td className="px-6 py-4 text-rose-500 font-bold">{perf.due_date}</td>
                               <td className="px-6 py-4 font-black">{perf.bundle_count}</td>
                               <td className="px-6 py-4"><Badge c={perf.status === 'Received' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} label={perf.status} /></td>
                               <td className="px-6 py-4">
@@ -2177,6 +2572,97 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 </div>
               </motion.div>
             )}
+            {/* ══════════ COMMUNICATE ══════════ */}
+            {tab === 'communicate' && (
+              <motion.div key="communicate" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                 <div className="flex bg-white p-1 rounded-2xl border border-slate-100 w-fit">
+                    {['notify', 'ai'].map(t => (
+                      <button key={t} onClick={() => setComTab(t)} className={cn("px-6 py-2 rounded-xl text-xs font-black transition-all", comTab === t ? 'text-white' : 'text-slate-400 hover:text-slate-600')} style={comTab === t ? { background: GRADIENT } : {}}>
+                        {t === 'notify' ? 'Notifications' : 'AI Bulk Processor'}
+                      </button>
+                    ))}
+                 </div>
+
+                 {comTab === 'notify' && (
+                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                        <h3 className="font-black text-slate-900 mb-6 flex items-center gap-2"><Megaphone size={18} style={{ color: ACCENT }} /> Send Portal Notification</h3>
+                        <div className="space-y-4">
+                           <FM label="Title" req><TI placeholder="e.g. Schedule Update" /></FM>
+                           <FM label="Message" req><textarea className="w-full border border-slate-200 rounded-xl p-4 text-sm min-h-[120px] outline-none focus:border-indigo-400" placeholder="Type your message..." /></FM>
+                           <div className="grid grid-cols-2 gap-4">
+                             <FM label="Target Audience">
+                               <TS><option value="all">All Users</option><option value="teachers">Teachers Only</option><option value="students">Students Only</option></TS>
+                             </FM>
+                             <FM label="Priority">
+                               <TS><option value="info">Information</option><option value="urgent">Urgent Alert</option></TS>
+                             </FM>
+                           </div>
+                           <button className="w-full py-3 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>Broadcast Notification</button>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[550px]">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                           <h3 className="font-black text-slate-900 text-sm">Recent Broadcasts</h3>
+                           <Badge c="bg-indigo-50 text-indigo-700" label={`${notifications.length} Sent`} />
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                           {notifications.filter(n => n.sender === 'Examiner' || n.sender === 'Claude AI' || n.sender === adminData.full_name).map(n => (
+                             <div key={n.id} className={cn("p-4 rounded-2xl border", n.sender === 'Claude AI' ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50 border-slate-100')}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className={cn("text-[10px] font-black uppercase tracking-widest", n.sender === 'Claude AI' ? 'text-indigo-600' : 'text-slate-400')}>{n.sender}</span>
+                                  <span className="text-[10px] text-slate-400">{new Date(n.created_at).toLocaleDateString()}</span>
+                                </div>
+                                <h4 className="text-sm font-black text-slate-800 mb-1">{n.title}</h4>
+                                <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{n.message}</p>
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+                   </div>
+                 )}
+
+                 {comTab === 'ai' && (
+                   <div className="bg-white rounded-[40px] p-12 border-2 border-dashed border-indigo-100 flex flex-col items-center text-center max-w-2xl mx-auto mt-10">
+                      <div className="w-24 h-24 rounded-[32px] bg-indigo-50 flex items-center justify-center mb-8 relative">
+                         <Sparkles className="text-indigo-600 w-10 h-10" />
+                         {aiProcessing && (
+                           <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                             className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-[32px]" />
+                         )}
+                      </div>
+                      <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Claude AI Bulk Processor</h2>
+                      <p className="text-slate-500 mb-10 leading-relaxed text-lg font-medium">
+                        Upload your official Excel records. Claude AI will automatically process categories, verify data integrity, and notify all concerned departments.
+                      </p>
+                      
+                      <label className={cn("group relative flex flex-col items-center justify-center w-full h-56 border-2 border-dashed rounded-[32px] cursor-pointer transition-all", aiProcessing ? 'border-slate-200 opacity-50' : 'border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30')}>
+                         <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                            <Upload className="w-12 h-12 text-slate-400 group-hover:text-indigo-500 mb-4 transition-colors" />
+                            <p className="mb-2 text-sm text-slate-500 font-bold">
+                              {aiProcessing ? 'Processing... please wait' : 'Click to upload Excel or drag and drop'}
+                            </p>
+                            <p className="text-xs text-slate-400 font-medium italic">.xlsx or .csv files accepted</p>
+                         </div>
+                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleBulkUpload} disabled={aiProcessing} />
+                      </label>
+
+                      <div className="mt-12 flex items-center gap-8 justify-center">
+                         <div className="text-center">
+                           <p className="text-2xl font-black text-indigo-600 leading-none mb-2">100%</p>
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Accuracy</p>
+                         </div>
+                         <div className="w-px h-10 bg-slate-100" />
+                         <div className="text-center">
+                           <p className="text-2xl font-black text-slate-800 leading-none mb-2">&lt; 2s</p>
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Processing</p>
+                         </div>
+                      </div>
+                   </div>
+                 )}
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </main>
@@ -2186,35 +2672,110 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         {/* Create Schedule Modal */}
         {modal === 'sched' && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl overflow-hidden">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, y: 24, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.96 }} transition={{ type:'spring', stiffness:420, damping:32 }}
+              className="relative bg-white rounded-3xl w-full max-w-2xl z-10 shadow-2xl overflow-hidden" style={{ maxHeight:'90vh' }}>
               <div className="h-1.5 w-full" style={{ background: GRADIENT }} />
-              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-black text-slate-900 flex items-center gap-2 text-base"><Calendar size={18} style={{ color: ACCENT }} /> Create Exam Schedule</h3>
-                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
+              <div className="px-6 pt-5 pb-3 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {[1,2].map(step=>(
+                    <div key={step} className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black transition-all"
+                        style={schedForm.schedStep>=step?{background:GRADIENT,color:'#fff'}:{background:'#f1f5f9',color:'#94a3b8'}}>{step}</div>
+                      <span className={`text-xs font-bold ${schedForm.schedStep>=step?'text-slate-700':'text-slate-300'}`}>{step===1?'Schedule Info':'Subject Dates'}</span>
+                      {step<2&&<ChevronRight size={12} className="text-slate-200"/>}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
               </div>
-              <div className="p-6 space-y-4">
-                <FM label="Schedule Title" req><TI placeholder="e.g. Mid-Term Examination 2026" value={schedForm.title} onChange={e => setSchedForm((p: any)=> ({ ...p, title: e.target.value }))} /></FM>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Exam Type"><TS value={schedForm.exam_type} onChange={e => setSchedForm((p: any)=> ({ ...p, exam_type: e.target.value }))}>{EXAM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</TS></FM>
-                  <FM label="Session"><TI value={schedForm.session} onChange={e => setSchedForm((p: any)=> ({ ...p, session: e.target.value }))} /></FM>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Program"><TS value={schedForm.program} onChange={e => setSchedForm((p: any)=> ({ ...p, program: e.target.value }))}><option value="">Select...</option>{PROGRAMS.map(p => <option key={p} value={p}>{p}</option>)}</TS></FM>
-                  <FM label="Part"><TS value={schedForm.part} onChange={e => setSchedForm((p: any)=> ({ ...p, part: Number(e.target.value) }))}><option value={1}>Part 1</option><option value={2}>Part 2</option></TS></FM>
-                </div>
-                <FM label="Target Class (Optional)"><TI placeholder="ICS-I A" value={schedForm.class_section} onChange={e => setSchedForm((p: any)=> ({ ...p, class_section: e.target.value }))} /></FM>
-                <div className="grid grid-cols-2 gap-4">
-                  <FM label="Start Date" req><TI type="date" value={schedForm.start_date} onChange={e => setSchedForm((p: any)=> ({ ...p, start_date: e.target.value }))} /></FM>
-                  <FM label="End Date" req><TI type="date" value={schedForm.end_date} onChange={e => setSchedForm((p: any)=> ({ ...p, end_date: e.target.value }))} /></FM>
-                </div>
+              <div className="overflow-y-auto" style={{ maxHeight:'calc(90vh - 140px)' }}>
+                {schedForm.schedStep===1&&(
+                  <div className="p-6 space-y-4">
+                    <FM label="Schedule Title" req><TI placeholder="e.g. Mid-Term Examination 2026" value={schedForm.title} onChange={e=>setSchedForm((p:any)=>({...p,title:e.target.value}))} /></FM>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FM label="Exam Type">
+                        <TS value={schedForm.exam_type} onChange={e=>setSchedForm((p:any)=>({...p,exam_type:e.target.value}))}>
+                          {EXAM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </TS>
+                      </FM>
+                      {(schedForm.exam_type==='Sendup 1'||schedForm.exam_type==='Sendup 2')&&(
+                        <FM label="Syllabus Coverage">
+                          <TS value={schedForm.syllabus_coverage} onChange={e=>setSchedForm((p:any)=>({...p,syllabus_coverage:e.target.value}))}>
+                            <option value="">Select %</option><option value="40%">40%</option><option value="80%">80%</option>
+                          </TS>
+                        </FM>
+                      )}
+                      <FM label="Session"><TI value={schedForm.session} onChange={e=>setSchedForm((p:any)=>({...p,session:e.target.value}))} /></FM>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FM label="Program"><TS value={schedForm.program} onChange={e=>setSchedForm((p:any)=>({...p,program:e.target.value}))}><option value="">All Programs</option>{PROGRAMS.map(p=><option key={p} value={p}>{p}</option>)}</TS></FM>
+                      <FM label="Part"><TS value={schedForm.part} onChange={e=>setSchedForm((p:any)=>({...p,part:Number(e.target.value)}))}>  <option value={1}>Part 1</option><option value={2}>Part 2</option></TS></FM>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FM label="Class Section (e.g. ICS Physics B-Boys)" req><TI placeholder="e.g. ICS Physics B-Boys" value={schedForm.class_section} onChange={e=>setSchedForm((p:any)=>({...p,class_section:e.target.value}))} /></FM>
+                      <FM label="Total Marks for Exams" req><TI type="number" value={schedForm.total_marks} onChange={e=>setSchedForm((p:any)=>({...p,total_marks:Number(e.target.value)}))} /></FM>
+                    </div>
+                  </div>
+                )}
+                {schedForm.schedStep===2&&(
+                  <div className="p-6 space-y-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div><p className="font-black text-slate-900">Set Exam Date Per Subject</p><p className="text-xs text-slate-400 mt-0.5">Leave blank to skip a subject</p></div>
+                      <div className="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100">
+                        {Object.values(schedForm.subjectDates as Record<string,string>).filter(Boolean).length} / {SUBJECTS.length} set
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <p className="text-xs font-black text-slate-500 flex-1">Quick-fill all to same date:</p>
+                      <input type="date" className="border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium outline-none focus:border-indigo-400 bg-white"
+                        onChange={e=>{ if(!e.target.value)return; const all:Record<string,string>={}; SUBJECTS.forEach(s=>{all[s]=e.target.value;}); setSchedForm((p:any)=>({...p,subjectDates:{...p.subjectDates,...all}})); }} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {SUBJECTS.map(subject=>{
+                        const val=(schedForm.subjectDates as Record<string,string>)[subject]||'';
+                        const isSet=!!val;
+                        return (
+                          <div key={subject} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isSet?'bg-indigo-50 border-indigo-200':'bg-white border-slate-100'}`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0 ${isSet?'bg-indigo-600 text-white':'bg-slate-100 text-slate-400'}`}>{isSet?'✓':subject.charAt(0)}</div>
+                            <p className={`text-xs font-black flex-1 truncate ${isSet?'text-indigo-800':'text-slate-600'}`}>{subject}</p>
+                            <input type="date" value={val}
+                              onChange={e=>setSchedForm((p:any)=>({...p,subjectDates:{...p.subjectDates,[subject]:e.target.value}}))}
+                              className={`w-32 text-xs font-bold rounded-xl px-2 py-1.5 border outline-none transition-all ${isSet?'border-indigo-300 bg-white text-indigo-700':'border-slate-200 bg-slate-50 text-slate-500'}`} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {Object.values(schedForm.subjectDates as Record<string,string>).some(Boolean)&&(
+                      <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="mt-2 p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
+                        <p className="text-xs font-black text-emerald-700 mb-2 flex items-center gap-1.5"><CheckCircle size={13}/> Schedule Preview</p>
+                        <div className="space-y-1">
+                          {Object.entries(schedForm.subjectDates as Record<string,string>).filter(([,d])=>!!d).sort(([,a],[,b])=>a.localeCompare(b)).map(([sub,date])=>(
+                            <div key={sub} className="flex justify-between text-xs">
+                              <span className="font-bold text-emerald-800">{sub}</span>
+                              <span className="text-emerald-600 font-black">{new Date(date).toLocaleDateString('en-PK',{weekday:'short',day:'2-digit',month:'short'})}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-                <button onClick={() => setModal(null)} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
-                <button onClick={saveSchedule} disabled={saving} className="px-8 py-2.5 rounded-xl text-sm font-black text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all active:scale-95" style={{ background: GRADIENT }}>
-                  {saving ? 'Creating...' : 'Create Schedule'}
-                </button>
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between gap-3">
+                {schedForm.schedStep===1?(
+                  <>
+                    <button onClick={()=>setModal(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">Cancel</button>
+                    <button onClick={()=>{ if(!schedForm.title){showToast('Enter a title first',false);return;} setSchedForm((p:any)=>({...p,schedStep:2})); }} className="px-8 py-2.5 rounded-xl text-sm font-black text-white" style={{background:GRADIENT}}>Next: Set Dates →</button>
+                  </>
+                ):(
+                  <>
+                    <button onClick={()=>setSchedForm((p:any)=>({...p,schedStep:1}))} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">← Back</button>
+                    <button onClick={saveSchedule} disabled={saving} className="px-8 py-2.5 rounded-xl text-sm font-black text-white disabled:opacity-50" style={{background:GRADIENT}}>
+                      {saving?'Creating & Notifying…':'🔔 Create & Notify All Portals'}
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>
@@ -2354,6 +2915,12 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                   </TS>
                 </FM>
                 <FM label="Subject" req><TI placeholder="e.g. Mathematics" value={examForm.subject} onChange={(e: any) => setExamForm({ ...examForm, subject: e.target.value })} /></FM>
+                <FM label="Assigned Teacher" req>
+                  <TS value={examForm.teacher_id} onChange={(e: any) => setExamForm({ ...examForm, teacher_id: e.target.value })}>
+                    <option value="">-- Select Teacher --</option>
+                    {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name} ({t.subject_dept})</option>)}
+                  </TS>
+                </FM>
                 <FM label="Class / Section" req>
                   <TS value={examForm.class_section} onChange={(e: any) => setExamForm({ ...examForm, class_section: e.target.value })}>
                     <option value="">-- Select Class --</option>
@@ -2379,23 +2946,100 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         {showNotifs && (
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNotifs(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative bg-white rounded-3xl w-full max-w-md z-10 shadow-2xl overflow-hidden">
-               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                 <h3 className="font-black text-slate-900">Notifications</h3>
-                 <button onClick={() => setShowNotifs(false)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} 
+              className="relative bg-white rounded-3xl w-full max-w-md z-10 shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '80vh' }}>
+               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                 <div>
+                   <h3 className="font-black text-slate-900 leading-none">Notifications</h3>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">{unreadCount} Unread</p>
+                 </div>
+                 <button onClick={() => setShowNotifs(false)} className="p-2 rounded-xl hover:bg-slate-50 text-slate-400 transition-colors"><X size={20} /></button>
                </div>
-               <div className="p-2 max-h-[60vh] overflow-y-auto">
-                 {notifications.map((n, i) => (
-                   <div key={n.id} className={cn("p-4 rounded-2xl flex gap-3 transition-colors", !n.is_read ? 'bg-indigo-50/50' : 'hover:bg-slate-50')}>
-                      <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", !n.is_read ? 'bg-indigo-600' : 'bg-slate-200')} />
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{n.title}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
-                        <p className="text-[9px] text-slate-300 mt-1 font-bold uppercase tracking-wider">{new Date(n.created_at).toLocaleString()}</p>
+               
+               <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                 {notifications.map((n) => (
+                   <div key={n.id} onClick={() => markAsRead(n)}
+                     className={cn("p-4 rounded-2xl flex gap-3 transition-all cursor-pointer relative group", !n.is_read ? 'bg-indigo-50/50 border border-indigo-100 shadow-sm' : 'hover:bg-slate-50 border border-transparent')}>
+                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", n.is_read ? 'bg-slate-100 text-slate-400' : 'bg-white text-indigo-600')}>
+                        {n.type === 'urgent' ? <AlertCircle size={20} /> : <Bell size={20} />}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={cn("text-sm transition-colors truncate", n.is_read ? 'text-slate-500 font-bold' : 'text-slate-900 font-black')}>{n.title}</p>
+                          {!n.is_read && <div className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />}
+                        </div>
+                        <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{n.message}</p>
+                        <p className="text-[9px] text-slate-300 mt-2 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <Clock size={8} /> {new Date(n.created_at).toLocaleDateString()} at {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }} className="absolute right-3 bottom-3 p-1.5 rounded-lg bg-white text-slate-200 hover:text-rose-500 hover:shadow-sm opacity-0 group-hover:opacity-100 transition-all border border-slate-50">
+                        <Trash2 size={12} />
+                      </button>
                    </div>
                  ))}
-                 {notifications.length === 0 && <div className="p-10 text-center text-slate-400 font-bold italic text-sm">No notifications found</div>}
+                 {notifications.length === 0 && (
+                   <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
+                     <Bell size={40} className="mb-4 text-slate-300" />
+                     <p className="font-bold italic text-sm text-slate-400 tracking-tight">No notifications found</p>
+                   </div>
+                 )}
+               </div>
+               
+               {unreadCount > 0 && (
+                 <div className="p-4 border-t border-slate-50 bg-slate-50/50 flex justify-center">
+                   <button onClick={async () => {
+                     const { error } = await supabase.from('admin_notifications').update({ is_read: true }).eq('is_read', false);
+                     if (!error) {
+                       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                       setUnreadCount(0);
+                     }
+                   }} className="text-[10px] font-black text-indigo-600 hover:underline uppercase tracking-widest">Mark all as read</button>
+                 </div>
+               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Notification Detail Overlay */}
+      <AnimatePresence>
+        {selectedNotif && (
+          <div className="fixed inset-0 z-[700] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedNotif(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="relative bg-white rounded-[2.5rem] w-full max-w-lg z-10 shadow-2xl overflow-hidden">
+               <div className="h-1.5 w-full" style={{ background: GRADIENT }} />
+               <div className="p-8">
+                 <div className="flex items-start justify-between mb-8">
+                   <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg", selectedNotif.type === 'urgent' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600')}>
+                     {selectedNotif.type === 'urgent' ? <AlertCircle size={28} /> : <Megaphone size={28} />}
+                   </div>
+                   <button onClick={() => setSelectedNotif(null)} className="p-2 rounded-2xl bg-slate-50 text-slate-400 hover:text-slate-700 transition-colors">
+                     <X size={24} />
+                   </button>
+                 </div>
+                 
+                 <div className="space-y-4">
+                   <div className="space-y-1">
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">From {selectedNotif.sender || 'System'}</p>
+                     <h3 className="text-2xl font-black text-slate-900 leading-tight tracking-tight">{selectedNotif.title}</h3>
+                   </div>
+                   
+                   <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
+                     <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap font-medium">{selectedNotif.message}</p>
+                   </div>
+                   
+                   <div className="flex items-center gap-4 pt-4 border-t border-slate-50">
+                     <div className="flex-1">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(selectedNotif.created_at).toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                       <p className="text-[10px] font-bold text-slate-300 mt-1 uppercase tracking-widest">Received at {new Date(selectedNotif.created_at).toLocaleTimeString()}</p>
+                     </div>
+                     <button onClick={() => setSelectedNotif(null)} className="px-8 py-3 rounded-2xl text-white font-black text-sm shadow-xl" style={{ background: GRADIENT }}>
+                       Got it
+                     </button>
+                   </div>
+                 </div>
                </div>
             </motion.div>
           </div>
