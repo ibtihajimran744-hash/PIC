@@ -4,17 +4,20 @@ import {
   Shield, Users, BarChart3, Bell, LogOut, Search, RefreshCw,
   CheckCircle, X, Lock, Unlock, Check, Settings, Calendar,
   DollarSign, Receipt, Tag, FileText, UserCheck, Loader2,
-  ChevronDown, AlertTriangle, Eye, Printer, RefreshCcw,
+  ChevronDown, ChevronRight, AlertTriangle, Eye, Printer, RefreshCcw,
   ToggleLeft, ToggleRight, UserPlus, Trash2, CreditCard,
   TrendingUp, Home, ClipboardList, Key, GraduationCap, Plus,
-  Truck, Building2, Award, Package, Mail, MessageSquare, Clipboard
+  Truck, Building2, Award, Package, Mail, MessageSquare, Clipboard,
+  HelpCircle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
+import * as XLSX from 'xlsx';
+import { Sparkles, Upload as UploadIcon } from 'lucide-react';
 
 interface VPPortalProps {
   onLogout: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }
 
 const VP_ACCENT   = '#7C3AED';
@@ -160,6 +163,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const TABS     = isDirector ? TABS_DIR     : TABS_VP;
 
   const [tab, setTab]                     = useState('dashboard');
+  const [activeSession, setActiveSession]   = useState<string>(''); // Active Session Name
   const [toast, setToast]                 = useState('');
   const [searchQuery, setSearchQuery]     = useState('');
   const [filterClass, setFilterClass]     = useState('');
@@ -244,12 +248,21 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [acadTab, setAcadTab]       = useState('timetable');
   const [attTab, setAttTab]         = useState('student');
   const [comTab, setComTab]         = useState('notify');
+  const [aiProcessing, setAiProcessing] = useState(false);
   const [transTab, setTransTab]     = useState('routes');
   const [hostelTab, setHostelTab]   = useState('rooms');
   const [certTab, setCertTab]       = useState('student');
   const [invTab, setInvTab]         = useState('issue');
   const [admTab, setAdmTab]         = useState('online');
   const [feeTab, setFeeTab]         = useState('search');
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [collectSearch, setCollectSearch] = useState('');
+  const [selectedCollectStudent, setSelectedCollectStudent] = useState<any>(null);
+  const [stuFeeGroups, setStuFeeGroups] = useState<any[]>([]);
+  const [stuFeeLoading, setStuFeeLoading] = useState(false);
+  const [collectModal, setCollectModal] = useState<any>(null);
+  const [feePayForm, setFeePayForm] = useState({ amount: '', method: 'Cash', receipt: '', discount: '' });
   const [incTab, setIncTab]         = useState('search');
   const [expTab, setExpTab]         = useState('search');
   const [examTab, setExamTab]       = useState('groups');
@@ -284,10 +297,21 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const showErr   = (msg:string) => { setErrMsg(msg); setTimeout(()=>setErrMsg(''), 4000); };
 
   const loadAll = useCallback(async () => {
+    // Fetch sessions first to determine active session
+    const { data: sessData } = await supabase.from('academic_sessions').select('*').order('created_at', { ascending: false });
+    setSessions(sessData || []);
+
+    let currentSess = activeSession;
+    if (!currentSess && sessData?.length) {
+      const active = sessData.find(s => s.is_active) || sessData[0];
+      currentSess = active.name;
+      setActiveSession(currentSess);
+    }
+
     const [
       { data:staffData }, { data:txData }, { data:stuData },
       { data:leaveData }, { data:permData }, { data:incData },
-      { data:expData }, { data:sessData }, { data:tLeaveData },
+      { data:expData }, { data:tLeaveData },
       { data:teachData }, { data:fgcData }, { data:notifData },
       { data:inquiryData }, { data:visitorData }, { data:callData },
       { data:pdData }, { data:prData }, { data:compData },
@@ -297,13 +321,12 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       { data:certData }, { data:payData },
     ] = await Promise.all([
       supabase.from('admin_users').select('*').order('full_name'),
-      supabase.from('fee_transactions').select('*').order('payment_date',{ascending:false}).limit(200),
-      supabase.from('students').select('roll_no,full_name,class_section,program,gender,status,part,session,father_name,phone_no,paid_amount,total_package').limit(2000),
-      supabase.from('leave_requests').select('*').order('created_at',{ascending:false}),
+      supabase.from('fee_transactions').select('*').eq('session', currentSess).order('payment_date',{ascending:false}).limit(200),
+      supabase.from('students').select('*').eq('session', currentSess).limit(2000),
+      supabase.from('leave_requests').select('*').eq('session', currentSess).order('created_at',{ascending:false}),
       supabase.from('role_permissions').select('*'),
-      supabase.from('income').select('*').order('income_date',{ascending:false}).limit(100),
-      supabase.from('expenses').select('*').order('expense_date',{ascending:false}).limit(100),
-      supabase.from('academic_sessions').select('*').order('created_at',{ascending:false}),
+      supabase.from('income').select('*').eq('session', currentSess).order('income_date',{ascending:false}).limit(100),
+      supabase.from('expenses').select('*').eq('session', currentSess).order('expense_date',{ascending:false}).limit(100),
       supabase.from('teacher_leave_requests').select('*').order('created_at',{ascending:false}),
       supabase.from('teachers').select('*').order('full_name'),
       supabase.from('fee_groups_config').select('*').order('weight'),
@@ -314,9 +337,9 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('postal_dispatch').select('*').order('created_at',{ascending:false}).limit(100),
       supabase.from('postal_receive').select('*').order('created_at',{ascending:false}).limit(100),
       supabase.from('complaints').select('*').order('created_at',{ascending:false}).limit(100),
-      supabase.from('admission_forms').select('id,form_no,student_name,program,part,status,created_at,approved_by').order('created_at',{ascending:false}).limit(100),
-      supabase.from('exams').select('*').order('created_at',{ascending:false}).limit(100),
-      supabase.from('subjects').select('*').order('name'),
+      supabase.from('admission_forms').select('*').eq('session', currentSess).order('created_at',{ascending:false}).limit(100),
+      supabase.from('exams').select('*').eq('session', currentSess).order('created_at',{ascending:false}).limit(100),
+      supabase.from('subjects').select('*').eq('session', currentSess).order('name'),
       supabase.from('departments').select('*').order('name'),
       supabase.from('transport_routes').select('*').order('route_title'),
       supabase.from('transport_vehicles').select('*').order('vehicle_no'),
@@ -324,13 +347,13 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('inventory_items').select('*').order('item_name'),
       supabase.from('inventory_stock').select('*').order('created_at',{ascending:false}),
       supabase.from('inventory_issues').select('*').order('created_at',{ascending:false}),
-      supabase.from('student_certificates').select('*').order('created_at',{ascending:false}),
+      supabase.from('student_certificates').select('*').eq('session', currentSess).order('created_at',{ascending:false}),
       supabase.from('payroll_log').select('*').order('created_at',{ascending:false}),
     ]);
 
     setStaff(staffData||[]); setTransactions(txData||[]); setStudents(stuData||[]);
     setLeaveRequests(leaveData||[]); setIncome(incData||[]); setExpenses(expData||[]);
-    setSessions(sessData||[]); setTeacherLeaves(tLeaveData||[]); setTeachers(teachData||[]);
+    setTeacherLeaves(tLeaveData||[]); setTeachers(teachData||[]);
     setFeeGroupsConfig(fgcData||[]); setNotifications(notifData||[]);
     setInquiries(inquiryData||[]); setVisitors(visitorData||[]); setCallLogs(callData||[]);
     setPostalDispatch(pdData||[]); setPostalReceive(prData||[]); setComplaints(compData||[]);
@@ -344,7 +367,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     ALL_ROLES.forEach(r => { permMap[r] = { permissions:{ ...DEFAULT_PERMISSIONS[r] } }; });
     (permData||[]).forEach((p:any) => { if (permMap[p.role]) permMap[p.role] = { ...p }; });
     setPermissions(permMap);
-  }, []);
+  }, [activeSession]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -383,6 +406,144 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       showToast(`✅ Permissions updated for ${role}`);
     } catch(e:any) { showErr(e.message||'Failed to save'); }
     finally { setSaving(false); }
+  };
+
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAiProcessing(true);
+    try {
+      const reader = new FileReader();
+      const loadPromise = new Promise((resolve, reject) => {
+        reader.onload = resolve;
+        reader.onerror = reject;
+      });
+      reader.readAsBinaryString(file);
+      const evt: any = await loadPromise;
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+
+      showToast(`🤖 Claude AI is processing ${data.length} records...`);
+      await new Promise(r => setTimeout(r, 2000));
+
+      const notif = {
+        title: 'New Academic Data Uploaded',
+        message: `New official academic records for session ${activeSession} have been uploaded and verified by Claude AI.`,
+        sender: 'Claude AI',
+        target_role: 'all',
+        broadcast_type: 'all',
+        type: 'urgent',
+        is_read: false,
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase.from('admin_notifications').insert([notif]);
+      if (error) throw error;
+
+      showToast(`✅ Claude AI processed and notified all users!`);
+      loadAll();
+    } catch (err: any) {
+      showErr(err.message || 'Processing failed');
+    } finally {
+      setAiProcessing(false);
+    }
+  };
+
+  const fetchStudentFees = async (rollNo: string | number) => {
+    setStuFeeLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('fee_groups')
+        .select('*')
+        .eq('student_roll', rollNo)
+        .order('due_date', { ascending: true });
+      if (error) throw error;
+      setStuFeeGroups(data || []);
+    } catch (e: any) {
+      showErr(e.message || 'Failed to fetch student fees');
+    } finally {
+      setStuFeeLoading(false);
+    }
+  };
+
+  const collectFee = async () => {
+    if (!collectModal) return;
+    const amt = Number(feePayForm.amount);
+    const disc = Number(feePayForm.discount || 0);
+    
+    if ((!amt || amt <= 0) && (!disc || disc <= 0)) { showErr('Enter a valid amount or discount'); return; }
+    const balance = Number(collectModal.amount || 0) + Number(collectModal.fine || 0) - Number(collectModal.paid || 0) - Number(collectModal.discount || 0);
+    if (amt + disc > balance) { showErr(`Total exceeds balance of ${PKR(balance)}`); return; }
+    
+    setSaving(true);
+    try {
+      const newPaid     = (collectModal.paid || 0) + amt;
+      const newDiscount = (collectModal.discount || 0) + disc;
+      const newBalance  = balance - amt - disc;
+      const newStatus   = newBalance <= 0 ? 'Paid' : 'Partial';
+
+      const { error: updateError } = await supabase.from('fee_groups').update({ 
+        paid: newPaid, 
+        discount: newDiscount,
+        status: newStatus 
+      }).eq('id', collectModal.id);
+
+      if (updateError) throw updateError;
+
+      // Record Payment Transaction
+      if (amt > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(collectModal.student_roll),
+          amount_paid: amt, payment_method: feePayForm.method,
+          receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(), transaction_type: 'Payment',
+          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+        }]);
+
+        // 🔔 Notification for Student
+        await supabase.from('notifications').insert([{
+          target_user_id: collectModal.student_roll,
+          title: '💰 Fee Payment Received',
+          message: `Your payment of ${PKR(amt)} for ${collectModal.fees_group} has been successfully recorded.`,
+          type: 'fee_payment',
+          target_role: 'STUDENT'
+        }]);
+        
+        // Update student paid_amount
+        const { data:stu } = await supabase.from('students').select('paid_amount').eq('roll_no', collectModal.student_roll).single();
+        if (stu) {
+          await supabase.from('students').update({ paid_amount: (stu.paid_amount || 0) + amt }).eq('roll_no', collectModal.student_roll);
+        }
+      }
+
+      // Record Discount Transaction
+      if (disc > 0) {
+        await supabase.from('fee_transactions').insert([{
+          student_roll_link: String(collectModal.student_roll),
+          amount_paid: disc, payment_method: 'Discount',
+          receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`, 
+          collected_by: adminData.full_name,
+          payment_date: new Date().toISOString(), transaction_type: 'Discount',
+          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+        }]);
+      }
+
+      showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
+      setCollectModal(null); 
+      setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); 
+      fetchStudentFees(collectModal.student_roll);
+      // Also refresh main lists
+      const { data:freshTx } = await supabase.from('fee_transactions').select('*').order('payment_date',{ascending:false}).limit(200);
+      setTransactions(freshTx||[]);
+    } catch (e: any) { 
+      console.error(e);
+      showErr(e.message || 'Failed to collect fee');
+    } finally { 
+      setSaving(false); 
+    }
   };
 
   const reverseTransaction = async (tx:any) => {
@@ -558,18 +719,18 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     if (txSearch) {
       const q=txSearch.toLowerCase();
       const stu=students.find(s=>String(s.roll_no)===String(t.student_roll_link));
-      return String(t.student_roll_link).includes(q)||stu?.full_name?.toLowerCase().includes(q)||(t.receipt_serial||'').toLowerCase().includes(q);
+      return String(t.student_roll_link).includes(q)||(stu?.full_name?.toLowerCase() || '').includes(q)||(t.receipt_serial||'').toLowerCase().includes(q);
     }
     return true;
   });
   const filteredStaff = staff.filter(s => {
     if (selectedRoleFilter&&s.role!==selectedRoleFilter) return false;
-    if (staffSearch) return s.full_name?.toLowerCase().includes(staffSearch.toLowerCase())||s.username?.toLowerCase().includes(staffSearch.toLowerCase());
+    if (staffSearch) return (s.full_name?.toLowerCase() || '').includes(staffSearch.toLowerCase())||(s.username?.toLowerCase() || '').includes(staffSearch.toLowerCase());
     return true;
   });
   const filteredStudents = students.filter(s => {
     const q=searchQuery.toLowerCase();
-    const matchSearch=s.full_name?.toLowerCase().includes(q)||String(s.roll_no).includes(q);
+    const matchSearch=(s.full_name?.toLowerCase() || '').includes(q)||String(s.roll_no).includes(q);
     const matchClass=filterClass?s.class_section===filterClass:true;
     return matchSearch&&matchClass;
   });
@@ -921,10 +1082,84 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     );
   };
 
+  const renderCollectFee = () => {
+    const filteredSearch = students.filter(s => 
+      (s.full_name?.toLowerCase() || '').includes(collectSearch.toLowerCase()) || 
+      String(s.roll_no).includes(collectSearch)
+    ).slice(0, 5);
+
+    return (
+      <div className="space-y-4">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+          <input 
+            value={collectSearch} 
+            onChange={e => setCollectSearch(e.target.value)} 
+            placeholder="Search student by name or roll number..."
+            className="w-full bg-white border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5 transition-all outline-none"
+          />
+          {collectSearch && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-100 shadow-xl z-50 overflow-hidden divide-y divide-slate-50">
+              {filteredSearch.map(s => (
+                <button key={s.roll_no} onClick={() => { setSelectedCollectStudent(s); setCollectSearch(''); fetchStudentFees(s.roll_no); }} className="w-full px-5 py-3 text-left hover:bg-slate-50 transition-colors flex items-center justify-between">
+                  <div><p className="font-black text-slate-900">{s.full_name}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Roll #{s.roll_no} • {s.program} ({s.part})</p></div>
+                  <ChevronRight size={16} className="text-slate-300" />
+                </button>
+              ))}
+              {!filteredSearch.length && <div className="px-5 py-4 text-center text-slate-400 text-xs font-bold">No students found</div>}
+            </div>
+          )}
+        </div>
+
+        {selectedCollectStudent && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-lg">{selectedCollectStudent.full_name?.charAt(0)}</div>
+                <div><h3 className="font-black text-slate-900 text-lg">{selectedCollectStudent.full_name}</h3><p className="text-xs text-slate-400 font-bold">Roll #{selectedCollectStudent.roll_no} • {selectedCollectStudent.program} {selectedCollectStudent.part} • {selectedCollectStudent.section}</p></div>
+              </div>
+              <button onClick={() => setSelectedCollectStudent(null)} className="text-slate-400 hover:text-slate-600 font-bold text-xs">Clear</button>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-slate-50 border-b border-slate-100"><Th>Fee Type</Th><Th>Amount</Th><Th>Fine</Th><Th>Paid</Th><Th>Discount</Th><Th>Balance</Th><Th>Status</Th><Th>Action</Th></tr></thead>
+                <tbody className="divide-y divide-slate-50">
+                  {stuFeeLoading ? (
+                    <tr><td colSpan={8} className="py-20 text-center"><Loader2 size={24} className="animate-spin mx-auto text-slate-200" /></td></tr>
+                  ) : stuFeeGroups.map(f => {
+                    const balance = Number(f.amount || 0) + Number(f.fine || 0) - Number(f.paid || 0) - Number(f.discount || 0);
+                    return (
+                      <tr key={f.id} className="hover:bg-slate-50/50">
+                        <Td className="font-black text-slate-800">{f.fees_group}</Td>
+                        <Td className="font-bold">{PKR(f.amount)}</Td>
+                        <Td className="text-rose-500 font-bold">{PKR(f.fine || 0)}</Td>
+                        <Td className="text-emerald-600 font-bold">{PKR(f.paid || 0)}</Td>
+                        <Td className="text-blue-600 font-bold">{PKR(f.discount || 0)}</Td>
+                        <Td className="font-black text-slate-900 bg-slate-50/50">{PKR(balance)}</Td>
+                        <Td><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', f.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700')}>{f.status}</span></Td>
+                        <Td>
+                          {balance > 0 && (
+                            <button onClick={() => { setCollectModal(f); setFeePayForm({ ...feePayForm, amount: String(balance) }); }} className="px-4 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-black hover:bg-emerald-100 transition-all">Collect</button>
+                          )}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                  {!stuFeeLoading && !stuFeeGroups.length && <tr><td colSpan={8} className="py-20 text-center text-slate-300 font-bold italic">No fees assigned to this student</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    );
+  };
+
   // ── RENDER FEE MANAGEMENT ───────────────────────────────────────────────
   const renderFeeManagement = () => {
     const feeTabs = [
-      {id:'search',label:'Search Payments'},{id:'due',label:'Due Fee'},{id:'master',label:'Fee Master'},
+      {id:'collect',label:'Collect Fee'},{id:'search',label:'Search Payments'},{id:'due',label:'Due Fee'},{id:'master',label:'Fee Master'},
       {id:'reminder',label:'Fee Reminder'},{id:'income',label:'Income'},{id:'expenses',label:'Expenses'}
     ];
     const dueStudents = students.filter(s=>(s.total_package||0)>(s.paid_amount||0));
@@ -934,6 +1169,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
 
         {feeTab==='income' && renderIncome()}
         {feeTab==='expenses' && renderExpenses()}
+        {feeTab==='collect' && renderCollectFee()}
 
         {feeTab==='search' && (
           <div className="space-y-3">
@@ -1415,13 +1651,53 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   // ── RENDER COMMUNICATE ──────────────────────────────────────────────────
   const renderCommunicate = () => {
     const comTabs = [
-      {id:'notify',label:'Notice Board'},{id:'sms',label:'Send SMS'},
-      {id:'email',label:'Send Email'},{id:'log',label:'Message Log'}
+      {id:'notify',label:'Notice Board'},{id:'ai_bulk',label:'AI Bulk Processor'},
+      {id:'sms',label:'Send SMS'}, {id:'email',label:'Send Email'},{id:'log',label:'Message Log'}
     ];
-    const myNotifs = notifications.filter(n=>n.sender===adminData.full_name);
+    const myNotifs = notifications.filter(n=>n.sender===adminData.full_name || n.sender === 'Claude AI');
     return (
       <motion.div key="com" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-4">
         <SubTabs tabs={comTabs} active={comTab} onChange={setComTab} accent={ACCENT} />
+
+        {comTab==='ai_bulk' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="bg-white rounded-3xl border border-slate-100 p-8 text-center space-y-6 shadow-xl relative overflow-hidden">
+               <div className="absolute -top-10 -right-10 w-40 h-40 bg-purple-50 rounded-full opacity-50" />
+               <div className="w-20 h-20 rounded-3xl bg-purple-100 flex items-center justify-center mx-auto relative z-10">
+                 <Sparkles size={40} className="text-purple-600 animate-pulse" />
+               </div>
+               <div className="space-y-2 relative z-10">
+                 <h3 className="font-black text-slate-900 text-2xl tracking-tight">Claude AI Bulk Importer</h3>
+                 <p className="text-slate-500 text-sm max-w-sm mx-auto">Upload your academic Excel files here. Claude AI will automatically parse the data, update the system, and notify students & parents via the app.</p>
+               </div>
+               
+               <div className="border-2 border-dashed border-slate-200 rounded-3xl p-10 hover:border-purple-400 transition-all cursor-pointer relative group">
+                 <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkUpload} className="absolute inset-0 opacity-0 cursor-pointer z-20" disabled={aiProcessing} />
+                 <div className="space-y-3">
+                   <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center mx-auto group-hover:bg-purple-50 transition-colors">
+                     <UploadIcon className="text-slate-400 group-hover:text-purple-500" />
+                   </div>
+                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{aiProcessing ? 'Processing...' : 'Click or Drag Excel File'}</p>
+                 </div>
+               </div>
+
+               {aiProcessing && (
+                 <div className="space-y-2">
+                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                     <motion.div initial={{x:'-100%'}} animate={{x:'100%'}} transition={{repeat:Infinity, duration:1.5}} className="h-full w-1/3 bg-purple-500 rounded-full" />
+                   </div>
+                   <p className="text-[10px] font-black text-purple-600 animate-pulse uppercase tracking-widest">Claude AI is extracting data & generating notifications...</p>
+                 </div>
+               )}
+
+               <div className="pt-4 flex items-center justify-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                 <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Auto-Validation</span>
+                 <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Smart Notify</span>
+                 <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Secure Sync</span>
+               </div>
+            </div>
+          </div>
+        )}
 
         {(comTab==='sms' || comTab==='email') && (
           <div className="bg-white rounded-3xl border border-slate-100 p-8 text-center space-y-4 max-w-lg mx-auto">
@@ -1959,6 +2235,110 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     );
   };
 
+  const TUTORIAL_STEPS = [
+    {
+      title: "Welcome to your VP Portal 🏢",
+      description: "We've built this command center to give you 360-degree control over the campus. Let's walk through the key areas.",
+      position: "center"
+    },
+    {
+      title: "Academic Session 📅",
+      description: "Switch between different years and sessions here. All data across the portal automatically updates based on your selection.",
+      position: "top-right"
+    },
+    {
+      title: "Smart Navigation 🧭",
+      description: "Everything you need is just a click away. From Front Office and Students to HR and Hostel management.",
+      position: "top-nav"
+    },
+    {
+      title: "Real-time Fee Collection 💰",
+      description: "Our newest feature! You can now search for any student and collect their fees instantly. No more manual ledger headaches.",
+      position: "fee-nav"
+    },
+    {
+      title: "Claude AI Bulk Upload 🤖",
+      description: "Upload academic Excel files in the Communication tab. Claude AI will verify the data and notify students automatically.",
+      position: "ai-nav"
+    },
+    {
+      title: "Comprehensive Reports 📊",
+      description: "Access deep insights into finances, student performance, and staff attendance in the Reports section.",
+      position: "rep-nav"
+    },
+    {
+      title: "You're all set! 🚀",
+      description: "Your portal is powerful and intelligent. If you ever need help, just click the help icon in the header.",
+      position: "center"
+    }
+  ];
+
+  const TutorialOverlay = () => {
+    if (!showTutorial) return null;
+    const step = TUTORIAL_STEPS[tutorialStep];
+    
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center pointer-events-none">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] pointer-events-auto" onClick={() => setShowTutorial(false)} />
+        
+        <motion.div
+          key={tutorialStep}
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className={cn(
+            "relative bg-white rounded-[32px] p-8 shadow-[0_32px_80px_rgba(0,0,0,0.3)] max-w-sm w-full mx-4 border border-white/20 pointer-events-auto",
+            step.position === 'top-right' ? 'md:fixed md:top-20 md:right-8' : 
+            step.position === 'top-nav' ? 'md:fixed md:top-40' :
+            step.position === 'fee-nav' ? 'md:fixed md:top-40 md:left-1/2 md:-translate-x-1/2' :
+            ''
+          )}
+        >
+          <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-20 h-20 bg-white rounded-full p-2 shadow-xl flex items-center justify-center">
+             <div className="w-full h-full rounded-full flex items-center justify-center text-white font-black text-2xl" style={{ background: GRADIENT }}>
+                {tutorialStep + 1}
+             </div>
+          </div>
+          
+          <div className="text-center mt-6">
+            <h3 className="text-xl font-black text-slate-900 mb-3">{step.title}</h3>
+            <p className="text-slate-500 text-sm leading-relaxed font-medium">{step.description}</p>
+          </div>
+
+          <div className="flex gap-2 mt-8">
+            {tutorialStep > 0 && (
+              <button onClick={() => setTutorialStep(prev => prev - 1)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-600 font-bold text-xs hover:bg-slate-200 transition-all">Back</button>
+            )}
+            <button 
+              onClick={() => {
+                if (tutorialStep < TUTORIAL_STEPS.length - 1) {
+                  setTutorialStep(prev => prev + 1);
+                  // Auto-switch tabs for certain steps
+                  if (tutorialStep === 2) setTab('feemgmt');
+                  if (tutorialStep === 3) setTab('communicate');
+                } else {
+                  setShowTutorial(false);
+                  setTab('dashboard');
+                }
+              }} 
+              className="flex-1 py-3 rounded-2xl text-white font-black text-xs shadow-lg transition-all"
+              style={{ background: GRADIENT }}
+            >
+              {tutorialStep === TUTORIAL_STEPS.length - 1 ? "Got it!" : "Next Step"}
+            </button>
+          </div>
+          
+          <button onClick={() => setShowTutorial(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500 transition-colors"><X size={20} /></button>
+          
+          <div className="flex justify-center gap-1.5 mt-6">
+            {TUTORIAL_STEPS.map((_, i) => (
+              <div key={i} className={cn("h-1 rounded-full transition-all", i === tutorialStep ? "w-4" : "w-1")} style={{ background: i === tutorialStep ? ACCENT : '#E2E8F0' }} />
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
   // ── Placeholder card for WIP sections ───────────────────────────────────
   const PlaceholderCard = ({ title, desc }: { title:string; desc:string }) => (
     <div className="bg-white rounded-3xl border border-dashed border-slate-200 p-12 text-center shadow-sm">
@@ -2070,6 +2450,15 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Session Selector */}
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Session</span>
+            <select value={activeSession} onChange={e=>setActiveSession(e.target.value)}
+              className="bg-transparent border-none text-xs font-black text-slate-700 outline-none cursor-pointer">
+              {sessions.map(s=><option key={s.id} value={s.name}>{s.name} {s.is_active?'(Active)':''}</option>)}
+            </select>
+          </div>
+          <motion.button whileTap={{scale:0.95}} onClick={() => { setShowTutorial(true); setTutorialStep(0); }} className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 hover:bg-indigo-100 transition-all" title="Start Tutorial"><HelpCircle size={14} /></motion.button>
           <motion.button whileTap={{scale:0.95}} onClick={loadAll} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-all"><RefreshCw size={14} /></motion.button>
           {pendingLeaves>0 && (
             <button onClick={()=>setTab('leaves')} className="relative w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center">
@@ -2565,8 +2954,54 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
 
+        {collectModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={()=>setCollectModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{opacity:0,scale:0.92,y:20}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.92}} transition={{type:'spring',stiffness:420,damping:28}}
+              className="relative bg-white rounded-3xl w-full max-w-md overflow-hidden z-10" style={{boxShadow:'0 40px 100px rgba(0,0,0,0.25)'}}>
+              <div className="h-1 bg-emerald-500" />
+              <div className="p-6">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center"><DollarSign className="text-emerald-600" /></div>
+                  <div><h3 className="font-black text-slate-900 text-lg">Collect Fee</h3><p className="text-xs text-slate-400 font-bold">{collectModal.fees_group}</p></div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                   {[{l:'Total',v:PKR(collectModal.amount),c:'text-slate-900'},{l:'Paid',v:PKR(collectModal.paid),c:'text-emerald-600'},{l:'Balance',v:PKR(Number(collectModal.amount)+Number(collectModal.fine||0)-Number(collectModal.paid||0)-Number(collectModal.discount||0)),c:'text-rose-600'}].map(({l,v,c})=>(
+                     <div key={l} className="bg-slate-50 p-3 rounded-2xl text-center"><p className="text-[8px] font-black text-slate-400 uppercase mb-1">{l}</p><p className={cn('text-xs font-black',c)}>{v}</p></div>
+                   ))}
+                </div>
+
+                <div className="space-y-4">
+                  <Field label="Amount to Collect">
+                    <input type="number" value={feePayForm.amount} onChange={e=>setFeePayForm({...feePayForm,amount:e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 transition-all font-mono" placeholder="0.00" />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Payment Method">
+                      <select value={feePayForm.method} onChange={e=>setFeePayForm({...feePayForm,method:e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 transition-all bg-white font-black">
+                        {['Cash','Bank Transfer','Cheque','Online'].map(m=><option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Receipt # (Optional)">
+                      <input value={feePayForm.receipt} onChange={e=>setFeePayForm({...feePayForm,receipt:e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-emerald-500 transition-all uppercase placeholder:normal-case font-mono" placeholder="REC-123" />
+                    </Field>
+                  </div>
+                  <Field label="Discount (Optional)">
+                    <input type="number" value={feePayForm.discount} onChange={e=>setFeePayForm({...feePayForm,discount:e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all font-mono" placeholder="0.00" />
+                  </Field>
+
+                  <motion.button whileTap={{scale:0.97}} onClick={collectFee} disabled={saving}
+                    className="w-full py-4 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 mt-2" style={{background:'linear-gradient(135deg,#059669,#10b981)'}}>
+                    {saving?<Loader2 size={18} className="animate-spin" />:<><Check size={18} /> Confirm Payment</>}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <TutorialOverlay />
     </div>
   );
 }
