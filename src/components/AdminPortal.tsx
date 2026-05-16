@@ -8,12 +8,15 @@ import {
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target, Upload,
   Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine,
-  ChevronDown
+  ChevronDown, HelpCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../lib/utils';
 import { AcademicsPortal } from './AcademicsPortal';
 import { ReceptionistPortal } from './ReceptionistPortal';
+import BoysCoordinatorPortal from './BoysCoordinatorPortal';
+import GirlsCoordinatorPortal from './GirlsCoordinatorPortal';
+import UniCoordinatorPortal from './UniCoordinatorPortal';
 import { supabase } from '../services/supabase';
 
 const FileImage = ({ size }: { size: number }) => (
@@ -22,7 +25,7 @@ const FileImage = ({ size }: { size: number }) => (
 
 interface AdminPortalProps {
   onLogout: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }
 
 // ── Theme helpers ─────────────────────────────────────────────────────────
@@ -49,13 +52,34 @@ const fmtDate = (d: any) => {
 };
 
 const CLASS_MAP: Record<string, Record<number, Record<string, string>>> = {
-  'ICS Physics':     { 1:{'A-B':'ICS-Phy-A-B','B-B':'ICS-Phy-B-B','C-B':'ICS-Phy-B-B','A-G':'ICS-Phy-A-G','B-G':'ICS-Phy-A-G','C-G':'ICS-Phy-A-G'}, 2:{'A-B':'ICS-Phy-II-A-B','B-B':'ICS-Phy-II-B-B','C-B':'ICS-Phy-II-B-B','A-G':'ICS-Phy-II-A-G','B-G':'ICS-Phy-II-A-G','C-G':'ICS-Phy-II-A-G'} },
-  'ICS Statistics':  { 1:{'A-B':'ICS-Stat-B','B-B':'ICS-Stat-B','C-B':'ICS-Stat-B','A-G':'ICS-Stat-G','B-G':'ICS-Stat-G','C-G':'ICS-Stat-G'}, 2:{'A-B':'ICS-Stat-II-B','B-B':'ICS-Stat-II-B','C-B':'ICS-Stat-II-B','A-G':'ICS-Stat-II-G','B-G':'ICS-Stat-II-G','C-G':'ICS-Stat-II-G'} },
-  'Pre-Medical':     { 1:{'A-B':'Pre-Med-B','B-B':'Pre-Med-B','C-B':'Pre-Med-B','A-G':'Pre-Med-G','B-G':'Pre-Med-G','C-G':'Pre-Med-G'}, 2:{'A-B':'Pre-Med-II-B','B-B':'Pre-Med-II-B','C-B':'Pre-Med-II-B','A-G':'Pre-Med-II-G','B-G':'Pre-Med-II-G','C-G':'Pre-Med-II-G'} },
-  'Pre-Engineering': { 1:{'A-B':'Pre-Eng-B','B-B':'Pre-Eng-B','C-B':'Pre-Eng-B','A-G':'Pre-Eng-G','B-G':'Pre-Eng-G','C-G':'Pre-Eng-G'}, 2:{'A-B':'Pre-Eng-II-B','B-B':'Pre-Eng-II-B','C-B':'Pre-Eng-II-B','A-G':'Pre-Eng-II-G','B-G':'Pre-Eng-II-G','C-G':'Pre-Eng-II-G'} },
-  'FA IT':           { 1:{'A-B':'FA-IT-B','B-B':'FA-IT-B','C-B':'FA-IT-B','A-G':'FA-IT-G','B-G':'FA-IT-G','C-G':'FA-IT-G'}, 2:{'A-B':'FA-IT-II-B','B-B':'FA-IT-II-B','C-B':'FA-IT-II-B','A-G':'FA-IT-II-G','B-G':'FA-IT-II-G','C-G':'FA-IT-II-G'} },
-  'FA General':      { 1:{'A-B':'FA-Gen-B','B-B':'FA-Gen-B','C-B':'FA-Gen-B','A-G':'FA-Gen-G','B-G':'FA-Gen-G','C-G':'FA-Gen-G'}, 2:{'A-B':'FA-Gen-II-B','B-B':'FA-Gen-II-B','C-B':'FA-Gen-II-B','A-G':'FA-Gen-II-G','B-G':'FA-Gen-II-G','C-G':'FA-Gen-II-G'} },
-  'I.Com':           { 1:{'A-B':'I.Com-B','B-B':'I.Com-B','C-B':'I.Com-B','A-G':'I.Com-G','B-G':'I.Com-G','C-G':'I.Com-G'}, 2:{'A-B':'I.Com-II-B','B-B':'I.Com-II-B','C-B':'I.Com-II-B','A-G':'I.Com-II-G','B-G':'I.Com-II-G','C-G':'I.Com-II-G'} },
+  'ICS Physics': {
+    1: { 'A-Boys': 'ICS Physics A-Boys', 'B-Boys': 'ICS Physics B-Boys', 'C-Boys': 'ICS Physics C-Boys', 'A-Girls': 'ICS Physics A-Girls', 'B-Girls': 'ICS Physics B-Girls', 'C-Girls': 'ICS Physics C-Girls' },
+    2: { 'A-Boys': 'ICS Physics A-Boys', 'B-Boys': 'ICS Physics B-Boys', 'C-Boys': 'ICS Physics C-Boys', 'A-Girls': 'ICS Physics A-Girls', 'B-Girls': 'ICS Physics B-Girls', 'C-Girls': 'ICS Physics C-Girls' }
+  },
+  'ICS Statistics': {
+    1: { 'A-Boys': 'ICS Stats A-Boys', 'B-Boys': 'ICS Stats B-Boys', 'A-Girls': 'ICS Stats A-Girls', 'B-Girls': 'ICS Stats B-Girls' },
+    2: { 'A-Boys': 'ICS Stats A-Boys', 'B-Boys': 'ICS Stats B-Boys', 'A-Girls': 'ICS Stats A-Girls', 'B-Girls': 'ICS Stats B-Girls' }
+  },
+  'Pre-Medical': {
+    1: { 'A-Boys': 'Pre-Med A-Boys', 'B-Boys': 'Pre-Med B-Boys', 'A-Girls': 'Pre-Med A-Girls', 'B-Girls': 'Pre-Med B-Girls' },
+    2: { 'A-Boys': 'Pre-Med A-Boys', 'B-Boys': 'Pre-Med B-Boys', 'A-Girls': 'Pre-Med A-Girls', 'B-Girls': 'Pre-Med B-Girls' }
+  },
+  'Pre-Engineering': {
+    1: { 'A-Boys': 'Pre-Eng A-Boys', 'B-Boys': 'Pre-Eng B-Boys', 'A-Girls': 'Pre-Eng A-Girls', 'B-Girls': 'Pre-Eng B-Girls' },
+    2: { 'A-Boys': 'Pre-Eng A-Boys', 'B-Boys': 'Pre-Eng B-Boys', 'A-Girls': 'Pre-Eng A-Girls', 'B-Girls': 'Pre-Eng B-Girls' }
+  },
+  'FA IT': {
+    1: { 'A-Boys': 'FA IT A-Boys', 'B-Boys': 'FA IT B-Boys', 'A-Girls': 'FA IT A-Girls', 'B-Girls': 'FA IT B-Girls' },
+    2: { 'A-Boys': 'FA IT A-Boys', 'B-Boys': 'FA IT B-Boys', 'A-Girls': 'FA IT A-Girls', 'B-Girls': 'FA IT B-Girls' }
+  },
+  'FA General': {
+    1: { 'A-Boys': 'FA Gen A-Boys', 'B-Boys': 'FA Gen B-Boys', 'A-Girls': 'FA Gen A-Girls', 'B-Girls': 'FA Gen B-Girls' },
+    2: { 'A-Boys': 'FA Gen A-Boys', 'B-Boys': 'FA Gen B-Boys', 'A-Girls': 'FA Gen A-Girls', 'B-Girls': 'FA Gen B-Girls' }
+  },
+  'I.Com': {
+    1: { 'A-Boys': 'I.Com A-Boys', 'B-Boys': 'I.Com B-Boys', 'A-Girls': 'I.Com A-Girls', 'B-Girls': 'I.Com B-Girls' },
+    2: { 'A-Boys': 'I.Com A-Boys', 'B-Boys': 'I.Com B-Boys', 'A-Girls': 'I.Com A-Girls', 'B-Girls': 'I.Com B-Girls' }
+  }
 };
 
 const getGrade = (pct: number) => {
@@ -68,7 +92,7 @@ const getGrade = (pct: number) => {
 };
 
 const getSuggestedSection = (pct: number, gender: string, program?: string) => {
-  const g = gender === 'Female' ? 'G' : 'B';
+  const g = gender === 'Female' ? 'Girls' : 'Boys';
   if (pct >= 85) return `A-${g}`;
   if (program === 'ICS Physics') return `B-${g}`;
   if (pct >= 70) return `B-${g}`;
@@ -462,7 +486,7 @@ const FeeGroupsTab = ({ adminData, GRADIENT, ACCENT, showToast, showErr, PKR, on
                      {studentSearch && (
                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 max-h-[200px] overflow-y-auto overflow-x-hidden custom-scrollbar">
                          {fgStudents
-                           .filter(s => s.full_name?.toLowerCase().includes(studentSearch.toLowerCase()) || String(s.roll_no).includes(studentSearch))
+                           .filter(s => (s.full_name?.toLowerCase() || '').includes(studentSearch.toLowerCase()) || String(s.roll_no).includes(studentSearch))
                            .slice(0, 10)
                            .map(s => (
                              <button
@@ -615,6 +639,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onLogout, adminData })
   const [errorMsg, setErrorMsg]     = useState('');
   const [moreOpen, setMoreOpen]     = useState(false);
 const [showAcademicsPortal, setShowAcademicsPortal] = useState(false);
+const [coordinatorType, setCoordinatorType] = useState<string | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
 
 
   // ── Permissions state ──────────────────────────────────────────────────
@@ -787,8 +814,11 @@ const [showAcademicsPortal, setShowAcademicsPortal] = useState(false);
     }
   }, [admForm.num_installments, admForm.fee_package]);
 
-  const showToast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); };
-  const showErr   = (msg: string) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4500); };
+  const showToast = (msg: string, isErr = false) => {
+    if (isErr) { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); }
+    else         { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 3500); }
+  };
+  const showErr = (msg: string) => showToast(msg, true);
   
   const markAsRead = async (id: string) => {
     try {
@@ -884,7 +914,7 @@ const [showAcademicsPortal, setShowAcademicsPortal] = useState(false);
               part,
               matric_marks,
               matric_percentage: matric_pct || null,
-              gender: gender.toLowerCase().startsWith('f') ? 'Female' : 'Male',
+              gender: (gender || '').toLowerCase().startsWith('f') ? 'Female' : 'Male',
               session,
               status: 'Pending',
               created_by: adminData.full_name,
@@ -1852,13 +1882,13 @@ const handlePrintReport = (data: any) => {
       const basePkg = Number(f.fee_package) || 0;
       let totalPackage = basePkg;
       const optionalFeeConfigs = [
-        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000, code: 'EXT-SUMMER' },
-        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000, code: 'EXT-UNIFORM' },
-        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0,    code: 'EXT-WELCOME' },
-        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0,    code: 'EXT-EXAM' },
-        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0,    code: 'EXT-REGISTRATION' },
-        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0,    code: 'EXT-STUDENT' },
-        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0,    code: 'EXT-ANNUAL' },
+        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000, code: 'EXT-SUMMER', label: 'Summer Camp Fee' },
+        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000, code: 'EXT-UNIFORM', label: 'Uniform Fee' },
+        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0,    code: 'EXT-WELCOME', label: 'Welcome Party' },
+        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0,    code: 'EXT-EXAM', label: 'Exam Fee' },
+        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0,    code: 'EXT-REGISTRATION', label: 'Registration Fee' },
+        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0,    code: 'EXT-STUDENT', label: 'Student Card' },
+        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0,    code: 'EXT-ANNUAL', label: 'Annual Charges' },
       ];
 
       optionalFeeConfigs.forEach(opt => {
@@ -1915,7 +1945,17 @@ const handlePrintReport = (data: any) => {
 
       // 3b. Sync Fee Package (Installments)
       const requiredCount = Number(f.num_installments) || 1;
-      const finalInsts = Array.isArray(f.custom_installments) ? f.custom_installments : (f.admission_data?.custom_installments || []);
+      let finalInsts = Array.isArray(f.custom_installments) ? f.custom_installments : (f.admission_data?.custom_installments || []);
+      
+      // If we have custom installments but they don't match the count, we need to regenerate or pad
+      if (finalInsts.length !== requiredCount) {
+        const perInst = Math.floor(basePkg / requiredCount);
+        finalInsts = Array.from({ length: requiredCount }, (_, i) => ({
+          date: finalInsts[i]?.date || today,
+          amount: i === requiredCount - 1 ? basePkg - (perInst * (requiredCount - 1)) : perInst
+        }));
+      }
+
       const installmentFees = existingFees?.filter(fg => fg.fees_code?.startsWith('FEE-PK')) || [];
 
       const newInstUpdates: any[] = [];
@@ -2024,13 +2064,13 @@ const handlePrintReport = (data: any) => {
       let totalPackage = basePkg;
       
       const optionalFeeConfigs = [
-        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000 },
-        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000 },
-        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0 },
-        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0 },
-        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0 },
-        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0 },
-        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0 },
+        { key: 'include_summer_camp',    amt: 'summer_camp_amount',    def: 7000, label: 'Summer Camp Fee' },
+        { key: 'include_uniform',          amt: 'uniform_amount',         def: 1000, label: 'Uniform Fee' },
+        { key: 'include_welcome_party',    amt: 'welcome_party_amount',    def: 0,    label: 'Welcome Party' },
+        { key: 'include_exam_fee',         amt: 'exam_fee_amount',         def: 0,    label: 'Exam Fee' },
+        { key: 'include_registration_fee', amt: 'registration_fee_amount', def: 0,    label: 'Registration Fee' },
+        { key: 'include_student_card',     amt: 'student_card_amount',     def: 0,    label: 'Student Card' },
+        { key: 'include_annual_charges',   amt: 'annual_charges_amount',   def: 0,    label: 'Annual Charges' },
       ];
 
       optionalFeeConfigs.forEach(opt => {
@@ -2053,7 +2093,7 @@ const handlePrintReport = (data: any) => {
       }
 
       // --- Automatic Section Selection ---
-      let baseSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-B'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
+      let baseSection = f.suggested_class || CLASS_MAP[f.program]?.[f.part]?.['B-Boys'] || (f.program === 'Summer Camp' ? 'Summer-Camp' : 'TBD');
       
       const getAutoSectionName = async (initialSection: string): Promise<string> => {
         // Count students in initialSection
@@ -2111,7 +2151,7 @@ const handlePrintReport = (data: any) => {
           if (amt > 0) {
             ledgerFees.push({
               student_roll: roll,
-              fees_group: opt.key.replace('include_', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              fees_group: (opt as any).label || opt.key.replace('include_', '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
               fees_code: `EXT-${opt.key.split('_')[1].toUpperCase()}`,
               due_date: today,
               amount: amt,
@@ -2287,7 +2327,17 @@ const handlePrintReport = (data: any) => {
       }]);
 
       showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
-      setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); refresh();
+      setCollectModal(null); setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' });
+      // Refresh student fee groups if a student profile is open
+      if (selectedAccStu) {
+        const { data: freshFees } = await supabase.from('fee_groups').select('*').eq('student_roll', selectedAccStu.roll_no).order('created_at', { ascending: false });
+        setStuFeeGroups((freshFees || []).map((g: any) => ({ ...g, balance: (g.amount || 0) + (g.fine || 0) - (g.paid || 0) - (g.discount || 0) })));
+      }
+      if (selectedLedgerRoll) {
+        const { data: freshFees } = await supabase.from('fee_groups').select('*').eq('student_roll', selectedLedgerRoll).order('created_at', { ascending: false });
+        setStuFeeGroups((freshFees || []).map((g: any) => ({ ...g, balance: (g.amount || 0) + (g.fine || 0) - (g.paid || 0) - (g.discount || 0) })));
+      }
+      refresh();
     } catch (e: any) { 
       console.error(e);
       showErr(e.message || 'Failed to collect fee'); 
@@ -2326,8 +2376,17 @@ const handlePrintReport = (data: any) => {
   const saveFinancialRecord = async (overrideType?: 'Income' | 'Expense') => {
   const typeToUse = overrideType || finType;
   const amt = Number(finAmount);
-  if (!amt || amt <= 0) { showErr('Enter a valid amount'); return; }
-  if (!finCategory.trim()) { showErr('Category is required'); return; }
+  
+  if (typeToUse === 'Expense') {
+    if (!amt || amt <= 0 || !finCategory.trim() || !finName.trim() || !finSlipNo.trim() || !finDate) {
+      showErr('Please complete all fields (except description)');
+      return;
+    }
+  } else {
+    if (!amt || amt <= 0) { showErr('Enter a valid amount'); return; }
+    if (!finCategory.trim()) { showErr('Category is required'); return; }
+    if (!finDate) { showErr('Date is required'); return; }
+  }
   
   setSaving(true);
   try {
@@ -2445,7 +2504,8 @@ const handlePrintReport = (data: any) => {
   const totalGroups    = feeGroups.length || 1;
   const today          = new Date().toISOString().slice(0, 10);
   const todayTx        = transactions.filter(t => t.payment_date?.startsWith(today));
-  const todayOtherInc  = income.filter(i => i.income_date === today).reduce((s, i) => s + i.amount, 0);
+  // Only count non-fee income to avoid double counting (fees already counted via transactions)
+  const todayOtherInc  = income.filter(i => i.income_date === today && i.category !== 'Fee Collection' && i.category !== 'Fees' && !i.description?.toLowerCase().includes('fee payment')).reduce((s, i) => s + i.amount, 0);
   const todayRevenue   = (todayTx.reduce((s, t) => s + Number(t.amount_paid || 0), 0)) + todayOtherInc;
 
   // Monthly Balance Tracking (Calculated Monthly, resets counter per month but carries forward unpaid)
@@ -2473,7 +2533,7 @@ const handlePrintReport = (data: any) => {
     if (filterStudentType && s.student_type !== filterStudentType) return false;
     if (!searchQ) return true;
     const q = searchQ.toLowerCase();
-    return s.full_name?.toLowerCase().includes(q) || String(s.roll_no).includes(q) || s.class_section?.toLowerCase().includes(q) || s.father_name?.toLowerCase().includes(q);
+    return (s.full_name?.toLowerCase() || '').includes(q) || String(s.roll_no).includes(q) || (s.class_section?.toLowerCase() || '').includes(q) || (s.father_name?.toLowerCase() || '').includes(q);
   });
 
   const filteredSectionOptions = students
@@ -2580,10 +2640,39 @@ const handlePrintReport = (data: any) => {
   };
 
   if (isReceptionist) {
-    return <ReceptionistPortal adminData={adminData} onLogout={onLogout} />;
-  }
+  return <ReceptionistPortal adminData={adminData} onLogout={onLogout} />;
+}
 
-  if (showAcademicsPortal) {
+// ── Coordinator portal routing ──────────────────────────────────────────
+if (adminData.role === 'Coordinator') {
+  const cType = adminData.coordinator_type || coordinatorType;
+  if (cType === 'Boys') {
+    return <BoysCoordinatorPortal onLogout={onLogout} adminData={adminData} />;
+  }
+  if (cType === 'Girls') {
+    return <GirlsCoordinatorPortal onLogout={onLogout} adminData={adminData} />;
+  }
+  if (cType === 'University') {
+    return <UniCoordinatorPortal onLogout={onLogout} adminData={adminData} />;
+  }
+  
+  // Minimal fallback if type not selected yet
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="bg-white rounded-3xl p-10 shadow-xl border border-slate-200 text-center max-w-sm">
+        <h2 className="text-xl font-black text-slate-900 mb-2">Select Portal Type</h2>
+        <div className="grid grid-cols-1 gap-2 mt-4 text-left">
+          <button onClick={() => setCoordinatorType('Boys')} className="px-4 py-3 rounded-xl bg-orange-50 text-orange-700 font-bold hover:bg-orange-100 italic transition-all">Boys Sidebar</button>
+          <button onClick={() => setCoordinatorType('Girls')} className="px-4 py-3 rounded-xl bg-pink-50 text-pink-700 font-bold hover:bg-pink-100 italic transition-all">Girls Sidebar</button>
+          <button onClick={() => setCoordinatorType('University')} className="px-4 py-3 rounded-xl bg-teal-50 text-teal-700 font-bold hover:bg-teal-100 italic transition-all">University Sidebar</button>
+        </div>
+        <button onClick={onLogout} className="mt-6 text-xs font-bold text-slate-400 hover:text-rose-500">Sign Out</button>
+      </div>
+    </div>
+  );
+}
+
+if (showAcademicsPortal) {
   return (
     <AcademicsPortal
       adminData={adminData}
@@ -2594,6 +2683,98 @@ const handlePrintReport = (data: any) => {
 
 const portalLabel = isAccountant ? 'Accountant Portal' : 'Principal Portal';
   const SidebarIcon = isAccountant ? CreditCard : GraduationCap;
+
+  const TUTORIAL_STEPS = [
+    {
+      title: "Welcome to the Admin Command Center",
+      content: "This is your central hub for controlling everything at PIC Campus. Let's take a quick tour of our advanced features.",
+      target: "dashboard"
+    },
+    {
+      title: "Comprehensive Student Records",
+      content: "Manage every detail of your students—from basic info to real-time performance tracking and behavioral badges.",
+      target: "students"
+    },
+    {
+      title: "Precision Fee Ledger",
+      content: "Direct oversight of all financial obligations. Monitor individual ledgers, outstanding balances, and payment histories.",
+      target: "fee-ledger"
+    },
+    {
+      title: "Admission Control",
+      content: "Review incoming admission forms, assign roll numbers, and confirm student enrollments to the database.",
+      target: "admissions"
+    },
+    {
+      title: "Staff & Role Management",
+      content: "Assign roles to your team and control who has access to which features across the portal.",
+      target: "staff"
+    }
+  ];
+
+  const TutorialOverlay = () => {
+    if (!showTutorial) return null;
+    const step = TUTORIAL_STEPS[tutorialStep];
+
+    const nextStep = () => {
+      if (tutorialStep < TUTORIAL_STEPS.length - 1) {
+        setTutorialStep(s => s + 1);
+        if (TUTORIAL_STEPS[tutorialStep + 1].target) {
+          setTab(TUTORIAL_STEPS[tutorialStep + 1].target);
+        }
+      } else {
+        setShowTutorial(false);
+        setTutorialStep(0);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+          onClick={() => setShowTutorial(false)}
+        />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="relative bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl border border-white/20"
+        >
+          <div className="h-2 w-full bg-slate-100">
+            <motion.div 
+              className="h-full bg-blue-600" 
+              initial={{ width: 0 }}
+              animate={{ width: `${((tutorialStep + 1) / TUTORIAL_STEPS.length) * 100}%` }}
+            />
+          </div>
+          <div className="p-8">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 mb-6">
+              <HelpCircle size={24} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-3">{step.title}</h3>
+            <p className="text-slate-500 font-medium leading-relaxed mb-8">{step.content}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Step {tutorialStep + 1} of {TUTORIAL_STEPS.length}</p>
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                onClick={nextStep}
+                className="px-6 py-3 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-slate-900/20"
+              >
+                {tutorialStep === TUTORIAL_STEPS.length - 1 ? "Finish Tour" : "Next Step"}
+              </motion.button>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowTutorial(false)}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-900"
+          >
+            <X size={20} />
+          </button>
+        </motion.div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row" style={{ background: '#f4f6fb', fontFamily: "'Segoe UI',system-ui,sans-serif" }}>
@@ -2676,6 +2857,7 @@ const active = tab === id; const badgeN = getBadge(id);
             </button>
           )}
           <button onClick={refresh} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
+          <button onClick={() => { setTutorialStep(0); setShowTutorial(true); }} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all"><HelpCircle size={14} /></button>
         </div>
       </header>
 
@@ -2693,6 +2875,7 @@ const active = tab === id; const badgeN = getBadge(id);
               </button>
             )}
             <button onClick={refresh} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
+            <button onClick={() => { setTutorialStep(0); setShowTutorial(true); }} className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-all"><HelpCircle size={14} /></button>
           </div>
         </div>
 
@@ -3187,7 +3370,7 @@ const active = tab === id; const badgeN = getBadge(id);
                 }
                 if (searchQ) {
                   const q = searchQ.toLowerCase();
-                  return String(s.roll_no).includes(q) || s.full_name?.toLowerCase().includes(q);
+                  return String(s.roll_no).includes(q) || (s.full_name?.toLowerCase() || '').includes(q);
                 }
                 return true;
               });
@@ -3553,10 +3736,17 @@ const active = tab === id; const badgeN = getBadge(id);
                         </button>
                       </div>
                     </td>
-                          </motion.tr>
-                        ))}
-                        {!transactions.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No transactions yet</td></tr>}
-                      </tbody>
+                  </motion.tr>
+                ))}
+                {transactions.length > 0 && (
+                  <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
+                    <td colSpan={3} className="px-4 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Collected</td>
+                    <td className="px-4 py-3 text-emerald-600">{PKR(transactions.reduce((acc, t) => acc + (Number(t.amount_paid) || 0), 0))}</td>
+                    <td colSpan={6} />
+                  </tr>
+                )}
+                {!transactions.length && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400">No transactions yet</td></tr>}
+              </tbody>
                     </table>
                   </div>
                 </div>
@@ -3626,7 +3816,7 @@ const active = tab === id; const badgeN = getBadge(id);
                             <motion.button 
                               whileTap={{ scale: 0.95 }} 
                               onClick={() => { saveFinancialRecord('Expense'); }} 
-                              disabled={saving || !finAmount || !finCategory}
+                              disabled={saving}
                               className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                               style={{ background: GRADIENT }}
                             >
@@ -4626,7 +4816,7 @@ const active = tab === id; const badgeN = getBadge(id);
                             <motion.button 
                               whileTap={{ scale: 0.95 }} 
                               onClick={() => { saveFinancialRecord('Income'); }} 
-                              disabled={saving || !finAmount || !finCategory}
+                              disabled={saving}
                               className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                               style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
                             >
@@ -5876,6 +6066,7 @@ const active = tab === id; const badgeN = getBadge(id);
           </motion.div>
         )}
       </AnimatePresence>
+      <TutorialOverlay />
     </div>
   );
 };
