@@ -51,7 +51,7 @@ const StatCard = ({ title, value, icon: Icon, subtext, trend }: any) => (
 
 export const ReceptionistPortal: React.FC<{
   onLogout: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }> = ({ onLogout, adminData }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
