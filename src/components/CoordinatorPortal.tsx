@@ -11,7 +11,7 @@ import { supabase } from '../services/supabase';
 
 interface CoordinatorPortalProps {
   onLogout: () => void;
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
 }
 
 const ACCENT   = '#059669';
