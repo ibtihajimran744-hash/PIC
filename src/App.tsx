@@ -257,7 +257,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
 const ROLE_PORTAL: Record<string, string> = {
   'Director':          'director',
   'VP':                'vp',
-  'Principal':         'admin',
+  'Principal':         'principal',
   'Coordinator':       'coordinator',
   'Accountant':        'admin',
   'Admission Officer': 'admin',
@@ -294,7 +294,13 @@ export default function App() {
     } else if (loginType === 'teacher') {
       portal = 'teacher';
     } else {
-      portal = ROLE_PORTAL[loginUser.role] || 'admin';
+      const userRole = String(loginUser.role || '');
+      // Normalizing to lowercase for lookup
+      const normalizedRolePortals: Record<string, string> = {};
+      Object.keys(ROLE_PORTAL).forEach(k => {
+        normalizedRolePortals[k.toLowerCase()] = ROLE_PORTAL[k];
+      });
+      portal = normalizedRolePortals[userRole.toLowerCase()] || 'admin';
     }
     setUser(loginUser);
     setUserType(loginType);
@@ -345,7 +351,7 @@ export default function App() {
     return (
       <VPPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -354,7 +360,7 @@ export default function App() {
     return (
       <DirectorPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -363,7 +369,7 @@ export default function App() {
     return (
       <PrincipalPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -372,7 +378,7 @@ export default function App() {
     return (
       <CoordinatorPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -381,7 +387,7 @@ export default function App() {
     return (
       <ExaminerPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -390,7 +396,7 @@ export default function App() {
     return (
       <AcademicsPortal
         onLogout={handleLogout}
-        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+        adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
       />
     );
   }
@@ -408,7 +414,7 @@ export default function App() {
   return (
     <AdminPortal
       onLogout={handleLogout}
-      adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username }}
+      adminData={{ id: user.id, full_name: user.full_name, role: user.role, username: user.username, coordinator_type: user.coordinator_type }}
     />
   );
 }

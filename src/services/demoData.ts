@@ -47,6 +47,8 @@ export async function seedAllDemoData() {
       status: 'Active',
       paid_amount: 15000,
       total_package: 150000,
+      total_xp: Math.floor(Math.random() * 1000) + 500,
+      current_badge: i === 0 ? 'Gold' : i < 3 ? 'Silver' : 'Bronze',
       username: `student${202600 + i}`,
       password: 'password123'
     }));
@@ -108,6 +110,7 @@ export async function seedAllDemoData() {
 
     const scheme = syllabusItems.map(item => ({
       teacher_id: teacherId,
+      class_section: item.subject === 'Physics' ? '9th-A' : '10th-B',
       subject: item.subject,
       topic: item.topic,
       week_no: item.week,

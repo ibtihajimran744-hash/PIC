@@ -18,6 +18,9 @@ export interface Student {
   full_name: string;
   roll_no: number;
   class_section: string;
+  program?: string;
+  part?: string;
+  program_id?: string;
   father_name?: string;
   parent_name?: string;
   parent_phone?: string;
@@ -121,6 +124,8 @@ export interface Notification {
   target_role?: string;
   target_user_id?: number;
   type: string;
+  item_id?: string | number;
+  metadata?: any;
   created_at: string;
 }
 
@@ -935,18 +940,23 @@ export async function getTeacherSchedule(teacherId: number): Promise<TeacherSche
 /**
  * Get a teacher's full weekly schedule from `timetable` table.
  */
-export async function getTeacherWeeklySchedule(teacherId: number, teacherName?: string): Promise<TeacherScheduleEntry[]> {
+export async function getTeacherWeeklySchedule(teacherId: number, teacherName?: string, subject?: string): Promise<TeacherScheduleEntry[]> {
   let query = supabase
     .from('timetable')
     .select('*')
     .order('start_time', { ascending: true });
     
   if (teacherId) {
+    let orFilter = `teacher_id.eq.${teacherId}`;
     if (teacherName) {
-      query = query.or(`teacher_id.eq.${teacherId},teacher_name.ilike.%${teacherName}%`);
-    } else {
-      query = query.eq('teacher_id', teacherId);
+      orFilter += `,teacher_name.ilike.%${teacherName}%`;
     }
+    if (subject) {
+      orFilter += `,subject.ilike.%${subject}%`;
+    }
+    query = query.or(orFilter);
+  } else if (subject) {
+    query = query.ilike('subject', `%${subject}%`);
   }
 
   const { data, error } = await query;
@@ -971,11 +981,11 @@ export async function getTeacherWeeklySchedule(teacherId: number, teacherName?: 
 /**
  * Get today's schedule for a specific teacher.
  */
-export async function getTeacherTodaySchedule(teacherId: number, teacherName?: string): Promise<TeacherScheduleEntry[]> {
+export async function getTeacherTodaySchedule(teacherId: number, teacherName?: string, subject?: string): Promise<TeacherScheduleEntry[]> {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }); // e.g. "Monday"
   
   // 1. Try the view first
-  const { data: viewData, error: viewError } = await supabase
+  const { data: viewData } = await supabase
     .from('teacher_schedule_view')
     .select('*')
     .eq('teacher_id', teacherId)
@@ -988,14 +998,20 @@ export async function getTeacherTodaySchedule(teacherId: number, teacherName?: s
   let query = supabase
     .from('timetable')
     .select('*')
-    .eq('day_of_week', today);
+    .eq('day_of_week', today)
+    .order('start_time', { ascending: true });
     
   if (teacherId) {
+    let orFilter = `teacher_id.eq.${teacherId}`;
     if (teacherName) {
-      query = query.or(`teacher_id.eq.${teacherId},teacher_name.ilike.%${teacherName}%`);
-    } else {
-      query = query.eq('teacher_id', teacherId);
+      orFilter += `,teacher_name.ilike.%${teacherName}%`;
     }
+    if (subject) {
+      orFilter += `,subject.ilike.%${subject}%`;
+    }
+    query = query.or(orFilter);
+  } else if (subject) {
+    query = query.ilike('subject', `%${subject}%`);
   }
 
   const { data, error } = await query.order('start_time', { ascending: true });
@@ -1018,12 +1034,21 @@ export async function getTeacherTodaySchedule(teacherId: number, teacherName?: s
   }));
 }
 
-export async function getSchemeOfStudy(teacherId: number | string) {
-  const { data, error } = await supabase
+export async function getSchemeOfStudy(teacherId: number | string, subject?: string) {
+  let query = supabase
     .from('scheme_of_study')
     .select('*')
-    .eq('teacher_id', teacherId)
     .order('scheduled_date', { ascending: true });
+
+  if (teacherId && subject) {
+    query = query.or(`teacher_id.eq.${teacherId},subject.ilike.%${subject}%`);
+  } else if (teacherId) {
+    query = query.eq('teacher_id', teacherId);
+  } else if (subject) {
+    query = query.ilike('subject', `%${subject}%`);
+  }
+
+  const { data, error } = await query;
   if (error) { console.error('Error fetching scheme:', error); return []; }
   return data as any[];
 }

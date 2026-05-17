@@ -1,5 +1,6 @@
 {
   "name": "Pak Informatics Campus Portal",
   "description": "A comprehensive educational management system for students and teachers at Pak Informatics Campus.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

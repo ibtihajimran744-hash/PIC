@@ -56,7 +56,7 @@ const PKR = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 // ════════════════════════════════════════════════════════════════════════════
 
 interface AttendanceTabProps {
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
   ACCENT: string;
   GRADIENT: string;
 }
@@ -429,7 +429,7 @@ const BiometricLogsCard: React.FC<{ ACCENT: string; selectedClass: string; viewD
 // ════════════════════════════════════════════════════════════════════════════
 
 interface ExamPlannerTabProps {
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
   ACCENT: string;
   GRADIENT: string;
 }
@@ -914,7 +914,7 @@ const SeatingTab: React.FC<{ adminData: any; exams: any[]; classSections: string
 // ════════════════════════════════════════════════════════════════════════════
 
 interface ExcelReportsTabProps {
-  adminData: { id: string; full_name: string; role: string; username: string };
+  adminData: { id: string; full_name: string; role: string; username: string; coordinator_type?: string };
   ACCENT: string;
   GRADIENT: string;
   students:     any[];
