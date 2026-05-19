@@ -163,7 +163,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('teacher_messages').select('*').order('created_at', { ascending: false }),
       supabase.from('grades').select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('attendance').select('student_roll,status,date').order('date', { ascending: false }).limit(500),
-      supabase.from('exam_schedule').select('*').order('created_at', { ascending: false }),
+      supabase.from('exam_schedule').select('*').eq('is_published', true).order('created_at', { ascending: false }),
       supabase.from('classes').select('*').order('class_name'),
       supabase.from('academic_sessions').select('*').order('created_at', { ascending: false }),
       supabase.from('academic_programs').select('*').order('created_at', { ascending: false }),
@@ -590,7 +590,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const unreadMessages = messages.filter(m => !m.is_read && m.from_role !== adminData.role).length;
 
   const getStudentStats = (roll: number) => {
-    const student = allStudents.find(s => s.roll_no === roll);
+    const student = students.find(s => s.roll_no === roll);
     const studentClass = student?.class_section;
     
     // Calculate CP dynamically based on student's class and SOS

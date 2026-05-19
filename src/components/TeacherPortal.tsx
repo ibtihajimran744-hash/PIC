@@ -23,7 +23,6 @@ import { SchemeEntry } from '../services/academicManagement';
 import { Leaderboard } from './Leaderboard';
 import { toast, Toaster } from 'react-hot-toast';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { LMSModule } from './LMSModule';
 
 interface TeacherPortalProps {
   onLogout: () => void;
@@ -103,6 +102,9 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [notifications, setNotifications] = useState<any[]>([]);
   const [selectedNotif, setSelectedNotif] = useState<any | null>(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
+  const [verifications, setVerifications] = useState<any[]>([]);
+  const [loadingVer, setLoadingVer] = useState(false);
+  const [submittingVerAction, setSubmittingVerAction] = useState(false);
 
   const [todaySchedule, setTodaySchedule] = useState<TeacherScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
@@ -165,7 +167,6 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [courseProgressData, setCourseProgressData] = useState<any[]>([]);
   const [loadingAcademics, setLoadingAcademics] = useState(false);
   const [weekSos, setWeekSos] = useState<any[]>([]);
-const [seeding, setSeeding] = useState(false);
 const [todayScheduleNew, setTodayScheduleNew]   = useState<any[]>([]);
 const [weekScheduleNew,  setWeekScheduleNew]    = useState<any[]>([]);
 const [schedLoadingNew,  setSchedLoadingNew]    = useState(false);
@@ -217,18 +218,34 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
     }
   };
 
-  const handleSeedDemoData = async () => {
-    if (!window.confirm("This will populate your portal with comprehensive demo data. Existing entries for your teacher ID might be duplicated if unique constraints aren't set. Proceed?")) return;
-    setSeeding(true);
-    const ok = await seedAllDemoData();
-    setSeeding(false);
-    if (ok) {
-      toast.success('Portal populated with demo data!');
-      fetchStudents();
-      loadExamManagement();
+  const handleResolveVerification = async (ver: any, action: 'Resolved' | 'Rejected', note: string) => {
+    if (!teacherData) return;
+    setSubmittingVerAction(true);
+    try {
+      const { error } = await supabase.from('result_verifications').update({
+        status: action,
+        resolution_note: note,
+        resolved_by: teacherData.full_name,
+        resolved_at: new Date().toISOString()
+      }).eq('id', ver.id);
+
+      if (error) throw error;
+
+      // Notify Student
+      await supabase.from('notifications').insert([{
+        target_user_id: String(ver.student_roll),
+        target_role: 'STUDENT',
+        title: `Verification Order ${action}`,
+        message: `Your verification request for ${ver.exam_name} was ${action.toLowerCase()}. Details: ${note}`,
+        type: 'verification_resolved'
+      }]);
+
+      toast.success(`Verification ${action.toLowerCase()}`);
       loadAcademicsData();
-    } else {
-      toast.error('Seeding failed. Check console for details.');
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSubmittingVerAction(false);
     }
   };
 
@@ -447,14 +464,46 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
       if (!teacherData) return;
       const notifs = await getNotifications(teacherData.id, 'TEACHER');
       setNotifications(notifs);
-      const { data: exs } = await supabase
+      const teacherSubjects = (teacherData.subject_dept || '').split(/[,|/]/).map(s => s.trim()).filter(Boolean);
+      
+      // Fetch all recent exams and filter locally for maximum reliability
+      const { data: exs, error: examError } = await supabase
         .from('exams')
         .select('*')
-        .or(`teacher_id.eq.${teacherData.id},subject.eq.${teacherData.subject_dept}`)
-        .order('created_at', { ascending: false });
-      setExams(exs || []);
-      const { data: grds } = await supabase.from('grades').select('*').eq('subject', teacherData.subject_dept);
-      if (grds) setGrades(grds);
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (examError) {
+        console.error('Error fetching exams:', examError);
+      }
+      
+      const filteredExs = (exs || []).filter(e => {
+        // Use loose equality for IDs
+        const isAssigned = String(e.teacher_id) === String(teacherData.id);
+        
+        // Subject match
+        const subjectMatch = teacherSubjects.some(ts => {
+          const s1 = (e.subject || '').toLowerCase().trim();
+          const s2 = ts.toLowerCase().trim();
+          return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+        });
+
+        // Show if assigned TO this teacher OR if it matches their subject (since examiner releases it)
+        return isAssigned || subjectMatch;
+      });
+      setExams(filteredExs);
+      
+      const { data: grds, error: gradeError } = await supabase.from('grades').select('*');
+      if (gradeError) console.error('Error fetching grades:', gradeError);
+      
+      const filteredGrades = (grds || []).filter(g => 
+        teacherSubjects.some(ts => {
+          const s1 = (g.subject || '').toLowerCase().trim();
+          const s2 = ts.toLowerCase().trim();
+          return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+        })
+      );
+      setGrades(filteredGrades);
     };
     init();
     const ch3 = supabase.channel('notif-teacher').on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
@@ -524,7 +573,7 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      const [weekly, scheme, sosRes] = await Promise.all([
+      const [weekly, scheme, sosRes, verRes] = await Promise.all([
         getTeacherWeeklySchedule(teacherData.id, teacherData.full_name, teacherData.subject_dept),
         getSchemeOfStudy(teacherData.id, teacherData.subject_dept),
         supabase.from('sos').select('lecture_date,subject,topic,chapter,lecture_no,status,topic_type,class_section')
@@ -532,10 +581,12 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
           .gte('lecture_date', weekStart.toISOString().split('T')[0])
           .lte('lecture_date', weekEnd.toISOString().split('T')[0])
           .order('lecture_date'),
+        supabase.from('result_verifications').select('*').eq('status', 'Pending-Teacher').order('created_at', { ascending: false })
       ]);
       setFullWeeklySchedule(weekly);
       setCourseProgressData(scheme);
       setWeekSos(sosRes.data || []);
+      setVerifications(verRes.data || []);
     } catch (err) {
       console.error('Error loading academics data:', err);
     } finally {
@@ -543,9 +594,44 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
     }
   };
 
+  const checkOverdueVerifications = async () => {
+    if (!verifications.length) return;
+    const overdue = verifications.filter(v => {
+      if (v.status !== 'Pending-Teacher') return false;
+      const tDeadline = new Date(v.teacher_deadline);
+      return tDeadline < new Date();
+    });
+
+    for (const v of overdue) {
+      // Auto-escalate to Examiner
+      await supabase.from('result_verifications').update({ 
+        status: 'Pending-Examiner',
+        system_note: 'Auto-escalated: Teacher failed to resolve within 24h'
+      }).eq('id', v.id);
+
+      // Notify Examiner (Broadcasting to admin_notifications)
+      await supabase.from('admin_notifications').insert([{
+        sender: 'System Escalation',
+        title: '⚠️ Escalated Correction Order',
+        message: `Verification for ${v.student_name} (${v.subject}) has been escalated because the teacher didn't respond in time.`,
+        target: 'EXAMINER',
+        target_role: 'examiner',
+        is_read: false,
+        type: 'escalation'
+      }]);
+    }
+    if (overdue.length > 0) loadAcademicsData();
+  };
+
   useEffect(() => {
     loadAcademicsData();
   }, [teacherData]);
+
+  useEffect(() => {
+    if (activeTab === 'Academics' || activeTab === 'Grading') {
+      checkOverdueVerifications();
+    }
+  }, [activeTab, verifications]);
 
   // ── Mark attendance ────────────────────────────────────────────────────────
   const handleMarkAttendance = async (student: Student, status: 'Present' | 'Absent' | 'Late') => {
@@ -656,8 +742,16 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
       await Promise.all(resultCardPromises);
 
       // Refresh local grades
-      const { data: grds } = await supabase.from('grades').select('*').eq('subject', teacherData.subject_dept);
-      if (grds) setGrades(grds);
+      const teacherSubjects = (teacherData.subject_dept || '').split(/[,|/]/).map(s => s.trim()).filter(Boolean);
+      const { data: grds } = await supabase.from('grades').select('*');
+      const filteredGrades = (grds || []).filter(g => 
+        teacherSubjects.some(ts => {
+          const s1 = (g.subject || '').toLowerCase().trim();
+          const s2 = ts.toLowerCase().trim();
+          return s1 === s2 || s1.includes(s2) || s2.includes(s1);
+        })
+      );
+      setGrades(filteredGrades);
       
       setShowGradeModal(false); 
       setStudentScores({}); 
@@ -846,6 +940,91 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
                 ))}
               </div>
             </div>
+          </motion.div>
+        );
+
+      // ── Result Verifications ───────────────────────────────────────────────
+      case 'ResultVerifications':
+        return (
+          <motion.div key="rv" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center transition-all hover:bg-slate-100 hover:scale-105 active:scale-95"><ChevronLeft size={20} /></button>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Correction Orders</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">24h Deadline Flow</p>
+              </div>
+            </div>
+            
+            {verifications.length === 0 ? (
+              <div className="bg-white rounded-[2.5rem] p-16 text-center border border-dashed border-slate-200 shadow-sm flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-6 text-slate-300">
+                  <CheckSquare size={32} />
+                </div>
+                <p className="text-slate-400 font-bold">No active correction requests.</p>
+                <p className="text-[11px] text-slate-300 mt-2 font-medium tracking-wide">Pending requests from students will appear here.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {verifications.map(v => {
+                   const diff = new Date(v.teacher_deadline).getTime() - new Date().getTime();
+                   const hoursLeft = Math.max(0, Math.floor(diff / (1000 * 60 * 60)));
+                   const isUrgent = hoursLeft < 4;
+
+                   return (
+                    <motion.div key={v.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                      className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
+                      <div className={cn("absolute top-0 left-0 w-1.5 h-full", isUrgent ? "bg-rose-500" : "bg-amber-500")} />
+                      
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", isUrgent ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600")}>
+                            <Clock size={20} />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{v.student_roll} · {v.student_name}</p>
+                            <h4 className="font-black text-slate-900 leading-tight">{v.subject} — {v.exam_name}</h4>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={cn("text-xs font-black uppercase tracking-tighter", isUrgent ? "text-rose-600 animate-pulse" : "text-amber-600")}>
+                             {hoursLeft}H REMAINING
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-300 mt-0.5">Escalates to Examiner soon</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-2xl p-4 mb-6">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><FileText size={10}/> Student's Reason: {v.reason}</p>
+                        <p className="text-xs text-slate-600 font-bold leading-relaxed italic">"{v.detail}"</p>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => {
+                            const note = prompt("Enter resolution notes (e.g. Corrected to 85 marks):");
+                            if (note) handleResolveVerification(v, 'Resolved', note);
+                          }}
+                          disabled={submittingVerAction}
+                          className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                        >
+                          Mark Resolved
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const note = prompt("Enter reason for rejection:");
+                            if (note) handleResolveVerification(v, 'Rejected', note);
+                          }}
+                          disabled={submittingVerAction}
+                          className="flex-1 py-4 rounded-2xl bg-white text-rose-600 font-black text-xs uppercase tracking-widest border border-rose-100 hover:bg-rose-50 transition-all disabled:opacity-50"
+                        >
+                          Reject Request
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
           </motion.div>
         );
 
@@ -1541,14 +1720,6 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
-          <button 
-            onClick={handleSeedDemoData} 
-            disabled={seeding}
-            className="hidden sm:flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-50"
-          >
-            {seeding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            {seeding ? 'Seeding...' : 'Seed Data'}
-          </button>
           <button onClick={fetchStudents} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center hover:bg-blue-50 transition-colors" title="Refresh Data">
             <RefreshCw size={18} className={cn("text-slate-600", studentsLoading && "animate-spin")} />
           </button>
@@ -1629,6 +1800,28 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                       <h3 className="text-lg font-black text-slate-900">Recent Notifications</h3>
+                       <button onClick={() => setSubPage('Notifications')} className="text-[10px] font-black text-blue-600 hover:underline uppercase tracking-widest">See All →</button>
+                    </div>
+                    <div className="space-y-3">
+                      {notifications.slice(0, 3).map(n => (
+                        <div key={n.id} onClick={() => { setSelectedNotif(n); setShowNotifModal(true); }} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center gap-4 cursor-pointer hover:bg-slate-100 transition-all group">
+                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border", n.is_read ? 'bg-white border-slate-100 text-slate-400' : 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-100')}>
+                             {n.type === 'DUTY' ? <CheckCircle2 size={18}/> : <Bell size={18} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                             <p className={cn("text-sm font-black truncate", n.is_read ? 'text-slate-500' : 'text-slate-900')}>{n.title}</p>
+                             <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{new Date(n.created_at).toLocaleDateString()}</p>
+                          </div>
+                          {!n.is_read && <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}
+                        </div>
+                      ))}
+                      {!notifications.length && <p className="text-center py-4 text-slate-400 italic text-xs font-bold">No new messages</p>}
+                    </div>
+                  </div>
+
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                     <h3 className="text-lg font-black text-slate-900">Quick Actions</h3>
                     <div className="grid grid-cols-2 gap-4">
@@ -1812,11 +2005,8 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
                                   <div className="flex-1">
                                     <h4 className="text-slate-900 font-black text-sm">{student.full_name}</h4>
                                     <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{student.roll_no} • {displaySection(student.class_section, student.program)}</p>
-                                    <div className="mt-1 flex items-center gap-2">{getAttendanceBadge(student.roll_no)}</div>
                                   </div>
                                   <div className="flex gap-2">
-                                    <button onClick={() => handleMarkAttendance(student, 'Present')} disabled={!!markedToday[student.roll_no]} className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Mark Present"><CheckCircle2 size={18} /></button>
-                                    <button onClick={() => handleMarkAttendance(student, 'Absent')} disabled={!!markedToday[student.roll_no]} className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed" title="Mark Absent"><X size={18} /></button>
                                     <button onClick={() => openStudentProfile(student)} className="w-10 h-10 rounded-xl bg-[#2D3494] text-white flex items-center justify-center hover:bg-blue-600 transition-all shadow-lg" title="View Profile"><User size={18} /></button>
                                   </div>
                                 </div>
@@ -1914,23 +2104,14 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center"><UserCheck size={24} /></div>
                        <span className="text-[10px] font-black text-slate-900 uppercase">Exam Duties</span>
                      </button>
+                     <button onClick={() => setSubPage('ResultVerifications')} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col items-center gap-3 hover:border-blue-200 transition-all relative">
+                       <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center"><CheckSquare size={24} /></div>
+                       <span className="text-[10px] font-black text-slate-900 uppercase text-center">Verifications</span>
+                       {verifications.length > 0 && <span className="absolute top-4 right-4 w-5 h-5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center border-2 border-white">{verifications.length}</span>}
+                     </button>
                   </div>
                 </motion.div>
               )}
-              {activeTab === 'Teams' && teacherData && (
-                <div className="fixed inset-0 top-[70px] bottom-[80px] z-40 bg-white">
-                  <LMSModule 
-                    user={{
-                      id: teacherData.id,
-                      full_name: teacherData.full_name,
-                      role: 'TEACHER',
-                      class_section: assignedStudents[0]?.class_section || 'General',
-                      subject: teacherData.subject_dept
-                    }}
-                  />
-                </div>
-              )}
-
               {activeTab === 'Leave' && (
                 <motion.div key="leave" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
                   <div className="flex items-center gap-4">
@@ -2304,7 +2485,6 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
       {id:'Students',label:'Students',icon:GraduationCap},
       {id:'Academics',label:'Academics',icon:BookOpen},
       {id:'Grading',label:'Grades',icon:CheckSquare},
-      {id:'Teams',label:'LMS',icon:Users},
       {id:'Leave',label:'Leave',icon:Calendar},
       {id:'Leaderboard',label:'Ranks',icon:Trophy},
       {id:'Profile',label:'Profile',icon:User},

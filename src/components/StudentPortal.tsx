@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
 import {
   CreditCard, Calendar, BarChart3, BookOpen,
-  Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle,
+  Trophy, Bell, LogOut, ChevronRight, ChevronDown, X, Clock, AlertTriangle, Shield, AlertCircle,
   CheckCircle, Loader2, Flame, Home, Timer, Download, GraduationCap, User,
-  Zap, ZapOff, ExternalLink, CheckCircle2, FileText, Users
+  Zap, ZapOff, ExternalLink, CheckCircle2, FileText, Users, UserCheck, Award
 } from 'lucide-react';
-import { LMSModule } from './LMSModule';
+import { BRANDING } from '../lib/constants';
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 
@@ -308,7 +308,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
   const [courses,       setCourses]       = useState<any[]>([]);
   const [resources,     setResources]     = useState<any[]>([]);
   const [quizzes,       setQuizzes]       = useState<any[]>([]);
+  const [resultCards,   setResultCards]   = useState<any[]>([]);
   const [quizResults,   setQuizResults]   = useState<any[]>([]);
+  const [verifications, setVerifications] = useState<any[]>([]);
+  const [selectedGrade, setSelectedGrade] = useState<any>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [showVerModal,  setShowVerModal]  = useState(false);
+  const [verForm, setVerForm] = useState({
+    grade_id: '',
+    reason: 'Marks Entry Error',
+    detail: ''
+  });
+  const [submittingVer, setSubmittingVer] = useState(false);
   const [showQuizModal, setShowQuizModal] = useState<any>(null);
   const [selectedResultDetail, setSelectedResultDetail] = useState<any>(null);
   const [selectedExamSchedule, setSelectedExamSchedule] = useState<any>(null);
@@ -328,6 +339,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
 
   const [dismissedIds,     setDismissedIds]     = useState<Set<string>>(new Set());
   const [feeTimerFocus,    setFeeTimerFocus]    = useState<any>(null);
+  const [feeDateFrom,      setFeeDateFrom]      = useState('');
+  const [feeDateTo,        setFeeDateTo]        = useState('');
   const [notifPanelOpen,   setNotifPanelOpen]   = useState(false);
   const [unreadCount,      setUnreadCount]      = useState(0);
 
@@ -377,7 +390,7 @@ const [aiInsight,       setAiInsight]       = useState<any>(null);
   const loadAll = useCallback(async () => {
     setLoading(true);
     const roll = studentData.roll_no;
-    const [stuR, fgR, instR, notifR, gradeR, attR, ttR, lbR, noticeRes] = await Promise.all([
+    const [stuR, fgR, instR, notifR, gradeR, attR, ttR, lbR, noticeRes, verRes, cardRes] = await Promise.all([
       supabase.from('students').select('*').eq('roll_no', roll).single(),
       supabase.from('fee_groups').select('*').eq('student_roll', roll).order('due_date'),
       supabase.from('instalment_schedules').select('*').eq('student_roll', roll).order('instalment_no'),
@@ -391,7 +404,9 @@ const [aiInsight,       setAiInsight]       = useState<any>(null);
       supabase.from('uploaded_documents').select('*')
         .or(`visible_to.cs.{Students},visible_to.cs.{All}`)
         .eq('is_active', true)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase.from('result_verifications').select('*').eq('student_roll', roll).order('created_at', { ascending: false }),
+      supabase.from('result_cards').select('*').eq('student_roll', roll).order('generated_at', { ascending: false })
     ]);
 
     const sData = stuR.data;
@@ -406,6 +421,8 @@ const [aiInsight,       setAiInsight]       = useState<any>(null);
     setTimetable(ttR.data || []);
     setLeaderboard(lbR.data || []);
     setNotices(noticeRes.data || []);
+    setVerifications(verRes.data || []);
+    setResultCards(cardRes.data || []);
 
 // Load AI insight for this student
 const { data: insightData } = await supabase
@@ -549,6 +566,104 @@ if (insightData) setAiInsight(insightData);
     const interval = setInterval(checkTime, 60000);
     return () => clearInterval(interval);
   }, [loadSosFeedback]);
+
+  const applyVerification = async (grade: any, reason: string) => {
+    setVerifying(true);
+    try {
+      const { error } = await supabase.from('result_verifications').insert([{
+        student_roll: student.roll_no,
+        student_name: student.full_name,
+        subject: grade.subject,
+        grade_id: grade.id,
+        reason: reason,
+        status: 'Pending-Teacher',
+        session: student.session || BRANDING.session
+      }]);
+      if (error) throw error;
+      
+      // Notify teacher
+      await supabase.from('notifications').insert([{
+        target_user_id: String(grade.teacher_id || 'GENERAL'),
+        target_role: 'TEACHER',
+        title: '⚠️ Result Verification Request',
+        message: `${student.full_name} (${student.roll_no}) has requested verification for ${grade.subject}. Reason: ${reason}`,
+        type: 'verification'
+      }]);
+
+      toast.success("✅ Verification request sent to teacher!");
+      setSelectedGrade(null);
+      
+      const { data } = await supabase.from('result_verifications').select('*').eq('student_roll', student.roll_no);
+      setVerifications(data || []);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const submitVerificationRequest = async () => {
+    if (!verForm.grade_id || !verForm.detail.trim()) {
+      toast.error('Please select an exam and provide details');
+      return;
+    }
+
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    
+    const existing = verifications.find(v => 
+      String(v.grade_id) === String(verForm.grade_id) && 
+      new Date(v.created_at) > threeDaysAgo &&
+      v.status !== 'Resolved' && v.status !== 'Rejected'
+    );
+
+    if (existing) {
+      toast.error('Active request exists for this result (last 3 days).');
+      return;
+    }
+
+    setSubmittingVer(true);
+    try {
+      const selectedGrade = grades.find(g => String(g.id) === String(verForm.grade_id));
+      if (!selectedGrade) throw new Error("Result not found");
+
+      const now = new Date();
+      const teacherDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000); 
+      const examinerDeadline = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000); 
+
+      const { error } = await supabase.from('result_verifications').insert([{
+        student_roll: student.roll_no,
+        student_name: student.full_name,
+        grade_id: selectedGrade.id,
+        subject: selectedGrade.subject,
+        exam_name: selectedGrade.chapter_name || selectedGrade.exams?.chapter_name,
+        reason: verForm.reason,
+        detail: verForm.detail,
+        status: 'Pending-Teacher',
+        teacher_id: selectedGrade.teacher_id,
+        teacher_deadline: teacherDeadline.toISOString(),
+        examiner_deadline: examinerDeadline.toISOString()
+      }]);
+
+      if (error) throw error;
+
+      await supabase.from('notifications').insert([{
+        target_role: 'TEACHER',
+        title: 'New Verification Request',
+        message: `${student.full_name} has requested verification for ${selectedGrade.chapter_name}. 24h deadline.`,
+        type: 'verification_pending'
+      }]);
+
+      toast.success('Verification request submitted');
+      setShowVerModal(false);
+      setVerForm({ grade_id: '', reason: 'Marks Entry Error', detail: '' });
+      loadAll();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSubmittingVer(false);
+    }
+  };
 
   const submitFeedback = async (item: any, wasTaught: boolean) => {
     if (!studentData) return;
@@ -764,9 +879,14 @@ if (insightData) setAiInsight(insightData);
   const feePopupNotifs = notifications.filter(n =>
     ['fee_due','fee_overdue','fee_fine','fee_payment'].includes(n.type) && !dismissedIds.has(String(n.id))
   );
-  const presentDays   = attendance.filter(a=>a.status==='Present').length;
-  const absentDays    = attendance.filter(a=>a.status==='Absent').length;
-  const attPct        = attendance.length>0 ? Math.round((presentDays/attendance.length)*100) : 0;
+  const filteredAttendance = attendance.filter(a => {
+    if (!feeDateFrom && !feeDateTo) return true;
+    const d = (a.created_at || '').slice(0, 10);
+    return (!feeDateFrom || d >= feeDateFrom) && (!feeDateTo || d <= feeDateTo);
+  });
+  const presentDays   = filteredAttendance.filter(a=>a.status==='Present').length;
+  const absentDays    = filteredAttendance.filter(a=>a.status==='Absent').length;
+  const attPct        = filteredAttendance.length>0 ? Math.round((presentDays/filteredAttendance.length)*100) : 0;
   const myRank        = leaderboard.findIndex(s => s.roll_no===studentData.roll_no) + 1;
   const todayDay      = new Date().getDay();
   const DAY_MAP       = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -775,7 +895,6 @@ if (insightData) setAiInsight(insightData);
   
   const NAV = [
     { id:'dashboard',     label:'Home',          icon:Home     },
-    { id:'teams',         label:'Virtual Class',  icon:Users    },
     { id:'fees',          label:'My Fees',        icon:CreditCard},
     { id:'attendance',    label:'Attendance',     icon:Calendar },
     { id:'results',       label:'Results',        icon:BarChart3},
@@ -1168,6 +1287,18 @@ if (insightData) setAiInsight(insightData);
             {tab==='fees' && (
               <motion.div key="fees" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-4">
 
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Search Fee History</p>
+                    <div className="flex items-center gap-2">
+                       <input type="date" value={feeDateFrom} onChange={e=>setFeeDateFrom(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500"/>
+                       <span className="text-slate-400 text-xs font-bold">to</span>
+                       <input type="date" value={feeDateTo} onChange={e=>setFeeDateTo(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500"/>
+                       {(feeDateFrom || feeDateTo) && <button onClick={()=>{setFeeDateFrom('');setFeeDateTo('');}} className="p-2 text-slate-400 hover:text-red-500">✕</button>}
+                    </div>
+                  </div>
+                </div>
+
                 {/* ── Summary hero card ── */}
                 <div className="rounded-2xl p-4 md:p-5" style={{ background:'#FFFFFF', border:'1px solid #E2E8F0', boxShadow:'0 2px 12px rgba(0,0,0,.05)' }}>
                   {/* Top row: package vs paid */}
@@ -1443,6 +1574,32 @@ if (insightData) setAiInsight(insightData);
                   </div>
                 </div>
 
+                {/* ── OFFICIAL RESULT CARDS ── */}
+                {resultCards.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Official Result Cards</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      {resultCards.map(rc => (
+                        <div key={rc.id} className="bg-white p-5 rounded-[2rem] border border-indigo-100 shadow-sm flex items-center justify-between group hover:border-indigo-300 transition-all">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                              <Award size={24} />
+                            </div>
+                            <div>
+                              <h4 className="font-black text-slate-900 leading-none">{rc.exam_title}</h4>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">Generated on {new Date(rc.generated_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                             <p className="text-lg font-black text-slate-900">{rc.obtained_marks}/{rc.total_marks}</p>
+                             <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Result Ready</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Header */}
                 <div className="flex items-center justify-between px-1 mt-6">
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Verified Report Cards</p>
@@ -1530,10 +1687,13 @@ if (insightData) setAiInsight(insightData);
                               <span className="text-xs font-bold text-slate-400">/ {g.total_marks}</span>
                             </div>
                             <div className="flex flex-col items-end">
-                              <p className="text-[10px] font-black" style={{ color:g.is_verified?'#059669':'#D97706' }}>
-                                {g.is_verified?'VERIFIED BY EXAMINER':'PENDING VERIFICATION'}
-                              </p>
-                              <p className="text-[9px] text-slate-300 font-bold uppercase mt-0.5 tracking-tight">Report Date: {new Date(g.created_at).toLocaleDateString()}</p>
+                              <button 
+                                onClick={() => setSelectedGrade(g)}
+                                className="px-4 py-1.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all mb-1"
+                              >
+                                View Details & Verify
+                              </button>
+                              <p className="text-[9px] text-slate-300 font-bold uppercase tracking-tight">Report Date: {new Date(g.created_at).toLocaleDateString()}</p>
                             </div>
                           </div>
                         </div>
@@ -1604,18 +1764,74 @@ if (insightData) setAiInsight(insightData);
               </motion.div>
             )}
 
-            {/* ══ TEAMS (LMS) ══ */}
-            {tab==='teams' && (
-              <div className="fixed inset-0 md:top-[80px] md:left-[224px] z-40 bg-white">
-                <LMSModule 
-                  user={{
-                    id: studentData.roll_no,
-                    full_name: studentData.full_name,
-                    role: 'STUDENT',
-                    class_section: studentData.class_section
-                  }}
-                />
-              </div>
+            {/* ── VERIFICATION ── */}
+            {tab === 'verification' && (
+              <motion.div key="ver" initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-[1.2rem] bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm shadow-indigo-100">
+                      <UserCheck size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-black text-slate-900 tracking-tight">Result Verification</h2>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Submit & Track Grade Corrections</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowVerModal(true)} className="px-5 py-3 rounded-2xl bg-indigo-600 text-white font-black text-xs shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all">New Verification Order</button>
+                </div>
+
+                {verifications.length === 0 ? (
+                  <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-100 shadow-sm">
+                    <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4 text-slate-300"><Clock size={32}/></div>
+                    <p className="text-slate-400 font-bold">No active verification orders.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {verifications.map(v => (
+                      <div key={v.id} className="bg-white rounded-[2.2rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
+                        <div className={cn("absolute top-0 left-0 w-1.5 h-full", 
+                          v.status==='Resolved'?'bg-emerald-500':
+                          v.status==='Rejected'?'bg-rose-500':
+                          'bg-amber-500')} />
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center", 
+                              v.status==='Resolved'?'bg-emerald-50 text-emerald-600':
+                              v.status==='Rejected'?'bg-rose-50 text-rose-600':
+                              'bg-amber-50 text-amber-600')}>
+                              {v.status==='Resolved'?<CheckCircle2 size={24}/>:<Clock size={24}/>}
+                            </div>
+                            <div>
+                              <h4 className="font-black text-slate-900 leading-tight">{v.subject} — {v.exam_name}</h4>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Submitted on {new Date(v.created_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <Badge c={v.status==='Resolved'?'bg-emerald-50 text-emerald-700 border-emerald-100':v.status==='Rejected'?'bg-rose-50 text-rose-700 border-rose-100':'bg-amber-50 text-amber-700 border-amber-100'} label={v.status.toUpperCase()} />
+                        </div>
+                        <div className="mt-4 p-4 bg-slate-50 rounded-2xl">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><FileText size={10}/> Reason: {v.reason}</p>
+                          <p className="text-xs text-slate-600 font-medium leading-relaxed italic">"{v.detail}"</p>
+                        </div>
+                        {v.status.startsWith('Pending') && (
+                          <div className="mt-3 flex items-center justify-between">
+                             <div className="flex items-center gap-2">
+                               <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"/>
+                               <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest animate-pulse">Request in Process • Stage: {v.status.split('-')[1]}</p>
+                             </div>
+                             <p className="text-[8px] font-bold text-slate-400 uppercase">Est. resolution in 2-3 business days</p>
+                          </div>
+                        )}
+                        {v.resolution_note && (
+                          <div className="mt-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+                            <p className="text-[9px] font-black text-indigo-600 uppercase mb-1">Resolution Note</p>
+                            <p className="text-[11px] font-bold text-indigo-800">{v.resolution_note}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
             )}
 
             {/* ══ COURSES ══ */}
@@ -2272,15 +2488,193 @@ if (insightData) setAiInsight(insightData);
         )}
       </AnimatePresence>
 
+      {/* ── VERIFICATION MODAL ── */}
+      <AnimatePresence>
+        {showVerModal && (
+          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
+              onClick={() => setShowVerModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ y:100, opacity:0 }} animate={{ y:0, opacity:1 }} exit={{ y:100, opacity:0 }}
+              className="relative bg-white w-full max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh]">
+              <div className="p-6 sm:p-8 border-b border-slate-100 shrink-0 flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">Verification Request</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase mt-1">Issue a correction order</p>
+                </div>
+                <button onClick={() => setShowVerModal(false)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"><X size={20}/></button>
+              </div>
+
+              <div className="p-6 sm:p-8 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Subject & Test</label>
+                    <select 
+                      value={verForm.grade_id} 
+                      onChange={e => setVerForm({...verForm, grade_id: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-5 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="">Select a result to verify...</option>
+                      {grades.map(g => (
+                        <option key={g.id} value={g.id}>
+                          {g.subject} — {g.chapter_name || g.exams?.chapter_name} ({g.score}/{g.total_marks})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Reason for Verification</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Marks Entry Error', 'Absent Marked Incorrectly', 'Correction Needed', 'Other'].map(r => (
+                        <button key={r} onClick={() => setVerForm({...verForm, reason: r})} 
+                          className={cn("px-4 py-3 rounded-xl text-[10px] font-black uppercase text-center transition-all border", 
+                            verForm.reason === r ? "bg-indigo-600 text-white border-indigo-600 shadow-md" : "bg-white text-slate-500 border-slate-100 hover:border-indigo-200")}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detailed Explanation</label>
+                    <textarea 
+                      value={verForm.detail}
+                      onChange={e => setVerForm({...verForm, detail: e.target.value})}
+                      placeholder="Please explain the issue clearly..."
+                      rows={5}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-5 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3">
+                    <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+                    <p className="text-[10px] font-bold text-amber-800 leading-relaxed">
+                      Verification will be first handled by the teacher (24h). If not resolved, it escalates to the Examiner (3 days) and then to the Vice Principal. You cannot submit multiple requests for the same result within 3 days.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 sm:p-8 border-t border-slate-100 bg-white shrink-0">
+                <button 
+                  onClick={submitVerificationRequest}
+                  disabled={submittingVer}
+                  className="w-full py-5 bg-[#2D3494] text-white rounded-[1.8rem] font-black text-lg shadow-xl shadow-blue-900/20 hover:bg-blue-800 transition-all disabled:opacity-50"
+                >
+                  {submittingVer ? <Loader2 className="animate-spin mx-auto"/> : 'Issue Verification Order'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ══ GRADE DETAIL MODAL ══ */}
+      <AnimatePresence>
+        {selectedGrade && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl">
+              <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-white to-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 leading-tight">{selectedGrade.subject}</h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{selectedGrade.exam_type || 'Result Details'}</p>
+                </div>
+                <button onClick={() => setSelectedGrade(null)} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all flex items-center justify-center">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-5 rounded-3xl bg-slate-50 border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Score Obtained</p>
+                    <p className="text-3xl font-black text-slate-900">{selectedGrade.score} <span className="text-sm text-slate-400">/ {selectedGrade.total_marks}</span></p>
+                  </div>
+                  <div className="p-5 rounded-3xl bg-indigo-50/30 border border-indigo-100/50">
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">Grade Achieved</p>
+                    <p className="text-3xl font-black text-indigo-600">{selectedGrade.percentage ? (selectedGrade.percentage >= 85 ? 'A+' : selectedGrade.percentage >= 75 ? 'A' : selectedGrade.percentage >= 65 ? 'B' : selectedGrade.percentage >= 40 ? 'C' : 'F') : '—'}</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50/50 rounded-3xl border border-slate-100 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-indigo-500">
+                      <Shield size={16} />
+                    </div>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Verification Status</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                       {selectedGrade.is_verified ? (
+                         <div className="flex items-center gap-2 text-emerald-600 font-black text-sm">
+                           <CheckCircle size={14} /> Verified by Examiner
+                         </div>
+                       ) : (
+                         <div className="flex items-center gap-2 text-amber-500 font-black text-sm">
+                           <Clock size={14} /> Pending Verification
+                         </div>
+                       )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                   {(() => {
+                     const reportDate = new Date(selectedGrade.created_at);
+                     const diff = Date.now() - reportDate.getTime();
+                     const daysOld = Math.floor(diff / (1000 * 60 * 60 * 24));
+                     const canApply = daysOld < 3; // Within 3 days
+                     
+                     const existing = verifications.find(v => v.subject === selectedGrade.subject && (v.status === 'Pending-Teacher' || v.status === 'Pending-Examiner'));
+
+                     if (existing) {
+                       return (
+                         <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold text-center">
+                           ⚠️ Verification Request already active for this subject.
+                         </div>
+                       );
+                     }
+
+                     if (!canApply) {
+                       return (
+                         <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold text-center">
+                           ❌ Correction window closed. Verification must be requested within 3 days of results.
+                         </div>
+                       );
+                     }
+
+                     return (
+                       <button
+                         onClick={() => {
+                           setVerForm(prev => ({ ...prev, grade_id: selectedGrade.id }));
+                           setShowVerModal(true);
+                         }}
+                         disabled={verifying}
+                         className="w-full py-4 rounded-[1.5rem] bg-indigo-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                       >
+                         {verifying ? 'Processing...' : <><AlertCircle size={18}/> Request Result Verification</>}
+                       </button>
+                     );
+                   })()}
+                   <p className="text-[10px] text-slate-400 font-bold text-center mt-4 px-4">Verification requests are routed first to the Subject Teacher, and then escalated to the Examiner if unresolved.</p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50" style={{background:'rgba(255,255,255,0.96)',backdropFilter:'blur(20px)',borderTop:'1px solid rgba(0,0,0,0.06)',boxShadow:'0 -4px 24px rgba(0,0,0,0.08)'}}>
   <div className="flex items-center gap-1 px-2 overflow-x-auto scrollbar-hide" style={{paddingBottom:'max(8px, env(safe-area-inset-bottom))',paddingTop:8}}>
     {([
       {id:'dashboard',label:'Home',icon:Home},
-      {id:'teams',label:'Class',icon:Users},
       {id:'fees',label:'Fees',icon:CreditCard,alert:overdueFees.length>0},
       {id:'attendance',label:'Attend',icon:Calendar},
       {id:'results',label:'Results',icon:BarChart3},
+      {id:'verification',label:'Verify',icon:UserCheck},
       {id:'courses',label:'Courses',icon:BookOpen},
       {id:'quizzes',label:'Quiz',icon:Zap},
       {id:'timetable',label:'Schedule',icon:BarChart3},

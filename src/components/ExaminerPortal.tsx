@@ -21,23 +21,25 @@ const GRADIENT = 'linear-gradient(135deg,#4F46E5,#7C3AED)';
 
 const PKR = (n: number) => `Rs ${(n || 0).toLocaleString('en-PK')}`;
 
-type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results' | 'upload' | 'rollslips' | 'paperperforma' | 'reportcards' | 'communicate';
+type Tab = 'dashboard' | 'schedules' | 'exams' | 'seating' | 'invigilation' | 'grades' | 'results' | 'upload' | 'rollslips' | 'verifications' | 'paperperforma' | 'reportcards' | 'communicate';
 
 const TABS = [
   { id: 'dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'schedules',      label: 'Exam Schedules', icon: Calendar },
+  { id: 'invigilation',   label: 'Invigilation',   icon: Shield },
   { id: 'seating',        label: 'Seating Plans',  icon: Armchair },
   { id: 'grades',         label: 'Grade Entry',    icon: PenLine },
   { id: 'results',        label: 'Result Cards',   icon: Award },
   { id: 'upload',         label: 'Upload Docs',    icon: Upload },
   { id: 'rollslips',      label: 'Roll No Slips',  icon: UserSquare },
+  { id: 'verifications',  label: 'Verifications',  icon: UserCheck },
   { id: 'paperperforma',  label: 'Paper Performa', icon: Inbox },
   { id: 'reportcards',    label: 'Report Cards',   icon: Printer },
   { id: 'communicate',    label: 'Communicate',    icon: Megaphone },
 ];
 
 const EXAM_TYPES = ['Sendup 1', 'Sendup 2', 'Class Test', 'Monthly Test', 'Pre-Board', 'Phases'];
-const SUBJECTS = ['Islamiyat','English','Urdu','Physics','Chemistry','Biology','Mathematics','Computer','Statistics','Education','Civics','POE','POC','Economics','Accounts'];
+const SUBJECTS = ['Islamiyat','English','Urdu','Physics','Chemistry','Biology','Mathematics','Computer','Statistics','Education','Civics','POE','POC','Economics','Accounting'];
 const SYLLABUS_COVERAGE = ['40%', '80%'];
 const PROGRAMS   = ['ICS Physics', 'ICS Statistics', 'Pre-Medical', 'Pre-Engineering', 'FA IT', 'FA General', 'I.Com'];
 const ROOMS      = ['Room 101', 'Room 102', 'Room 103', 'Room 201', 'Room 202', 'Room 203', 'Hall A', 'Hall B', 'Lab 1', 'Lab 2'];
@@ -119,10 +121,13 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [examNotifs,   setExamNotifs]   = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
+  const [verifications, setVerifications] = useState<any[]>([]);
+  const [performingVerAction, setPerformingVerAction] = useState(false);
   const [showNotifs,    setShowNotifs]    = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<any>(null);
   const [examTab,      setExamTab]      = useState('list');
   const [comTab,       setComTab]       = useState('notify');
+  const [perfTab,      setPerfTab]      = useState('issue');
   const [aiProcessing, setAiProcessing] = useState(false);
   const [examMarks,    setExamMarks]    = useState<any[]>([]);
   const [selectedExam, setSelectedExam] = useState('');
@@ -130,6 +135,8 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [girlsClassrooms, setGirlsClassrooms] = useState(10);
   const [boysClassrooms, setBoysClassrooms] = useState(10);
   const [roomCapacity, setRoomCapacity] = useState(30);
+  const [boysRoomSeats, setBoysRoomSeats] = useState<number[]>(Array(10).fill(30));
+  const [girlsRoomSeats, setGirlsRoomSeats] = useState<number[]>(Array(10).fill(30));
 
   const [loading, setLoading] = useState(false);
   const [saving,  setSaving]  = useState(false);
@@ -246,7 +253,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       setActiveSession(currentSess);
     }
 
-    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }, { data: an }] = await Promise.all([
+    const [{ data: sc }, { data: ex }, { data: se }, { data: iv }, { data: rc }, { data: gr }, { data: st }, { data: tc }, { data: au }, { data: ud }, { data: rs }, { data: dc }, { data: pl }, { data: en }, { data: an }, { data: rv }] = await Promise.all([
       supabase.from('exam_schedule').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
       supabase.from('exams').select('*').eq('session', currentSess).order('date', { ascending: false }),
       supabase.from('exam_seating').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
@@ -262,13 +269,19 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       supabase.from('paper_receiving_performa').select('*').eq('session', currentSess).order('created_at', { ascending: false }),
       supabase.from('exam_notifications').select('*').order('created_at', { ascending: false }),
       supabase.from('admin_notifications').select('*').in('target', ['ALL', 'Examiner', 'EXAMINER', adminData.username]).order('created_at', { ascending: false }).limit(30),
+      supabase.from('result_verifications').select('*').order('created_at', { ascending: false })
     ]);
 
     setSchedules(sc || []); setExams(ex || []); setSeating(se || []); setInvigilation(iv || []);
     setResults(rc || []); setGrades(gr || []); setStudents(st || []); setTeachers(tc || []);
+    
+    if (!st || st.length === 0) {
+      console.warn("No students found for session:", currentSess);
+    }
     setAdminUsers(au || []); setUploadedDocs(ud || []); setRollSlips(rs || []); setDutyChart(dc || []);
     setPerformaList(pl || []); setExamNotifs(en || []);
     setNotifications(an || []); setUnreadCount((an || []).filter((n: any) => !n.is_read).length);
+    setVerifications(rv || []);
 
     setLoading(false);
   }, [activeSession, adminData.username]);
@@ -338,6 +351,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           session: schedForm.session,
           status: 'Ongoing',
           grading_status: 'Pending',
+          is_released: true,
           teacher_id: teacher?.id || null,
           created_by: adminData.full_name
         };
@@ -371,7 +385,7 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
       showToast('✅ Schedule created, Exams auto-generated & all notified!');
       setSchedForm({ title:'', exam_type:'Monthly Test', session:'2026-28', program:'', part:1, class_section:'', start_date:'', end_date:'', status:'Upcoming', syllabus_coverage:'', subjectDates:{}, schedStep:1, total_marks: 100 });
-      setModal(null); loadAll();
+      setModal(null); setTab('invigilation'); loadAll();
     } catch (e:any) { showToast(e.message, false); }
     finally { setSaving(false); }
   };
@@ -424,6 +438,17 @@ export const ExaminerPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         shift: 'Manual'
       }]);
       if (error) throw error;
+
+      // Also save to duty_chart for the printable report
+      await supabase.from('duty_chart').insert([{
+        teacher_name: invigiForm.teacher_name,
+        exam_date: invigiForm.exam_date,
+        duty_shift: 'Manual',
+        room_no: invigiForm.room_no,
+        assigned_class: invigiForm.class_name,
+        status: 'Active',
+        session: activeSession
+      }]);
       
       // Notify Teacher
       const teacher = teachers.find(t => t.full_name === invigiForm.teacher_name);
@@ -609,6 +634,67 @@ showToast('Grade verified and student notified');
     }
   };
 
+  const handleResolveEscalated = async (ver: any, action: 'Resolved' | 'Rejected', note: string) => {
+    setPerformingVerAction(true);
+    try {
+      const { error } = await supabase.from('result_verifications').update({
+        status: action,
+        resolution_note: note,
+        resolved_by: `Examiner (${adminData.full_name})`,
+        resolved_at: new Date().toISOString()
+      }).eq('id', ver.id);
+
+      if (error) throw error;
+
+      // Notify Student
+      await supabase.from('notifications').insert([{
+        target_user_id: String(ver.student_roll),
+        target_role: 'STUDENT',
+        title: `Verification Order ${action}`,
+        message: `Your verification request for ${ver.exam_name} was escalated and ${action.toLowerCase()} by the Examiner. Note: ${note}`,
+        type: 'verification_resolved'
+      }]);
+
+      showToast(`Verification ${action.toLowerCase()}`);
+      loadAll();
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setPerformingVerAction(false);
+    }
+  };
+
+  const checkVPEscalations = useCallback(async () => {
+    const overdue = verifications.filter(v => {
+      if (v.status !== 'Pending-Examiner' && v.status !== 'Pending-Teacher') return false;
+      
+      // If teacher ignored it for 24h, it should show for examiner.
+      // If examiner ignores it for 72h (3 days total from start or from examiner start?)
+      // User says: "if the teacher does not confirm it then it will go to the examiner and then after 3 days it will go to the VP with a high alert"
+      
+      const examinerDeadline = new Date(v.examiner_deadline);
+      return v.status === 'Pending-Examiner' && examinerDeadline < new Date();
+    });
+
+    for (const v of overdue) {
+      await supabase.from('admin_notifications').insert([{
+        sender: 'Escalation Bot',
+        title: '🚨 VP ALERT: Pending Verification',
+        message: `Student ${v.student_name} (${v.student_roll}) result verification is overdue by the Examiner. Escalated to VP.`,
+        target: 'VP',
+        target_role: 'vp',
+        is_read: false,
+        type: 'escalation'
+      }]);
+      // Update status to Pending-VP to avoid spamming
+      await supabase.from('result_verifications').update({ status: 'Pending-VP' }).eq('id', v.id);
+    }
+  }, [verifications]);
+
+  useEffect(() => {
+    if (tab === 'verifications') checkVPEscalations();
+  }, [tab, checkVPEscalations]);
+
   const uploadDocument = async () => {
     if (!docForm.file || !docForm.title) { showToast('Title and file required', false); return; }
     setSaving(true);
@@ -690,10 +776,12 @@ showToast('Grade verified and student notified');
       }]);
       if (error) throw error;
 
-      await supabase.from('exam_notifications').insert([{
-        teacher_id: Number(dutyForm.teacher_id),
-        title: 'New Exam Duty Assigned',
-        message: `You have exam duty on ${dutyForm.exam_date} in Room ${dutyForm.room_no} (${dutyForm.shift}).`,
+      // Notify Teacher using the standard notifications table
+      await supabase.from('notifications').insert([{
+        target_user_id: String(dutyForm.teacher_id),
+        target_role: 'TEACHER',
+        title: '💼 New Exam Duty Assigned',
+        message: `You have been assigned exam duty on ${dutyForm.exam_date} in Room ${dutyForm.room_no || 'TBD'} (${dutyForm.shift}). Please check your portal for details.`,
         type: 'DUTY',
         is_read: false
       }]);
@@ -703,6 +791,89 @@ showToast('Grade verified and student notified');
       loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
+  };
+
+  const printInvigilation = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+      <html>
+        <head>
+          <title>Invigilation Report - ${BRANDING.name}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+            body { font-family: 'Inter', sans-serif; padding: 40px; color: #1e293b; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid #4F46E5; padding-bottom: 20px; margin-bottom: 40px; }
+            .logo { width: 80px; height: 80px; }
+            .branding h1 { margin: 0; font-size: 24px; font-weight: 900; color: #4F46E5; text-transform: uppercase; }
+            .branding p { margin: 5px 0 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+            .title-box { text-align: center; margin-bottom: 40px; }
+            .title-box h2 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; }
+            .title-box p { font-size: 12px; color: #64748b; font-weight: 700; margin-top: 5px; }
+            table { w-full border-collapse: collapse; margin-top: 20px; width: 100%; }
+            th { background: #f8fafc; color: #475569; font-size: 10px; font-weight: 900; text-transform: uppercase; padding: 12px 15px; border: 1px solid #e2e8f0; text-align: left; }
+            td { padding: 12px 15px; border: 1px solid #e2e8f0; font-size: 12px; font-weight: 600; }
+            .footer { position: fixed; bottom: 40px; left: 40px; right: 40px; display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; pt: 20px; }
+            .sig { text-align: center; width: 200px; }
+            .sig-line { border-top: 2px solid #1e293b; margin-top: 60px; margin-bottom: 10px; }
+            .sig-name { font-size: 10px; font-weight: 900; text-transform: uppercase; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="branding">
+              <h1>${BRANDING.name}</h1>
+              <p>${BRANDING.address}</p>
+              <p>EXAMINATION DEPARTMENT • ${activeSession || BRANDING.session}</p>
+            </div>
+            <img src="${LOGO_BASE64}" class="logo" />
+          </div>
+          <div class="title-box">
+            <h2>INVIGILATION DUTY CHART</h2>
+            <p>Generated on ${new Date().toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Teacher Name</th>
+                <th>Exam Date</th>
+                <th>Shift</th>
+                <th>Room</th>
+                <th>Assigned Class</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dutyChart.map(d => `
+                <tr>
+                  <td>${d.teacher_name}</td>
+                  <td>${d.exam_date}</td>
+                  <td>${d.duty_shift}</td>
+                  <td>${d.room_no || '—'}</td>
+                  <td>${d.assigned_class || 'All'}</td>
+                  <td>${d.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">
+            <div class="sig">
+              <div class="sig-line"></div>
+              <p class="sig-name">Examiner Signature</p>
+            </div>
+            <div class="sig">
+              <div class="sig-line"></div>
+              <p class="sig-name">Principal Signature</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const savePerforma = async () => {
@@ -817,16 +988,20 @@ showToast('Grade verified and student notified');
 
       const assignments: any[] = [];
       let boyIdx = 0;
-      for (let r = 1; r <= boysClassrooms; r++) {
+      for (let r = 0; r < boysClassrooms; r++) {
         if (boyIdx >= boys.length) break;
-        for (let s = 1; s <= roomCapacity; s++) {
+        const cap = boysRoomSeats[r] ?? roomCapacity;
+        for (let s = 1; s <= cap; s++) {
           if (boyIdx >= boys.length) break;
           assignments.push({
             student_roll: boys[boyIdx].roll_no,
-            room_no: `Room B-${r}`,
-            seat_no: `BS-${s}`,
+            room: `Room B-${r + 1}`,
+            room_no: `Room B-${r + 1}`,
+            seat_no: `B${r + 1}-${s}`,
             exam_name: sched.title,
             student_name: boys[boyIdx].full_name,
+            class_name: boys[boyIdx].class_section,
+            session: activeSession || BRANDING.session,
             campus: 'Boys Campus',
             date: sched.start_date
           });
@@ -835,16 +1010,20 @@ showToast('Grade verified and student notified');
       }
 
       let girlIdx = 0;
-      for (let r = 1; r <= girlsClassrooms; r++) {
+      for (let r = 0; r < girlsClassrooms; r++) {
         if (girlIdx >= girls.length) break;
-        for (let s = 1; s <= roomCapacity; s++) {
+        const cap = girlsRoomSeats[r] ?? roomCapacity;
+        for (let s = 1; s <= cap; s++) {
           if (girlIdx >= girls.length) break;
           assignments.push({
             student_roll: girls[girlIdx].roll_no,
-            room_no: `Room G-${r}`,
-            seat_no: `GS-${s}`,
+            room: `Room G-${r + 1}`,
+            room_no: `Room G-${r + 1}`,
+            seat_no: `G${r + 1}-${s}`,
             exam_name: sched.title,
             student_name: girls[girlIdx].full_name,
+            class_name: girls[girlIdx].class_section,
+            session: activeSession || BRANDING.session,
             campus: 'Girls Campus',
             date: sched.start_date
           });
@@ -855,8 +1034,22 @@ showToast('Grade verified and student notified');
       const { error } = await supabase.from('exam_seating').insert(assignments);
       if (error) throw error;
 
+      // Notify every student their seat
+      const notifRows = assignments.map((a: any) => ({
+        target_user_id: String(a.student_roll),
+        target_role: 'STUDENT',
+        title: `🪑 Seating Assigned: ${sched.title}`,
+        message: `Your seat for "${sched.title}" has been assigned. Room: ${a.room_no}, Seat: ${a.seat_no}. Date: ${a.date || 'Check schedule'}.`,
+        type: 'exam_seating',
+        is_read: false,
+      }));
+      // Insert in batches of 100
+      for (let i = 0; i < notifRows.length; i += 100) {
+        await supabase.from('notifications').insert(notifRows.slice(i, i + 100));
+      }
+
       await loadAll();
-      showToast(`Successfully shuffled ${assignments.length} students!`, true);
+      showToast(`✅ ${assignments.length} students shuffled & notified!`, true);
     } catch (e: any) {
       showToast(e.message, false);
     } finally {
@@ -879,12 +1072,14 @@ showToast('Grade verified and student notified');
         teacher_id: examForm.teacher_id ? Number(examForm.teacher_id) : null,
         session: activeSession || '2026-28',
         created_by: adminData.full_name,
+        is_released: true
       }]);
       if (error) throw error;
       showToast('Exam created successfully');
       setModal(null);
       setExamForm({ title: '', class_section: '', subject: '', date: '', total_marks: 100, exam_type: 'Chapter Test', chapter_name: '', teacher_id: '' });
       loadAll();
+      setTab('invigilation');
     } catch (e: any) { showToast(e.message || 'Failed to save exam', false); }
     finally { setSaving(false); }
   };
@@ -923,8 +1118,31 @@ showToast('Grade verified and student notified');
   };
 
   const updateScheduleStatus = async (id: number, status: string) => {
-    await supabase.from('exam_schedule').update({ status }).eq('id', id);
-    showToast(`Schedule marked as ${status}`); loadAll();
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('exam_schedule').update({ status }).eq('id', id);
+      if (error) throw error;
+      showToast(`Schedule status updated to ${status}`);
+      loadAll();
+    } catch (e: any) {
+      showToast(e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const releaseExam = async (id: number) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('exams').update({ 
+        is_released: true,
+        status: 'Ongoing'
+      }).eq('id', id);
+      if (error) throw error;
+      showToast('Exam released to Teacher for grading');
+      loadAll();
+    } catch (e: any) { showToast(e.message, false); }
+    finally { setSaving(false); }
   };
 
   const printSchedule = (id: string) => {
@@ -1718,8 +1936,12 @@ showToast('Grade verified and student notified');
                              <p className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg font-black text-slate-800"><Award size={12} className="text-slate-400" /> Marks: {e.total_marks}</p>
                            </div>
                            <div className="mt-4 flex gap-2">
-                             <button onClick={() => { setTab('grades'); setSearch(e.subject); }} className="flex-1 py-2 rounded-xl text-[10px] font-black border border-slate-200 text-slate-600 hover:bg-slate-50">Enter Grades</button>
-                             <button onClick={() => { setSelectedExam(String(e.id)); setExamTab('result'); }} className="flex-1 py-2 rounded-xl text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 transition-colors">View Results</button>
+                              {!e.is_released ? (
+                                <button onClick={() => releaseExam(e.id)} className="flex-1 py-2 rounded-xl text-[10px] font-black bg-indigo-600 text-white shadow-md hover:bg-indigo-700 transition-all">Release to Teacher</button>
+                              ) : (
+                                <button disabled className="flex-1 py-2 rounded-xl text-[10px] font-black bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed">Released</button>
+                              )}
+                              <button onClick={() => { setSelectedExam(String(e.id)); setExamTab('result'); }} className="flex-1 py-2 rounded-xl text-[10px] font-black bg-white text-indigo-700 border border-indigo-100 hover:bg-indigo-50 transition-colors">Results</button>
                            </div>
                         </div>
                       ))}
@@ -1884,8 +2106,20 @@ showToast('Grade verified and student notified');
                       </div>
                       <div className="flex flex-wrap items-end gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <FM label="Seat Capacity"><TI type="number" value={roomCapacity} onChange={e => setRoomCapacity(Number(e.target.value))} className="w-20" /></FM>
-                        <FM label="Boys Rooms"><TI type="number" value={boysClassrooms} onChange={e => setBoysClassrooms(Number(e.target.value))} className="w-20" /></FM>
-                        <FM label="Girls Rooms"><TI type="number" value={girlsClassrooms} onChange={e => setGirlsClassrooms(Number(e.target.value))} className="w-20" /></FM>
+                        <FM label="Boys Rooms">
+                          <TI type="number" value={boysClassrooms} onChange={e => {
+                            const n = Number(e.target.value);
+                            setBoysClassrooms(n);
+                            setBoysRoomSeats(Array(n).fill(30));
+                          }} className="w-20" />
+                        </FM>
+                        <FM label="Girls Rooms">
+                          <TI type="number" value={girlsClassrooms} onChange={e => {
+                            const n = Number(e.target.value);
+                            setGirlsClassrooms(n);
+                            setGirlsRoomSeats(Array(n).fill(30));
+                          }} className="w-20" />
+                        </FM>
                         <div className="flex-1 min-w-[200px]">
                           <FM label="Select Schedule Context">
                             <TS value={selectedExam} onChange={e => setSelectedExam(e.target.value)}>
@@ -1894,6 +2128,32 @@ showToast('Grade verified and student notified');
                             </TS>
                           </FM>
                         </div>
+                        {boysClassrooms > 0 && (
+  <div className="w-full">
+    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Boys Room Capacities</p>
+    <div className="flex flex-wrap gap-2">
+      {Array.from({ length: boysClassrooms }, (_, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-slate-500">B-{i+1}:</span>
+          <input type="number" min={1} max={100} value={boysRoomSeats[i] ?? 30}
+            onChange={e => { const u = [...boysRoomSeats]; u[i] = Number(e.target.value); setBoysRoomSeats(u); }}
+            className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none focus:border-indigo-400" />
+        </div>
+      ))}
+    </div>
+    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-3">Girls Room Capacities</p>
+    <div className="flex flex-wrap gap-2">
+      {Array.from({ length: girlsClassrooms }, (_, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-slate-500">G-{i+1}:</span>
+          <input type="number" min={1} max={100} value={girlsRoomSeats[i] ?? 30}
+            onChange={e => { const u = [...girlsRoomSeats]; u[i] = Number(e.target.value); setGirlsRoomSeats(u); }}
+            className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none focus:border-indigo-400" />
+        </div>
+      ))}
+    </div>
+  </div>
+)}
                         <button onClick={shuffleStudents} disabled={saving || !selectedExam} className="px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-600/20 disabled:opacity-50" style={{ background: GRADIENT }}>
                           <Shuffle size={14} className="inline mr-2" /> Shuffle Students
                         </button>
@@ -1906,28 +2166,26 @@ showToast('Grade verified and student notified');
 
                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Active Seating Assignments</h3>
-                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{seating.length} Seats Assigned</p>
+                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Shuffled Seating List</h3>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{seating.length} Assignments</p>
                    </div>
-                   <div className="overflow-x-auto max-h-[400px]">
+                   <div className="overflow-x-auto max-h-[600px]">
                       <table className="w-full text-sm">
                          <thead className="sticky top-0 bg-white">
                             <tr className="border-b border-slate-100">
-                               {['Student','Roll No','Room','Seat','Campus','Date'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}
+                               {['Student Name','Class','Room Number','Seat Number'].map(h => <th key={h} className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}
                             </tr>
                          </thead>
                          <tbody>
                             {seating.map(s => (
                                <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                   <td className="px-6 py-4 font-bold text-slate-700">{s.student_name || students.find(st => st.roll_no === s.student_roll)?.full_name || '—'}</td>
-                                  <td className="px-6 py-4 font-black" style={{ color: ACCENT }}>{s.student_roll}</td>
-                                  <td className="px-6 py-4"><Badge c="bg-slate-100 text-slate-700 border-slate-200" label={s.room_no} /></td>
+                                  <td className="px-6 py-4 text-xs font-bold text-slate-500">{students.find(st => st.roll_no === s.student_roll)?.class_section || s.class_name || '—'}</td>
+                                  <td className="px-6 py-4"><Badge c="bg-slate-100 text-slate-700 border-slate-200" label={s.room || s.room_no} /></td>
                                   <td className="px-6 py-4 font-mono text-indigo-600 font-bold">{s.seat_no}</td>
-                                  <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-tight">{s.campus}</td>
-                                  <td className="px-6 py-4 text-xs text-slate-400 font-medium">{s.date}</td>
                                </tr>
                             ))}
-                            {!seating.length && <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">No students assigned to seats yet. Use Shuffle or manual assignment.</td></tr>}
+                            {!seating.length && <tr><td colSpan={10} className="px-6 py-10 text-center text-slate-400 italic">No students assigned to seats yet. Use Shuffle or manual assignment.</td></tr>}
                          </tbody>
                       </table>
                    </div>
@@ -2004,8 +2262,11 @@ showToast('Grade verified and student notified');
 
                    {/* Column 2: Current Assignments */}
                    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden h-[700px] flex flex-col">
-                      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
                          <h3 className="font-black text-slate-900 text-sm flex items-center gap-2"><Eye size={16} /> Current Invigilation Duties</h3>
+                         <button onClick={printInvigilation} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-600 hover:bg-slate-50 transition-all">
+                            <Printer size={12} /> Print Report
+                         </button>
                       </div>
                       <div className="flex-1 overflow-y-auto p-4 space-y-3">
                          {invigilation.map((iv) => (
@@ -2089,9 +2350,16 @@ showToast('Grade verified and student notified');
                               <td className="px-4 py-2.5">{g.is_verified ? <span className="text-emerald-600 font-black text-xs flex items-center gap-1"><CheckCircle size={11} /> Verified</span> : <span className="text-amber-500 text-xs font-bold">Pending</span>}</td>
                               <td className="px-4 py-2.5 text-xs text-slate-400">{g.created_at ? new Date(g.created_at).toLocaleDateString('en-PK') : '—'}</td>
                               <td className="px-4 py-2.5">
-                                {!g.is_verified && (
-                                  <button onClick={() => verifyGrade(g.id)} className="text-xs font-black hover:underline" style={{ color: ACCENT }}>Verify →</button>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {!g.is_verified ? (
+                                    <button onClick={() => verifyGrade(g.id)} className="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase hover:bg-indigo-100 border border-indigo-200 transition-all">Verify</button>
+                                  ) : (
+                                    <span className="text-emerald-600 font-black text-[10px] flex items-center gap-1 opacity-70"><CheckCircle size={10} /> Saved</span>
+                                  )}
+                                  <button onClick={() => setEditingGrade(g)} className="p-1.5 rounded-lg bg-slate-50 text-slate-400 hover:text-indigo-600 transition-all">
+                                    <PenLine size={12} />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2127,7 +2395,7 @@ showToast('Grade verified and student notified');
                     <h3 className="font-black text-slate-900">Result Cards</h3>
                     <span className="text-xs font-bold text-slate-400">{results.length} total</span>
                   </div>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-[800px]">
                     <table className="w-full text-sm min-w-[700px]">
                       <thead>
                         <tr style={{ background: '#f8fafc' }}>
@@ -2137,9 +2405,10 @@ showToast('Grade verified and student notified');
                         </tr>
                       </thead>
                       <tbody>
-                        {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase()) || String(s.roll_no).includes(search)).slice(0, 50).map((s) => {
+                        {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase()) || String(s.roll_no).includes(search)).map((s) => {
                           const sGrades = grades.filter(g => g.student_roll === s.roll_no);
                           const lastGrade = sGrades[0];
+                          const resultCard = results.find(r => r.student_roll === s.roll_no);
                           return (
                             <tr key={s.roll_no} className="border-b border-slate-50 hover:bg-slate-50/50">
                               <td className="px-4 py-2.5 font-medium text-slate-800">{s.full_name}</td>
@@ -2148,15 +2417,20 @@ showToast('Grade verified and student notified');
                               <td className="px-4 py-2.5 text-xs text-slate-500">{s.program}</td>
                               <td className="px-4 py-2.5 font-black text-slate-700">{sGrades.length}</td>
                               <td className="px-4 py-2.5">
-                                {lastGrade ? <Badge c="bg-indigo-50 text-indigo-700 border-indigo-200" label={`${lastGrade.grade_letter} (${Math.round(lastGrade.percentage)}%)`} /> : <span className="text-[10px] text-slate-300">No data</span>}
+                                {lastGrade ? (
+                                  <div className="flex flex-col">
+                                    <Badge c="bg-indigo-50 text-indigo-700 border-indigo-200" label={`${lastGrade.grade_letter} (${Math.round(lastGrade.percentage)}%)`} />
+                                    <span className="text-[9px] text-slate-400 font-bold mt-1 uppercase">{lastGrade.subject}</span>
+                                  </div>
+                                ) : <span className="text-[10px] text-slate-300">No data</span>}
                               </td>
                               <td className="px-4 py-2.5">
                                 <div className="flex items-center gap-2">
-                                  <button onClick={() => openStudentResults(s)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-white" style={{ background: GRADIENT }}>
-                                    <Eye size={12} /> View
+                                  <button onClick={() => openStudentResults(s)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-white hover:opacity-90" style={{ background: GRADIENT }}>
+                                    <Eye size={12} /> View Details
                                   </button>
-                                  {results.find(r => r.student_roll === s.roll_no) && (
-                                    <button onClick={() => setEditingResultCard(results.find(r => r.student_roll === s.roll_no))} className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                                  {resultCard && (
+                                    <button onClick={() => setEditingResultCard(resultCard)} className="p-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 transition-all border border-orange-100" title="Edit Final Card">
                                       <PenLine size={13} />
                                     </button>
                                   )}
@@ -2165,7 +2439,17 @@ showToast('Grade verified and student notified');
                             </tr>
                           );
                         })}
-                        {!students.length && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400 text-sm">No students found</td></tr>}
+                        {!students.length && (
+                          <tr>
+                            <td colSpan={10} className="px-4 py-20 text-center">
+                              <div className="flex flex-col items-center">
+                                <Users size={40} className="text-slate-100 mb-3" />
+                                <p className="text-slate-400 text-sm font-bold">No students found in session {activeSession}</p>
+                                <button onClick={() => setSearch('')} className="mt-2 text-indigo-600 text-xs font-black hover:underline underline-offset-4">Clear All Filters</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2246,6 +2530,16 @@ showToast('Grade verified and student notified');
                                       </div>
                                       
                                       <div className="flex items-center gap-2 border-l border-slate-100 pl-6">
+                                        <button 
+                                          onClick={() => {
+                                            setEditingGrade(grade);
+                                            setModal('grade');
+                                          }}
+                                          className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-slate-100"
+                                          title="Edit Detailed Marks"
+                                        >
+                                          <PenLine size={14} />
+                                        </button>
                                         <div className="flex items-center gap-2">
                                           {grade.is_verified && (
                                             <div className="flex flex-col items-end mr-2">
@@ -2287,56 +2581,7 @@ showToast('Grade verified and student notified');
                   )}
                 </AnimatePresence>
 
-                {/* Edit Grade Modal */}
-                <AnimatePresence>
-                  {editingGrade && (
-                    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingGrade(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-                      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                        className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
-                        <h4 className="text-lg font-black text-slate-900 mb-4">Edit Marks</h4>
-                        <div className="space-y-4">
-                          <FM label="Obtained Marks"><TI type="number" value={editingGrade.score} onChange={(e: any) => setEditingGrade({ ...editingGrade, score: e.target.value })} /></FM>
-                          <FM label="Total Marks"><TI type="number" value={editingGrade.total_marks} onChange={(e: any) => setEditingGrade({ ...editingGrade, total_marks: e.target.value })} /></FM>
-                        </div>
-                        <div className="mt-6 flex gap-3">
-                          <button onClick={() => setEditingGrade(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
-                          <button onClick={handleEditGrade} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
-                            {saving ? 'Saving...' : 'Update'}
-                          </button>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
-                {/* Edit Result Card Modal */}
-                <AnimatePresence>
-                  {editingResultCard && (
-                    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingResultCard(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-                      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                        className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600"><Award size={20} /></div>
-                          <div>
-                            <h4 className="text-lg font-black text-slate-900 leading-none">Edit Final Result</h4>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Roll #{editingResultCard.student_roll}</p>
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <FM label="Obtained Marks (Final)"><TI type="number" value={editingResultCard.obtained_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, obtained_marks: e.target.value })} /></FM>
-                          <FM label="Total Marks (Final)"><TI type="number" value={editingResultCard.total_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, total_marks: e.target.value })} /></FM>
-                        </div>
-                        <div className="mt-6 flex gap-3">
-                          <button onClick={() => setEditingResultCard(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
-                          <button onClick={handleEditResultCard} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
-                            {saving ? 'Saving...' : 'Update Card'}
-                          </button>
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-                </AnimatePresence>
+                {/* Edit Grade Modal moved to bottom */}
               </motion.div>
             )}
 
@@ -2403,6 +2648,105 @@ showToast('Grade verified and student notified');
               </motion.div>
             )}
 
+            {/* ══════════ VERIFICATIONS (ESCALATED) ══════════ */}
+            {tab === 'verifications' && (
+              <motion.div key="verifications" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex justify-between items-center bg-gradient-to-r from-white to-rose-50/30">
+                  <div>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><Shield size={20} className="text-rose-500" /> Escalated Correction Orders</h3>
+                    <p className="text-xs text-slate-400 font-medium mt-1">Review requests that were not resolved by teachers within 24 hours.</p>
+                  </div>
+                  <div className="bg-rose-50 px-4 py-2 rounded-2xl flex items-center gap-2 border border-rose-100">
+                    <AlertCircle size={16} className="text-rose-500" />
+                    <span className="text-[10px] font-black text-rose-600 uppercase">Examiner Authorization Required</span>
+                  </div>
+                </div>
+
+                {verifications.filter(v => v.status === 'Pending-Teacher' || v.status === 'Pending-Examiner').length === 0 ? (
+                  <div className="bg-white rounded-[2.5rem] p-24 text-center border border-dashed border-slate-200 shadow-sm">
+                    <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-6 text-slate-200">
+                      <UserCheck size={40} />
+                    </div>
+                    <p className="text-slate-500 font-black text-lg">Clean Slate!</p>
+                    <p className="text-slate-400 text-sm mt-1">No escalated verification requests at the moment.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {verifications.filter(v => v.status === 'Pending-Teacher' || v.status === 'Pending-Examiner').map(v => {
+                       const tDeadline = new Date(v.teacher_deadline);
+                       const isEscalated = tDeadline < new Date() || v.status === 'Pending-Examiner';
+                       const eDeadline = new Date(v.examiner_deadline || new Date(tDeadline.getTime() + 3 * 24 * 60 * 60 * 1000));
+                       const diff = eDeadline.getTime() - new Date().getTime();
+                       const daysLeft = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+                       const hoursLeft = Math.max(0, Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)));
+
+                       if (!isEscalated) return null; // Show only escalated ones here
+
+                       return (
+                        <motion.div key={v.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+                          className="bg-white rounded-[2.5rem] p-7 border border-slate-100 shadow-sm relative overflow-hidden flex flex-col">
+                          <div className="absolute top-0 left-0 w-2 h-full bg-rose-500" />
+                          <div className={cn("absolute top-0 right-0 px-5 py-2 rounded-bl-3xl text-[9px] font-black uppercase text-white shadow-sm", daysLeft < 1 ? "bg-rose-500 animate-pulse" : "bg-slate-900")}>
+                             {daysLeft}d {hoursLeft}h Deadline
+                          </div>
+
+                          <div className="flex items-center gap-4 mb-6">
+                            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center border border-rose-100/50 shadow-inner">
+                              <AlertCircle size={28} />
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-black text-rose-500/60 uppercase tracking-widest leading-none mb-1.5 flex items-center gap-1"><Shield size={10}/> EXAMINER ESCALATION</p>
+                               <h4 className="text-xl font-black text-slate-900 tracking-tight">{v.student_name} <span className="text-slate-400 font-bold ml-1">({v.student_roll})</span></h4>
+                               <p className="text-xs text-slate-400 font-bold uppercase mt-0.5">{v.subject} • {v.exam_name}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                               <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Student Reason</p>
+                               <p className="text-xs font-black text-slate-700">"{v.reason}"</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                               <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Assigned Teacher</p>
+                               <p className="text-xs font-black text-slate-700">{v.teacher_deadline ? 'Deadline Expired' : 'Not assigned'}</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-indigo-50/30 rounded-2xl p-4 border border-indigo-100/50 mb-8">
+                             <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><Inbox size={10}/> Student Statement</p>
+                             <p className="text-sm text-slate-600 font-bold leading-relaxed italic">"{v.detail}"</p>
+                          </div>
+
+                          <div className="mt-auto flex gap-3">
+                            <button 
+                              onClick={() => {
+                                const note = prompt("EXAMINER RESOLUTION: Enter corrected marks/note:");
+                                if (note) handleResolveEscalated(v, 'Resolved', note);
+                              }}
+                              disabled={performingVerAction}
+                              className="flex-[2] py-4 rounded-[1.5rem] bg-slate-900 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50"
+                            >
+                              Overrule & Resolve
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const note = prompt("EXAMINER REJECTION: Reason for dismissing request:");
+                                if (note) handleResolveEscalated(v, 'Rejected', note);
+                              }}
+                              disabled={performingVerAction}
+                              className="flex-1 py-4 rounded-[1.5rem] bg-white text-rose-600 font-black text-xs uppercase tracking-widest border border-rose-100 hover:bg-rose-50 transition-all disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </motion.div>
+                       );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
             {/* ══════════ ROLL NO SLIPS ══════════ */}
             {tab === 'rollslips' && (
               <motion.div key="rollslips" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
@@ -2466,8 +2810,15 @@ showToast('Grade verified and student notified');
             {/* ══════════ PAPER PERFORMA ══════════ */}
             {tab === 'paperperforma' && (
               <motion.div key="paperperforma" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-                <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-                   <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Inbox size={18} style={{ color: ACCENT }} /> Paper Receiving Performa Management</h3>
+                <SubTabs
+                  tabs={[{ id: 'issue', label: 'Issue Performa' }, { id: 'receive', label: 'Receiving Performa' }]}
+                  active={perfTab}
+                  onChange={setPerfTab}
+                  accent={ACCENT}
+                />
+
+                {perfTab === 'issue' && <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                   <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2"><Inbox size={18} style={{ color: ACCENT }} /> Issue Paper Receiving Performa</h3>
                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
                       <FM label="Assign to Teacher" req>
                         <TS value={perfForm.teacher_id} onChange={(e: any) => setPerfForm((p: any) => ({ ...p, teacher_id: e.target.value }))}>
@@ -2484,9 +2835,13 @@ showToast('Grade verified and student notified');
                         {saving ? 'Saving...' : 'Request Performa'}
                       </button>
                    </div>
-                </div>
+                </div>}
 
-                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+                {perfTab === 'receive' && <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+                   <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                     <h3 className="font-black text-slate-900 text-sm">Teacher Confirmations</h3>
+                     <p className="text-xs text-slate-400 mt-0.5">When a teacher confirms they received the bundle, it appears here. Click "Confirm Receipt" when they return papers.</p>
+                   </div>
                    <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-100">
@@ -2514,9 +2869,9 @@ showToast('Grade verified and student notified');
                             </tr>
                           );
                         })}
-                      </tbody>
+</tbody>
                    </table>
-                </div>
+                </div>}
               </motion.div>
             )}
 
@@ -2525,23 +2880,23 @@ showToast('Grade verified and student notified');
               <motion.div key="reportcards" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm flex items-center justify-between">
                    <div>
-                     <h3 className="font-black text-slate-900 flex items-center gap-2"><Award size={20} style={{ color: ACCENT }} /> Detailed Student Report Cards</h3>
-                     <p className="text-xs text-slate-400 font-medium mt-1">Generate, Verify and Print comprehensive report cards with college branding.</p>
+                     <h3 className="font-black text-slate-900 flex items-center gap-2"><Award size={20} style={{ color: ACCENT }} /> Student Achievement Cards</h3>
+                     <p className="text-xs text-slate-400 font-medium mt-1">Verify and Print comprehensive report cards with college branding.</p>
                    </div>
-                   <button onClick={() => generateResultCards(schedules[0]?.id)} disabled={saving} className="px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-lg shadow-indigo-500/20" style={{ background: GRADIENT }}>
+                   <button onClick={() => generateResultCards(schedules[0]?.id)} disabled={saving} className="px-6 py-2.5 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-500/20" style={{ background: GRADIENT }}>
                      {saving ? 'Processing...' : 'Auto-Generate All Cards'}
                    </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase())).slice(0, 50).map(s => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                   {students.filter(s => !search || s.full_name?.toLowerCase().includes(search.toLowerCase())).map(s => {
                      const studentGrades = grades.filter(g => g.student_roll === s.roll_no);
                      const totalTests = studentGrades.length;
                      const avgPct = totalTests > 0 ? Number(studentGrades.reduce((sum, g) => sum + Number(g.percentage), 0) / totalTests).toFixed(1) : 0;
                      return (
-                       <motion.div whileHover={{ y: -5 }} key={s.roll_no} className="bg-white rounded-3xl border-2 border-slate-100 p-6 shadow-sm hover:border-indigo-200 transition-all">
+                       <motion.div whileHover={{ y: -5 }} key={s.roll_no} className="bg-white rounded-[2rem] border-2 border-slate-100 p-6 shadow-sm hover:border-indigo-200 transition-all">
                           <div className="flex items-center gap-3 mb-6">
-                             <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center font-black text-indigo-600 text-lg">
+                             <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center font-black text-indigo-600 text-lg uppercase">
                                {s.full_name?.charAt(0)}
                              </div>
                              <div>
@@ -2550,26 +2905,32 @@ showToast('Grade verified and student notified');
                              </div>
                           </div>
                           <div className="grid grid-cols-2 gap-3 mb-6">
-                             <div className="bg-slate-50 p-3 rounded-2xl">
+                             <div className="bg-slate-50 p-3 rounded-2xl text-center">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Avg Score</p>
                                 <p className="text-xl font-black text-indigo-600 leading-none">{avgPct}%</p>
                              </div>
-                             <div className="bg-slate-50 p-3 rounded-2xl">
+                             <div className="bg-slate-50 p-3 rounded-2xl text-center">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">Tests</p>
                                 <p className="text-xl font-black text-slate-800 leading-none">{totalTests}</p>
                              </div>
                           </div>
                           <div className="flex items-center gap-2">
-                             <button onClick={() => openStudentResults(s)} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-black shadow-lg shadow-indigo-200">View Details</button>
+                             <button onClick={() => openStudentResults(s)} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black shadow-lg shadow-indigo-200 hover:opacity-90 transition-all">Report Details</button>
                              <button onClick={() => {
                                setSelectedStudentResults({ student: s, grades: studentGrades });
                                setTimeout(printResultCard, 100);
-                             }} className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-indigo-200 transition-all"><Printer size={16} /></button>
+                             }} className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-indigo-200 transition-all" title="Print Report Card"><Printer size={16} /></button>
                           </div>
                        </motion.div>
                      );
                    })}
                 </div>
+                {!students.length && (
+                  <div className="py-40 text-center bg-white rounded-3xl border border-slate-100">
+                    <Award size={48} className="text-slate-100 mx-auto mb-4" />
+                    <p className="text-slate-400 font-bold">No students found. Try searching or adding students to the session.</p>
+                  </div>
+                )}
               </motion.div>
             )}
             {/* ══════════ COMMUNICATE ══════════ */}
@@ -3053,6 +3414,57 @@ showToast('Grade verified and student notified');
             className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[999] px-5 py-3 rounded-2xl text-sm font-black text-white flex items-center gap-2 shadow-xl ${toast.ok ? 'bg-emerald-500' : 'bg-rose-500'}`}>
             {toast.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />} {toast.msg}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Grade Modal */}
+      <AnimatePresence>
+        {editingGrade && (
+          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingGrade(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
+              <h4 className="text-lg font-black text-slate-900 mb-4">Edit Marks</h4>
+              <div className="space-y-4">
+                <FM label="Obtained Marks"><TI type="number" value={editingGrade.score} onChange={(e: any) => setEditingGrade({ ...editingGrade, score: e.target.value })} /></FM>
+                <FM label="Total Marks"><TI type="number" value={editingGrade.total_marks} onChange={(e: any) => setEditingGrade({ ...editingGrade, total_marks: e.target.value })} /></FM>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button onClick={() => setEditingGrade(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
+                <button onClick={handleEditGrade} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
+                  {saving ? 'Saving...' : 'Update'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Edit Result Card Modal */}
+      <AnimatePresence>
+        {editingResultCard && (
+          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingResultCard(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-3xl w-full max-w-sm z-10 shadow-2xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600"><Award size={20} /></div>
+                <div>
+                  <h4 className="text-lg font-black text-slate-900 leading-none">Edit Final Result</h4>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Roll #{editingResultCard.student_roll}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <FM label="Obtained Marks (Final)"><TI type="number" value={editingResultCard.obtained_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, obtained_marks: e.target.value })} /></FM>
+                <FM label="Total Marks (Final)"><TI type="number" value={editingResultCard.total_marks} onChange={(e: any) => setEditingResultCard({ ...editingResultCard, total_marks: e.target.value })} /></FM>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button onClick={() => setEditingResultCard(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm">Cancel</button>
+                <button onClick={handleEditResultCard} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-black text-sm shadow-lg shadow-indigo-600/20 hover:opacity-90" style={{ background: GRADIENT }}>
+                  {saving ? 'Saving...' : 'Update Card'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
