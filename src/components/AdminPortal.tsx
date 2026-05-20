@@ -736,6 +736,7 @@ const [coordinatorType, setCoordinatorType] = useState<string | null>(null);
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
   const [discounts,    setDiscounts]    = useState<any[]>([]);
   const [expenses,     setExpenses]     = useState<any[]>([]);
+  const [editingExpense, setEditingExpense] = useState<any>(null);
   const [income,       setIncome]       = useState<any[]>([]);
   const [salaries,     setSalaries]     = useState<any[]>([]);
   const [teachers,     setTeachers]     = useState<any[]>([]);
@@ -2465,6 +2466,36 @@ const handlePrintReport = (data: any) => {
   finally { setSaving(false); }
 };
 
+  const handleUpdateExpense = async () => {
+    if (!editingExpense) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .update({
+          description: editingExpense.description,
+          amount: Number(editingExpense.amount) || 0,
+          category: editingExpense.category,
+          expense_date: editingExpense.expense_date,
+          name: editingExpense.name || null,
+          paid_to: editingExpense.name || null,
+          slip_no: editingExpense.slip_no || null,
+          receipt_no: editingExpense.slip_no || null,
+          payment_method: editingExpense.payment_method || 'cash'
+        })
+        .eq('id', editingExpense.id);
+
+      if (error) throw error;
+      showToast('✅ Expense updated successfully');
+      setEditingExpense(null);
+      refresh();
+    } catch (err: any) {
+      showErr(err.message || 'Failed to update expense');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const payTeacherSalary = async () => {
     if (!salaryModal) return;
     const net = Number(salaryModal.monthly_salary) + Number(salaryForm.bonus) - Number(salaryForm.fine) - Number(salaryForm.deductions);
@@ -3972,11 +4003,12 @@ const active = tab === id; const badgeN = getBadge(id);
                                   <th className="px-6 py-3 text-left">Recipient</th>
                                   <th className="px-6 py-3 text-left">Category</th>
                                   <th className="px-6 py-3 text-right">Amount</th>
+                                  <th className="px-6 py-3 text-center">Action</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-50">
                                 {filteredList.length === 0 ? (
-                                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">No expenses found for the selected period</td></tr>
+                                  <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold italic">No expenses found for the selected period</td></tr>
                                 ) : filteredList.map(x => (
                                   <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
                                     <td className="px-6 py-4 text-slate-500 font-medium">{(x.expense_date || '').slice(0, 10)}</td>
@@ -3989,11 +4021,20 @@ const active = tab === id; const badgeN = getBadge(id);
                                       <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px] border border-slate-200">{x.category}</span>
                                     </td>
                                     <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
+                                    <td className="px-6 py-4 text-center">
+                                      <button
+                                        onClick={() => setEditingExpense({ ...x })}
+                                        className="p-1.5 rounded-xl bg-slate-50 text-slate-500 hover:bg-purple-50 hover:text-purple-600 transition-all border border-slate-100 inline-flex items-center justify-center cursor-pointer"
+                                        title="Edit Expense"
+                                      >
+                                        <PenLine size={13} />
+                                      </button>
+                                    </td>
                                   </tr>
                                 ))}
                                 {filteredList.length > 0 && (
                                   <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
-                                    <td colSpan={3} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Expenditure</td>
+                                    <td colSpan={4} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Expenditure</td>
                                     <td className="px-6 py-3 text-right text-rose-600">{PKR(totalAmount)}</td>
                                   </tr>
                                 )}
@@ -6143,6 +6184,76 @@ const active = tab === id; const badgeN = getBadge(id);
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Received {new Date(selectedNotif.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   <button onClick={() => setSelectedNotif(null)} className="px-6 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all">Close</button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editingExpense && (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingExpense(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              className="relative bg-white rounded-3xl w-full max-w-md overflow-hidden z-10 shadow-2xl">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100"><PenLine size={20} /></div>
+                  <h3 className="font-black text-slate-900 text-lg">Edit Expense Entry</h3>
+                </div>
+                <button onClick={() => setEditingExpense(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={20} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Headline / Tag (Category)</label>
+                  <div className="relative">
+                    <select 
+                      value={editingExpense.category} 
+                      onChange={(e: any) => setEditingExpense({ ...editingExpense, category: e.target.value })}
+                      className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 outline-none focus:border-orange-500 bg-white text-sm font-bold appearance-none"
+                    >
+                      <option value="">Select Category...</option>
+                      {expenseHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Amount (PKR)</label>
+                  <input type="number" value={editingExpense.amount} onChange={e=>setEditingExpense({...editingExpense, amount: Number(e.target.value)})} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-black outline-none focus:border-orange-500 font-mono text-orange-600" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Recipient/Payer</label>
+                    <input type="text" value={editingExpense.name || ''} onChange={e=>setEditingExpense({...editingExpense, name: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-orange-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Ref / Slip #</label>
+                    <input type="text" value={editingExpense.slip_no || ''} onChange={e=>setEditingExpense({...editingExpense, slip_no: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-orange-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Date</label>
+                  <input type="date" value={(editingExpense.expense_date || '').slice(0, 10)} onChange={e=>setEditingExpense({...editingExpense, expense_date: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-orange-500 bg-white text-sm font-bold" />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Description</label>
+                  <textarea value={editingExpense.description || ''} onChange={e=>setEditingExpense({...editingExpense, description: e.target.value})} placeholder="Note..." className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-orange-500 min-h-[80px]" />
+                </div>
+
+                <motion.button 
+                  whileTap={{ scale: 0.95 }} 
+                  onClick={handleUpdateExpense} 
+                  disabled={saving}
+                  className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  style={{ background: GRADIENT }}
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Changes</>}
+                </motion.button>
               </div>
             </motion.div>
           </div>
