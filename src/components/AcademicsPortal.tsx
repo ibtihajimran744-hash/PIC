@@ -5,8 +5,9 @@ import {
   Calendar, Megaphone, Mail, LogOut, RefreshCw, X, Plus,
   Search, Trash2, ChevronRight, CheckCircle, AlertCircle,
   Clock, BookMarked, BarChart2, FileText, Send, Eye,
-  Menu, Bell, Save, Upload
+  Menu, Bell, Save, Upload, FileUp, Sparkles, Database, Table
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
 import { AcademicSession, AcademicProgram, AcademicSubject, AcademicResource, SchemeEntry, AcademicQuiz, QuizResult } from '../services/academicManagement';
 import toast, { Toaster } from 'react-hot-toast';
@@ -514,6 +515,201 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     showToast('Class deleted'); loadAll();
   };
 
+  const handleMasterExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setSaving(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        
+        // Helper to extract a value from a row using fuzzy case-insensitive match on keys
+        const getFuzzyVal = (row: any, keywords: string[], defaultValue: any = '') => {
+          const keys = Object.keys(row);
+          // Try exact normalized match first
+          for (const kw of keywords) {
+            const normKw = kw.toLowerCase().replace(/[^a-z0-9]/g, '');
+            for (const key of keys) {
+              const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (normKey === normKw) {
+                return row[key];
+              }
+            }
+          }
+          // Try sub-string or starts-with match next
+          for (const kw of keywords) {
+            const normKw = kw.toLowerCase().replace(/[^a-z0-9]/g, '');
+            for (const key of keys) {
+              const normKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (normKey.includes(normKw) || normKw.includes(normKey)) {
+                return row[key];
+              }
+            }
+          }
+          return defaultValue;
+        };
+
+        // Determine fallback subject from file name or sheet names
+        let fileSubject = '';
+        const nameToCheck = (file.name + ' ' + wb.SheetNames.join(' ')).toLowerCase();
+        for (const s of allSubjects) {
+          if (s.name && nameToCheck.includes(s.name.toLowerCase())) {
+            fileSubject = s.name;
+            break;
+          }
+        }
+        if (!fileSubject && (nameToCheck.includes('civic') || nameToCheck.includes('sos'))) {
+          fileSubject = 'Civics';
+        }
+
+        // 1. Parse SOS Sheet
+        const sosSheet = wb.Sheets['SOS'] || wb.Sheets[wb.SheetNames[0]];
+        const sosData = sosSheet ? XLSX.utils.sheet_to_json(sosSheet) : [] as any[];
+        
+        // 2. Parse Timetable Sheet
+        const ttSheet = wb.Sheets['Timetable'] || wb.Sheets[wb.SheetNames[1]];
+        const ttData = ttSheet ? XLSX.utils.sheet_to_json(ttSheet) : [] as any[];
+
+        if (sosData.length === 0 && ttData.length === 0) {
+          throw new Error('No data found in SOS or Timetable sheets. Please ensure sheet names are "SOS" and "Timetable".');
+        }
+
+        // --- Process SOS ---
+        if (sosData.length > 0) {
+          const sosRows = sosData.map((row: any) => {
+            let subj = String(getFuzzyVal(row, ['subject', 'course', 'subjectname', 'subject_name'], fileSubject || 'Civics')).trim();
+            if (!subj || subj.toLowerCase() === 'unknown' || subj.toLowerCase() === 'undefined') {
+              subj = fileSubject || 'Civics';
+            }
+            const teacherStr = String(getFuzzyVal(row, ['teacher', 'instructor', 'lecturer', 'faculty', 'teachername', 'teacher_name'], '')).trim();
+            const matchedTeacher = teachers.find(t => 
+              t.full_name?.toLowerCase().includes(teacherStr.toLowerCase()) ||
+              teacherStr.toLowerCase().includes(t.full_name?.toLowerCase())
+            );
+            
+            // Comprehensive topic extractor
+            let topic = '';
+            const topicKeys = [
+              'topic', 'lesson', 'chapter', 'content', 'title', 'heading', 'syllabus', 
+              'breakup', 'particular', 'topics', 'lessons', 'chapters', 'contents', 
+              'syllabus covered', 'topic name', 'topic_name', 'lessons covered', 'task', 
+              'activity', 'course content', 'course contents', 'lecture topic', 'lecture topics',
+              'syllabus outline', 'outline', 'detail', 'details', 'description', 'particulars'
+            ];
+            const rawTopic = getFuzzyVal(row, topicKeys, '');
+            if (rawTopic && String(rawTopic).trim() !== '' && String(rawTopic).toLowerCase() !== 'unknown' && String(rawTopic).toLowerCase() !== 'undefined' && String(rawTopic) !== 'Untitled Topic') {
+              topic = String(rawTopic).trim();
+            }
+
+            // Fallback: search key-values for the longest non-meta string
+            if (!topic) {
+              let candidate = '';
+              for (const key of Object.keys(row)) {
+                const val = String(row[key] || '').trim();
+                if (val && isNaN(Number(val)) && val.length > 3) {
+                  const lowerK = key.toLowerCase();
+                  const lowerV = val.toLowerCase();
+                  const skip = ['date', 'week', 'month', 'part', 'class', 'section', 'grade', 'teacher', 'instructor', 'subject', 'program', 'campus', 'leave', 'holiday', 'period'];
+                  const isSkipKey = skip.some(sk => lowerK.includes(sk));
+                  const isSkipVal = skip.some(sk => lowerV === sk) || lowerV.includes('monday') || lowerV.includes('tuesday') || lowerV.includes('wednesday') || lowerV.includes('thursday') || lowerV.includes('friday') || lowerV.includes('saturday') || lowerV.includes('sunday');
+                  
+                  if (!isSkipKey && !isSkipVal && val.length > candidate.length) {
+                    candidate = val;
+                  }
+                }
+              }
+              if (candidate) {
+                topic = candidate;
+              }
+            }
+
+            if (!topic) {
+              topic = 'Untitled Topic';
+            }
+
+            const prog = getFuzzyVal(row, ['program', 'discipline', 'course', 'dept'], 'General');
+            const prt = Number(getFuzzyVal(row, ['part', 'year', 'classpart'], 1)) || 1;
+            const cls = String(getFuzzyVal(row, ['class', 'section', 'classsection', 'class_section', 'grade'], '')).trim();
+            const wk = Number(getFuzzyVal(row, ['week', 'weekno', 'week_no'], null)) || null;
+            const mn = getFuzzyVal(row, ['month', 'monthly'], null);
+            const dt = getFuzzyVal(row, ['date', 'scheduleddate', 'scheduled_date'], null);
+            const lect = getFuzzyVal(row, ['lecture', 'period', 'lectureno', 'periodno'], '');
+            const desc = getFuzzyVal(row, ['description', 'details', 'detail', 'info', 'remarks'], null);
+            const isLv = !!getFuzzyVal(row, ['leave', 'isleave', 'holiday', 'offday'], false);
+
+            return {
+              title: `${subj} SOS`,
+              subject: subj,
+              program: prog,
+              part: prt,
+              class_section: cls,
+              week_no: wk,
+              month: mn,
+              topic: topic,
+              description: dt ? `${dt} | Lecture ${lect || '—'}` : (desc || null),
+              uploaded_by: adminData.full_name,
+              teacher_id: matchedTeacher?.id || null,
+              scheduled_date: dt || null,
+              is_delivered: false,
+              is_skipped: false,
+              is_leave: isLv
+            };
+          });
+          const { error: sosErr } = await supabase.from('scheme_of_study').insert(sosRows);
+          if (sosErr) throw sosErr;
+        }
+
+        // --- Process Timetable ---
+        if (ttData.length > 0) {
+          const ttRows = ttData.map((row: any) => {
+            const day = getFuzzyVal(row, ['day', 'dayofweek', 'weekday'], 'Monday');
+            const start = getFuzzyVal(row, ['start', 'starttime', 'start_time', 'time'], '08:00');
+            const end = getFuzzyVal(row, ['end', 'endtime', 'end_time', 'to_time'], '08:40');
+            const cls = getFuzzyVal(row, ['class', 'section', 'classsection', 'class_section'], '');
+            const rm = String(getFuzzyVal(row, ['room', 'roomno', 'room_no', 'class_room'], ''));
+            const camp = getFuzzyVal(row, ['campus', 'college', 'wing'], 'Main');
+            const ggStr = getFuzzyVal(row, ['gender', 'group', 'gendergroup', 'boysgirls'], 'Girls-I');
+            const progInput = getFuzzyVal(row, ['program', 'stream', 'discipline'], '');
+            const subjInput = getFuzzyVal(row, ['subject', 'course', 'subjectname'], '');
+            const teacherInput = getFuzzyVal(row, ['teacher', 'instructor', 'teachername', 'lecturer'], '');
+
+            const subj = allSubjects.find(s => s.name?.toLowerCase().includes(String(subjInput || '').toLowerCase()));
+            const teacherObj = teachers.find(t => t.full_name?.toLowerCase().includes(String(teacherInput || '').toLowerCase()));
+            const prog = activePrograms.find(p => p.name?.toLowerCase().includes(String(progInput || '').toLowerCase()));
+
+            return {
+              day_of_week: day,
+              start_time: start,
+              end_time: end,
+              class_section: cls,
+              room: rm,
+              campus: camp,
+              gender_group: ggStr,
+              program: prog?.name || progInput || '',
+              subject: subj?.name || subjInput || '',
+              teacher_name: teacherObj?.full_name || teacherInput || null,
+              teacher_id: teacherObj?.id || null,
+              period_number: Number(getFuzzyVal(row, ['period', 'periodno', 'period_number', 'lecture'], 1)) || 1
+            };
+          });
+          const { error: ttErr } = await supabase.from('timetable').insert(ttRows);
+          if (ttErr) throw ttErr;
+        }
+
+        showToast(`✅ Blueprint imported successfully!`);
+        loadAll();
+      } catch (err: any) {
+        showToast(err.message || 'Error parsing Excel file', false);
+      } finally {
+        setSaving(false);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -768,6 +964,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <input type="file" id="master-excel-up" className="hidden" accept=".xlsx,.xls" onChange={handleMasterExcelUpload} />
             <button onClick={loadAll}
               className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -886,9 +1083,9 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     <div className="grid grid-cols-2 gap-3">
                       {[
                         { label: 'Session Setup',   icon: GraduationCap, action: () => setModal('session') },
+                        { label: 'Bulk Blueprint',  icon: Database, action: () => document.getElementById('master-excel-up')?.click() },
                         { label: 'Upload Scheme',   icon: BookMarked, action: () => { setTab('scheme'); setModal('scheme'); } },
                         { label: 'Announcement',    icon: Megaphone,  action: () => { setTab('announcements'); setModal('announce'); } },
-                        { label: 'Message Teacher', icon: Send,       action: () => { setTab('messages'); setModal('msg'); } },
                       ].map(({ label, icon: Icon, action }) => (
                         <motion.button key={label} onClick={action} whileTap={{ scale: 0.97 }}
                           className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all text-slate-600 hover:text-emerald-700">

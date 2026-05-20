@@ -13,7 +13,7 @@ import {
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 import * as XLSX from 'xlsx';
-import { Sparkles, Upload as UploadIcon } from 'lucide-react';
+import { Sparkles, Upload as UploadIcon, PenLine } from 'lucide-react';
 
 interface VPPortalProps {
   onLogout: () => void;
@@ -278,6 +278,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [notifyForm, setNotifyForm]     = useState<any>({ to:'all', target_role:'', target_username:'', title:'', message:'', priority:'normal' });
   const [incomeForm, setIncomeForm]     = useState<any>({ description:'', amount:'', category:'', income_date:new Date().toISOString().slice(0,10), recorded_by:adminData.full_name });
   const [expenseForm, setExpenseForm]   = useState<any>({ description:'', amount:'', category:'', expense_date:new Date().toISOString().slice(0,10), paid_to:'', payment_method:'cash', entered_by:adminData.full_name });
+  const [editingExpense, setEditingExpense] = useState<any>(null);
 
   // New features forms
   const [routeForm, setRouteForm]     = useState<any>({ route_title:'', vehicle_no:'', driver_name:'', driver_phone:'', route_fare:'' });
@@ -325,8 +326,8 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('students').select('*').eq('session', currentSess).limit(2000),
       supabase.from('leave_requests').select('*').eq('session', currentSess).order('created_at',{ascending:false}),
       supabase.from('role_permissions').select('*'),
-      supabase.from('income').select('*').eq('session', currentSess).order('income_date',{ascending:false}).limit(100),
-      supabase.from('expenses').select('*').eq('session', currentSess).order('expense_date',{ascending:false}).limit(100),
+      supabase.from('income').select('*').order('income_date',{ascending:false}).limit(100),
+      supabase.from('expenses').select('*').order('expense_date',{ascending:false}).limit(100),
       supabase.from('teacher_leave_requests').select('*').order('created_at',{ascending:false}),
       supabase.from('teachers').select('*').order('full_name'),
       supabase.from('fee_groups_config').select('*').order('weight'),
@@ -1348,7 +1349,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
             </div>
             <TableWrap>
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-slate-100"><tr><Th>Date</Th><Th>Description</Th><Th>Category</Th><Th>Paid To</Th><Th>Amount</Th><Th>Method</Th></tr></thead>
+                <thead className="bg-slate-50 border-b border-slate-100"><tr><Th>Date</Th><Th>Description</Th><Th>Category</Th><Th>Paid To</Th><Th>Amount</Th><Th>Method</Th><Th>Action</Th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {expenses.map(e=>(
                     <tr key={e.id} className="hover:bg-slate-50/50">
@@ -1357,6 +1358,15 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                       <Td className="text-slate-500">{e.category}</Td><Td className="text-slate-500">{e.paid_to||'—'}</Td>
                       <Td className="font-black text-rose-600">{PKR(e.amount)}</Td>
                       <Td className="text-slate-400">{e.payment_method}</Td>
+                      <Td>
+                        <button
+                          onClick={() => setEditingExpense({ ...e })}
+                          className="p-1.5 rounded-xl bg-slate-50 text-slate-500 hover:bg-purple-50 hover:text-purple-600 transition-all border border-slate-100 flex items-center justify-center"
+                          title="Edit Expense"
+                        >
+                          <PenLine size={13} />
+                        </button>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
@@ -1364,6 +1374,59 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
               {!expenses.length && <p className="p-8 text-center text-slate-400 text-sm">No expenses recorded</p>}
             </TableWrap>
           </div>
+        )}
+        {editingExpense && (
+          <Modal
+            open={!!editingExpense}
+            onClose={() => setEditingExpense(null)}
+            title="Edit Expense Entry"
+            accent={ACCENT}
+          >
+            <div className="space-y-4">
+              <Field label="Description">
+                <Input value={editingExpense.description} onChange={e=>setEditingExpense({...editingExpense, description: e.target.value})} />
+              </Field>
+              <Field label="Amount">
+                <Input type="number" value={editingExpense.amount} onChange={e=>setEditingExpense({...editingExpense, amount: e.target.value})} />
+              </Field>
+              <Field label="Category">
+                <Input value={editingExpense.category} onChange={e=>setEditingExpense({...editingExpense, category: e.target.value})} />
+              </Field>
+              <Field label="Date">
+                <Input type="date" value={editingExpense.expense_date} onChange={e=>setEditingExpense({...editingExpense, expense_date: e.target.value})} />
+              </Field>
+              <Field label="Paid To">
+                <Input value={editingExpense.paid_to} onChange={e=>setEditingExpense({...editingExpense, paid_to: e.target.value})} />
+              </Field>
+              <Field label="Payment Method">
+                <Select value={editingExpense.payment_method} onChange={e=>setEditingExpense({...editingExpense, payment_method: e.target.value})}>
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank</option>
+                  <option value="online">Online</option>
+                </Select>
+              </Field>
+              <button
+                onClick={() => {
+                  updateRow('expenses', editingExpense.id, {
+                    description: editingExpense.description,
+                    amount: Number(editingExpense.amount),
+                    category: editingExpense.category,
+                    expense_date: editingExpense.expense_date,
+                    paid_to: editingExpense.paid_to,
+                    payment_method: editingExpense.payment_method
+                  }, 'id', () => {
+                    loadAll();
+                    setEditingExpense(null);
+                  });
+                }}
+                disabled={saving}
+                className="w-full py-3 rounded-2xl text-white font-black text-sm disabled:opacity-50"
+                style={{ background: GRADIENT }}
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </Modal>
         )}
       </motion.div>
     );
