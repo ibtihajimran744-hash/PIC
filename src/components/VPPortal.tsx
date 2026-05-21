@@ -13,7 +13,9 @@ import {
 import { cn } from '../lib/utils';
 import { supabase } from '../services/supabase';
 import * as XLSX from 'xlsx';
+import hotToast from 'react-hot-toast';
 import { Sparkles, Upload as UploadIcon, PenLine } from 'lucide-react';
+import { BRANDING, LOGO_BASE64 } from '../lib/constants';
 
 interface VPPortalProps {
   onLogout: () => void;
@@ -195,6 +197,12 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   const [exams, setExams]                 = useState<any[]>([]);
   const [examMarks, setExamMarks]         = useState<any[]>([]);
   const [studentAttendance, setStudentAttendance] = useState<any[]>([]);
+  const [attSearchQuery, setAttSearchQuery]       = useState('');
+  const [attStatusFilter, setAttStatusFilter]     = useState('All');
+  const [attSourceFilter, setAttSourceFilter]     = useState('All');
+  const [attStartDate, setAttStartDate]           = useState('');
+  const [attEndDate, setAttEndDate]               = useState('');
+  const [showPrintReport, setShowPrintReport]     = useState(false);
   const [teacherAttendance, setTeacherAttendance] = useState<any[]>([]);
   const [timetable, setTimetable]         = useState<any[]>([]);
   const [subjects, setSubjects]           = useState<any[]>([]);
@@ -319,7 +327,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       { data:admData }, { data:examData }, { data:subData }, { data:deptData },
       { data:tRoutesData }, { data:tVehiclesData }, { data:hRoomsData },
       { data:iItemsData }, { data:iStockData }, { data:iIssuesData },
-      { data:certData }, { data:payData },
+      { data:certData }, { data:payData }, { data:attData },
     ] = await Promise.all([
       supabase.from('admin_users').select('*').order('full_name'),
       supabase.from('fee_transactions').select('*').eq('session', currentSess).order('payment_date',{ascending:false}).limit(200),
@@ -331,7 +339,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('teacher_leave_requests').select('*').order('created_at',{ascending:false}),
       supabase.from('teachers').select('*').order('full_name'),
       supabase.from('fee_groups_config').select('*').order('weight'),
-      supabase.from('admin_notifications').select('*').order('created_at',{ascending:false}).limit(50),
+      supabase.from('notifications').select('*').eq('target_role', 'vice_principal').order('created_at',{ascending:false}).limit(50),
       supabase.from('admission_inquiries').select('*').order('created_at',{ascending:false}).limit(200),
       supabase.from('visitor_log').select('*').order('created_at',{ascending:false}).limit(200),
       supabase.from('reception_call_log').select('*').order('created_at',{ascending:false}).limit(200),
@@ -350,6 +358,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
       supabase.from('inventory_issues').select('*').order('created_at',{ascending:false}),
       supabase.from('student_certificates').select('*').eq('session', currentSess).order('created_at',{ascending:false}),
       supabase.from('payroll_log').select('*').order('created_at',{ascending:false}),
+      supabase.from('attendance').select('*').order('date',{ascending:false}).limit(2000),
     ]);
 
     setStaff(staffData||[]); setTransactions(txData||[]); setStudents(stuData||[]);
@@ -362,7 +371,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
     setDepartments(deptData||[]);
     setRoutes(tRoutesData||[]); setVehicles(tVehiclesData||[]); setHostelRooms(hRoomsData||[]);
     setInventoryItems(iItemsData||[]); setInventoryStock(iStockData||[]); setInventoryIssues(iIssuesData||[]);
-    setCertificates(certData||[]); setPayroll(payData||[]);
+    setCertificates(certData||[]); setPayroll(payData||[]); setStudentAttendance(attData||[]);
 
     const permMap: Record<string,any> = {};
     ALL_ROLES.forEach(r => { permMap[r] = { permissions:{ ...DEFAULT_PERMISSIONS[r] } }; });
@@ -371,6 +380,188 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
   }, [activeSession]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Real-time subscription for student attendance live feed
+  useEffect(() => {
+    const channel = supabase.channel('vp-attendance-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newAtt = payload.new;
+          setStudentAttendance(prev => [newAtt, ...prev]);
+
+          // Live audio-visual notifications of every attendance marked in VP Portal
+          if (newAtt) {
+            // Find student details from our loaded students list
+            const stu = students.find(s => s.roll_no === newAtt.student_roll || String(s.roll_no) === String(newAtt.student_roll));
+            const studentName = stu ? stu.full_name : `Student Roll #${newAtt.student_roll}`;
+            const programSec = stu ? `${stu.program} · Part ${stu.part}` : '';
+            const statusEmoji = newAtt.status === 'Present' ? '✅' : newAtt.status === 'Late' ? '⚠️' : '❌';
+            const detailMsg = `${studentName} (Roll: ${newAtt.student_roll}${programSec ? `, ${programSec}` : ''}) checked in as ${newAtt.status} at ${newAtt.time_in || 'now'}.`;
+
+            // 1. Double chime sound using high quality HTML5 Web Audio API (totally offline compatible)
+            try {
+              const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+              osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+              osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+              gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+              osc.start(audioCtx.currentTime);
+              osc.stop(audioCtx.currentTime + 0.4);
+            } catch (soundErr) {
+              console.log('Audio chime error:', soundErr);
+            }
+
+            // 2. Beautiful stacked in-app Toast notification using react-hot-toast
+            hotToast.custom((t) => (
+              <div
+                className={`${
+                  t.visible ? 'animate-enter' : 'animate-leave'
+                } max-w-md w-full bg-slate-900 border border-slate-800 text-white shadow-2xl rounded-2xl pointer-events-auto flex p-4`}
+                style={{ backdropFilter: 'blur(10px)' }}
+              >
+                <div className="flex-1 w-0">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0 pt-0.5">
+                      <span className="text-xl">{statusEmoji}</span>
+                    </div>
+                    <div className="ml-3 flex-1">
+                      <p className="text-xs font-black tracking-widest text-emerald-400 uppercase">
+                        Live Gate Feed Action
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-100">
+                        {studentName} marked {newAtt.status}
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-400">
+                        {detailMsg}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex border-l border-slate-800 pl-3 ml-3 justify-center items-center">
+                  <button
+                    onClick={() => hotToast.dismiss(t.id)}
+                    className="text-xs font-bold text-slate-400 hover:text-white"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            ), { duration: 4500 });
+
+            // 3. Immediately insert simulated record to VP Live alerts feed dashboard element,
+            // so we don't have to wait for any delayed background process or db insert on admin_notifications!
+            const simulatedNotif = {
+              id: `live-alert-${Date.now()}-${newAtt.id || Math.random()}`,
+              sender: 'Live Gate Sensor',
+              title: `${statusEmoji} ${newAtt.status} — ${studentName}`,
+              message: detailMsg,
+              created_at: new Date().toISOString(),
+              type: newAtt.status === 'Late' ? 'late_alert' : newAtt.status === 'Absent' ? 'absence_sub_alert' : 'attendance_alert'
+            };
+
+            setNotifications(prev => {
+              if (prev.some(n => n.title === simulatedNotif.title && n.message === simulatedNotif.message)) return prev;
+              return [simulatedNotif, ...prev];
+            });
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          setStudentAttendance(prev => prev.map(a => a.id === payload.new.id ? payload.new : a));
+        } else if (payload.eventType === 'DELETE') {
+          setStudentAttendance(prev => prev.filter(a => a.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [students]);
+
+  // Real-time subscription for admin notifications so VP receives live alerts (e.g., attendance logs)
+  useEffect(() => {
+    const channel = supabase.channel('vp-attendance-feed')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: 'target_role=eq.vice_principal'
+      }, (payload: any) => {
+        const newNotif = payload.new;
+        if (newNotif) {
+          setNotifications(prev => {
+            if (prev.some(n => String(n.id) === String(newNotif.id))) return prev;
+            return [newNotif, ...prev];
+          });
+
+          // Play double chime sound
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+            osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+            osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+            gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.4);
+          } catch (soundErr) {
+            console.log('Audio chime error:', soundErr);
+          }
+
+          // Show high quality toast
+          hotToast.custom((t) => (
+            <div
+              className={`${
+                t.visible ? 'animate-enter' : 'animate-leave'
+              } max-w-md w-full bg-slate-900 border border-slate-800 text-white shadow-2xl rounded-2xl pointer-events-auto flex p-4`}
+              style={{ backdropFilter: 'blur(10px)' }}
+            >
+              <div className="flex-1 w-0">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 pt-0.5">
+                    <span className="text-xl">🚨</span>
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <p className="text-xs font-black tracking-widest text-emerald-400 uppercase">
+                      Live Gates Feed Alert
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-100">
+                      {newNotif.title}
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-400">
+                      {newNotif.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex border-l border-slate-800 pl-3 ml-3 justify-center items-center">
+                <button
+                  onClick={() => hotToast.dismiss(t.id)}
+                  className="text-xs font-bold text-slate-400 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          ), { duration: 4500 });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Load attendance when date/class changes
   useEffect(() => {
@@ -2203,40 +2394,377 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
           </div>
         )}
 
-        {repTab==='attendance' && (
-          <div className="space-y-3">
-            <div className="flex justify-end"><button onClick={()=>exportCSV(studentAttendance,'attendance_report')} className="px-4 py-2 rounded-xl text-xs font-black border border-slate-200 bg-white text-slate-600">Export CSV</button></div>
-            <div className="grid grid-cols-3 gap-3">
-              {['Present','Absent','Late'].map(st=>(
-                <div key={st} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{st}</p>
-                  <p className={cn('text-2xl font-black',st==='Present'?'text-emerald-600':st==='Absent'?'text-rose-600':'text-amber-600')}>
-                    {studentAttendance.filter(a=>a.status===st).length}
-                  </p>
+        {repTab==='attendance' && (() => {
+          // Calculate filtered records
+          const filteredAttendance = studentAttendance.filter(a => {
+            const stu = students.find(s => s.roll_no === a.student_roll);
+            if (!stu) return false;
+
+            if (repFilter.program && stu.program !== repFilter.program) return false;
+            
+            if (attSearchQuery) {
+              const q = attSearchQuery.toLowerCase();
+              const matchRoll = a.student_roll?.toLowerCase().includes(q) || false;
+              const matchName = stu.full_name?.toLowerCase().includes(q) || false;
+              if (!matchRoll && !matchName) return false;
+            }
+
+            if (attStatusFilter !== 'All' && a.status !== attStatusFilter) return false;
+
+            const isBiometric = a.source === 'biometric' || a.sender?.toLowerCase().includes('biometric') || a.sender?.toLowerCase().includes('gate');
+            if (attSourceFilter !== 'All') {
+              if (attSourceFilter === 'Biometric' && !isBiometric) return false;
+              if (attSourceFilter === 'Manual' && isBiometric) return false;
+            }
+
+            if (attStartDate && a.date < attStartDate) return false;
+            if (attEndDate && a.date > attEndDate) return false;
+
+            return true;
+          });
+
+          // Metrics based on filtered set
+          const presentsCount = filteredAttendance.filter(a => a.status === 'Present').length;
+          const absentsCount = filteredAttendance.filter(a => a.status === 'Absent').length;
+          const latesCount = filteredAttendance.filter(a => a.status === 'Late').length;
+          const totalLogs = filteredAttendance.length;
+
+          return (
+            <div className="space-y-4">
+              {/* Header actions */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <h3 className="font-black text-slate-800 text-base flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block"></span>
+                    <span>Live Attendance Feed Ledger</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Real-time gate and manual attendance synchronisation active.</p>
                 </div>
-              ))}
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setShowPrintReport(true)} className="px-3.5 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm flex items-center gap-1.5 transition-all">
+                    <Printer size={14} /> Design & Print Official Ledger
+                  </button>
+                  <button onClick={() => exportCSV(filteredAttendance, 'filtered_attendance_report')} className="px-3.5 py-2 rounded-xl text-xs font-black border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-all">
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Advanced Filter Panel */}
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
+                <div className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">🔍 Fine-tune Filter Criteria</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Search Student</label>
+                    <div className="relative">
+                      <input type="text" placeholder="Roll No or Name..." value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} className="w-full pl-7 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 focus:border-slate-300 outline-none text-slate-700 bg-slate-50/50" />
+                      <Search size={11} className="absolute left-2.5 top-[10px] text-slate-400" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">From Date</label>
+                    <input type="date" value={attStartDate} onChange={e => setAttStartDate(e.target.value)} className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 focus:border-slate-300 outline-none text-slate-700 bg-slate-50/50" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">To Date</label>
+                    <input type="date" value={attEndDate} onChange={e => setAttEndDate(e.target.value)} className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 focus:border-slate-300 outline-none text-slate-700 bg-slate-50/50" />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Status Type</label>
+                    <select value={attStatusFilter} onChange={e => setAttStatusFilter(e.target.value)} className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 focus:border-slate-300 outline-none text-slate-700 bg-slate-50/50 cursor-pointer">
+                      <option value="All">All statuses</option>
+                      <option value="Present">Present</option>
+                      <option value="Absent">Absent</option>
+                      <option value="Late">Late</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Source Stream</label>
+                    <select value={attSourceFilter} onChange={e => setAttSourceFilter(e.target.value)} className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 focus:border-slate-300 outline-none text-slate-700 bg-slate-50/50 cursor-pointer">
+                      <option value="All">All channels</option>
+                      <option value="Biometric">🤖 Biometric Gate</option>
+                      <option value="Manual">👨‍🏫 Coordinator Manual</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status metrics bar */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-50 text-slate-500 border border-slate-100 flex items-center justify-center font-bold">∑</div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Total Matched</p>
+                    <p className="text-lg font-black text-slate-800 leading-none">{totalLogs} logs</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center font-bold">✓</div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Presents</p>
+                    <p className="text-lg font-black text-emerald-600 leading-none">{presentsCount}</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center font-bold">✗</div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Absents</p>
+                    <p className="text-lg font-black text-rose-600 leading-none">{absentsCount}</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center font-bold">⚠</div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Lates</p>
+                    <p className="text-lg font-black text-amber-500 leading-none">{latesCount} lates</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Data Table with custom columns */}
+              <TableWrap>
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      <Th>Roll No</Th>
+                      <Th>Name</Th>
+                      <Th>Program & Sec</Th>
+                      <Th>Date</Th>
+                      <Th>Subject / Period</Th>
+                      <Th>Arrival Time</Th>
+                      <Th>Tracking Channel</Th>
+                      <Th>Status</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredAttendance.slice(0, 80).map(a => {
+                      const stu = students.find(s => s.roll_no === a.student_roll);
+                      const isBiometric = a.source === 'biometric' || a.sender?.toLowerCase().includes('biometric') || a.sender?.toLowerCase().includes('gate');
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-3 font-mono text-slate-500">#{a.student_roll}</td>
+                          <td className="px-4 py-3 font-bold text-slate-800">{stu?.full_name || '—'}</td>
+                          <td className="px-4 py-3 text-slate-500">{stu ? `${stu.program} · Part ${stu.part}` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-500 font-medium">{new Date(a.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td className="px-4 py-3 text-slate-500 font-bold">{a.subject || 'Staff/Gate Log'} {a.period ? `(P${a.period})` : ''}</td>
+                          <td className="px-4 py-3 text-slate-400 font-mono">{a.time_in || '—'}</td>
+                          <td className="px-4 py-3 text-slate-400">
+                            {isBiometric ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
+                                🤖 BIOMETRIC
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                👨‍🏫 MANUAL
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {filteredAttendance.length === 0 && (
+                  <p className="p-12 text-center text-slate-400 text-sm italic">
+                    No attendance logs match the current search or filters.
+                  </p>
+                )}
+              </TableWrap>
+
+              {/* ── DESIGNED PRINT MODAL WITH COLLEGE LOGO & METRICS ──────────────── */}
+              <AnimatePresence>
+                {showPrintReport && (
+                  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 overflow-y-auto print-portal" id="printable-area-outer">
+                    <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                      className="bg-white rounded-3xl w-full max-w-4xl p-8 shadow-2xl relative border border-slate-100 max-h-[85vh] overflow-y-auto" id="printable-report-area">
+                      
+                      {/* Top actions - hidden in print */}
+                      <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-6 print:hidden">
+                        <div className="flex items-center gap-2">
+                          <Printer className="text-indigo-600" size={18} />
+                          <h4 className="font-black text-slate-800 text-lg">Official Attendance Ledger Draft</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => window.print()} className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1.5 shadow-md">
+                            <Printer size={13} /> Trigger System Print (PDF)
+                          </button>
+                          <button onClick={() => setShowPrintReport(false)} className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500">
+                            <X size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 🏫 OFFICIAL COLLEGE REPORT HEADER BLOCK */}
+                      <div className="text-center space-y-2 pb-6 border-b border-slate-200 relative">
+                        {/* Base64 centered official logo */}
+                        <div className="flex justify-center mb-1">
+                          <img src={LOGO_BASE64} alt="College Logo" className="w-16 h-16 object-contain" referrerPolicy="no-referrer" />
+                        </div>
+                        <h2 className="font-black text-slate-900 text-2xl uppercase tracking-wide leading-none">{BRANDING.name}</h2>
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{BRANDING.address}</p>
+                        <p className="text-[9px] font-bold text-slate-500 tracking-wide">Phone: {BRANDING.phone} · Active Academic Session: {BRANDING.session}</p>
+                        
+                        {/* Title of the ledger */}
+                        <div className="pt-3">
+                          <span className="bg-slate-100 text-slate-800 text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border border-slate-250">
+                            Official Student Attendance Ledger
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 📋 REPORT SPECIFICATION METADATA CHUNKS */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-b border-slate-200 text-xs font-semibold text-slate-600">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Report Generated By</p>
+                          <p className="text-slate-800 font-bold">{adminData.full_name} ({adminData.role})</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Date bounds</p>
+                          <p className="text-slate-800 font-bold">
+                            {attStartDate ? attStartDate : 'Beginning'} to {attEndDate ? attEndDate : 'Present'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Academic Program</p>
+                          <p className="text-slate-800 font-bold">{repFilter.program || 'All Programs'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Extracted Dataset</p>
+                          <p className="text-slate-800 font-bold">{totalLogs} verified logs</p>
+                        </div>
+                      </div>
+
+                      {/* 📊 SUMMARY STATISTICS ROW IN REPORT */}
+                      <div className="grid grid-cols-3 gap-3 my-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Presents Row</p>
+                          <p className="text-sm font-black text-emerald-600">{presentsCount}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Absents Row</p>
+                          <p className="text-sm font-black text-rose-600">{absentsCount}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Lates Offset Row</p>
+                          <p className="text-sm font-black text-amber-600">{latesCount}</p>
+                        </div>
+                      </div>
+
+                      {/* 📄 LEDGER CONTENT DATA TABLE */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="border-b-2 border-slate-200 text-[10px] font-black uppercase text-slate-400">
+                              <th className="py-2.5">Roll No</th>
+                              <th className="py-2.5">Student Name</th>
+                              <th className="py-2.5">Program Details</th>
+                              <th className="py-2.5">Tracking Date</th>
+                              <th className="py-2.5">Subject Stream</th>
+                              <th className="py-2.5">Arrival</th>
+                              <th className="py-2.5 text-right">Status Badge</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700">
+                            {filteredAttendance.map(a => {
+                              const stu = students.find(s => s.roll_no === a.student_roll);
+                              return (
+                                <tr key={a.id} className="py-2">
+                                  <td className="py-2.5 font-mono">#{a.student_roll}</td>
+                                  <td className="py-2.5 font-bold text-slate-900">{stu?.full_name || '—'}</td>
+                                  <td className="py-2.5 text-slate-500">{stu ? `${stu.program} · P${stu.part}` : '—'}</td>
+                                  <td className="py-2.5 text-slate-500">{new Date(a.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                  <td className="py-2.5 text-slate-500 font-semibold">{a.subject || 'Staff/Gate Log'} {a.period ? `(P${a.period})` : ''}</td>
+                                  <td className="py-2.5 text-slate-400 font-mono">{a.time_in || '—'}</td>
+                                  <td className="py-2.5 text-right font-black">
+                                    <span className={cn(
+                                      "text-[9px] uppercase px-2 py-0.5 rounded-full border tracking-wide inline-block",
+                                      a.status === 'Present' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                      a.status === 'Absent' ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                                      'bg-amber-50 text-amber-600 border-amber-150'
+                                    )}>
+                                      {a.status.toUpperCase()}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        {filteredAttendance.length === 0 && (
+                          <div className="p-8 text-center text-slate-300 text-sm">
+                            No ledger logs found in selected date boundary.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ✍️ SIGNATURE AUTHORISATION FOOTER BLOCK */}
+                      <div className="mt-12 pt-8 border-t border-slate-200 grid grid-cols-2 gap-12 text-center text-xs font-semibold text-slate-600">
+                        <div className="space-y-4">
+                          <div className="h-10 border-b border-slate-200 w-48 mx-auto"></div>
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">College Vice Principal Autograph</p>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="h-10 border-b border-slate-200 w-48 mx-auto"></div>
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Director / Head of Institution Office</p>
+                        </div>
+                      </div>
+
+                      {/* Printer Instructions/Notes */}
+                      <p className="mt-8 text-center text-[9px] text-slate-400 italic">
+                        This document is a certified dynamic academic ledger generated directly via Pak Informatics Group of Colleges secure biometric portal.
+                      </p>
+
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* 📄 Dynamic Print Style Injection */}
+              <style>{`
+                @media print {
+                  /* Hide all page content except the printable overlay report area */
+                  body * {
+                    visibility: hidden !important;
+                    background: none !important;
+                  }
+                  #printable-report-area, #printable-report-area * {
+                    visibility: visible !important;
+                  }
+                  #printable-report-area {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    height: auto !important;
+                    max-height: 100% !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    overflow: visible !important;
+                  }
+                  #printable-area-outer {
+                    position: absolute !important;
+                    background: white !important;
+                    inset: 0 !important;
+                    padding: 0 !important;
+                    overflow: visible !important;
+                    z-index: 999999 !important;
+                  }
+                  .print\\:hidden, button, .lucide {
+                    display: none !important;
+                  }
+                }
+              `}</style>
             </div>
-            <TableWrap>
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 border-b border-slate-100"><tr><Th>Roll No</Th><Th>Name</Th><Th>Date</Th><Th>Status</Th></tr></thead>
-                <tbody className="divide-y divide-slate-50">
-                  {studentAttendance.slice(0,50).map(a=>{
-                    const stu=students.find(s=>s.roll_no===a.student_roll);
-                    return (
-                      <tr key={a.id} className="hover:bg-slate-50/50">
-                        <Td className="font-mono text-slate-500">#{a.student_roll}</Td>
-                        <Td className="font-bold text-slate-800">{stu?.full_name||'—'}</Td>
-                        <Td className="text-slate-400">{a.date}</Td>
-                        <Td><StatusBadge status={a.status} /></Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {!studentAttendance.length && <p className="p-8 text-center text-slate-400 text-sm">No attendance data yet</p>}
-            </TableWrap>
-          </div>
-        )}
+          );
+        })()}
 
         {repTab==='exams' && (
           <div className="space-y-3">
@@ -2572,6 +3100,72 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                 <StatCard icon={Calendar}      label="Pending Leaves" value={pendingLeaves}           sub="Awaiting action"                color="bg-amber-50 text-amber-600" alert={pendingLeaves>0} />
                 <StatCard icon={GraduationCap} label="Total Students" value={students.length}         sub="Enrolled"                      color="bg-purple-50 text-purple-600" />
               </div>
+
+              {/* 🔔 Real-time Campus Alerts & Attendance Feed */}
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm animate-fade-in">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2.5 w-2.5 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    </span>
+                    <h3 className="font-black text-slate-900 text-lg">Live Campus Alerts & Biometric Check-In Logs</h3>
+                  </div>
+                  <button onClick={() => setTab('communicate')} className="text-xs font-bold hover:underline" style={{ color: ACCENT }}>
+                    Message Log & Broadcasts →
+                  </button>
+                </div>
+                <div className="divide-y divide-slate-50 max-h-[350px] overflow-y-auto">
+                  {notifications.slice(0, 8).map((n, i) => {
+                    const isSystem = n.sender === 'Biometric Gate' || n.sender === 'Biometric System' || n.sender === 'Biometric';
+                    const iconBg = n.type === 'late_alert' 
+                      ? 'bg-amber-50 text-amber-600 border-amber-100' 
+                      : n.type?.includes('absence') 
+                      ? 'bg-red-50 text-red-600 border-red-100' 
+                      : 'bg-emerald-50 text-emerald-600 border-emerald-100';
+
+                    return (
+                      <div key={n.id || i} className="px-5 py-3.5 flex items-start justify-between gap-4 hover:bg-slate-50/50 transition-all">
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          <div className={cn("w-9 h-9 rounded-2xl flex items-center justify-center border text-sm font-black flex-shrink-0", iconBg)}>
+                            {n.type === 'late_alert' ? '⚠️' : n.type?.includes('absence') ? '❌' : '✅'}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-slate-800 line-clamp-1">{n.title}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className="text-[10px] font-bold text-slate-400">
+                                Source: {n.sender || 'System'}
+                              </span>
+                              <span className="text-[10px] text-slate-300">•</span>
+                              <span className="text-[10px] font-medium text-slate-400">
+                                {n.created_at ? new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'Just Now'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Status Badge */}
+                        <div className="text-right flex-shrink-0 self-center">
+                          <span className={cn(
+                            "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border",
+                            isSystem ? "bg-sky-50 text-sky-600 border-sky-100" : "bg-slate-100 text-slate-500 border-slate-200"
+                          )}>
+                            {isSystem ? "🤖 BIOMETRIC" : "👨‍🏫 STAFF"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {notifications.length === 0 && (
+                    <div className="p-12 text-center text-slate-400 space-y-1">
+                      <p className="font-bold text-sm">No real-time logs received today yet</p>
+                      <p className="text-xs text-slate-400">Activity signals from biometrics and teacher check-ins will show up here as they occur.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                 <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="font-black text-slate-900 text-lg">📚 Recent Enrollments</h3>

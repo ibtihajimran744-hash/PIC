@@ -292,6 +292,15 @@ const Badge = ({ c, label }: { c: string; label: string }) => (
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentData }) => {
   const ACCENT = '#3B5BDB';
+  const formatCleanTime = (createdAtStr: string) => {
+    if (!createdAtStr) return '';
+    try {
+      const date = new Date(createdAtStr);
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch (e) {
+      return '';
+    }
+  };
   const [tab, setTab]     = useState('dashboard');
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
@@ -303,6 +312,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentD
   const [notifications, setNotifications] = useState<any[]>([]);
   const [grades,        setGrades]        = useState<any[]>([]);
   const [attendance,    setAttendance]    = useState<any[]>([]);
+  const [attStatusFilter, setAttStatusFilter] = useState<'all' | 'Present' | 'Absent' | 'Late'>('all');
   const [timetable,     setTimetable]     = useState<any[]>([]);
   const [leaderboard,   setLeaderboard]   = useState<any[]>([]);
   const [courses,       setCourses]       = useState<any[]>([]);
@@ -510,6 +520,38 @@ if (insightData) setAiInsight(insightData);
   }, [studentData.roll_no, studentData.class_section]);
 
   useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    const roll = studentData.roll_no;
+    const channel = supabase
+      .channel(`student_realtime_notifications_${roll}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `target_user_id=eq.${roll}`
+        },
+        (payload) => {
+          const newNotif = payload.new;
+          if (newNotif) {
+            setNotifications(prev => {
+              if (prev.some(n => String(n.id) === String(newNotif.id))) return prev;
+              return [newNotif, ...prev];
+            });
+            if (!newNotif.is_read) {
+              setUnreadCount(prev => prev + 1);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [studentData.roll_no]);
 
   const loadSosFeedback = useCallback(async () => {
     if (!studentData) return;
@@ -1112,6 +1154,90 @@ if (insightData) setAiInsight(insightData);
             {tab==='dashboard' && (
               <motion.div key="dash" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-5">
 
+                {/* Live Real-Time Notifications Feed */}
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.98 }} 
+                  animate={{ opacity: 1, scale: 1 }} 
+                  className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm flex flex-col gap-4 relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 font-extrabold text-[9px] uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                        Live Feed
+                      </div>
+                      <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Real-Time Alerts</h3>
+                    </div>
+                    <button 
+                      onClick={() => setTab('notifications')} 
+                      className="text-[11px] font-black text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      View All ({notifications.length})
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {notifications.slice(0, 2).map((n) => {
+                      const isUnread = !n.is_read;
+                      const cleanTime = formatCleanTime(n.created_at);
+                      const isAlert = n.type === 'attendance' || n.type === 'absence_alert' || n.title.toLowerCase().includes('arrived') || n.message.toLowerCase().includes('arrived') || n.type === 'verification';
+                      
+                      return (
+                        <div 
+                          key={n.id} 
+                          onClick={() => {
+                            markRead(String(n.id), n.type);
+                          }}
+                          className={cn(
+                            "p-3 rounded-2xl border transition-all flex items-start gap-3 cursor-pointer",
+                            isUnread 
+                              ? (isAlert ? "bg-rose-50/40 border-rose-100 ring-1 ring-rose-50/50 hover:bg-rose-50/70" : "bg-indigo-50/30 border-indigo-100/70 ring-1 ring-indigo-50/50 hover:bg-slate-50")
+                              : "bg-white border-slate-100 hover:bg-slate-50/50"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-8.5 h-8.5 rounded-xl flex items-center justify-center flex-shrink-0 border",
+                            isUnread 
+                              ? (isAlert ? "bg-rose-100/50 border-rose-200 text-rose-600" : "bg-indigo-50 border-indigo-150 text-indigo-600")
+                              : "bg-slate-50 border-slate-100 text-slate-400"
+                          )}>
+                            <Bell size={14} className={cn(isUnread && "animate-bounce")} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-extrabold text-slate-800 text-xs md:text-sm">
+                                {n.title}
+                              </p>
+                              {isUnread && (
+                                <span className={cn(
+                                  "text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider",
+                                  isAlert ? "bg-rose-500 text-white" : "bg-indigo-500 text-white"
+                                )}>
+                                  New
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 font-medium mt-0.5 leading-relaxed">
+                              {n.message}
+                            </p>
+                            <div className="text-[9px] text-slate-400 font-semibold mt-1.5 flex items-center gap-1.5">
+                              <Clock size={10} className="text-slate-400" />
+                              <span>Arrived at: <strong className="text-slate-500 font-bold">{cleanTime}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {notifications.length === 0 && (
+                      <div className="text-center py-4 border border-dashed border-slate-100 rounded-2xl bg-slate-50/40">
+                        <p className="text-xs text-slate-400 font-semibold italic">
+                          No alerts or announcements active right now.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+
                 {/* XP hero */}
                 <div className="rounded-3xl p-5 md:p-7 relative overflow-hidden"
                   style={{ background:'linear-gradient(135deg,#0B1F3A,#1a3050)', border:'1px solid rgba(255,255,255,.06)' }}>
@@ -1491,56 +1617,155 @@ if (insightData) setAiInsight(insightData);
 
             {/* ══ ATTENDANCE ══ */}
             {tab==='attendance' && (
-              <motion.div key="att" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-5">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[{l:'Overall %',v:`${attPct}%`,c:attPct>=75?'#4ADE80':'#FCA5A5'},
-                    {l:'Present',  v:presentDays,          c:'#4ADE80'},
-                    {l:'Absent',   v:absentDays,           c:'#FCA5A5'},
-                    {l:'Late',     v:attendance.filter(a=>a.status==='Late').length, c:'#FCD34D'}].map(({l,v,c}) => (
-                    <div key={l} className="rounded-2xl p-4 text-center"
-                      style={{ background:'#FFFFFF', border:'1px solid #E2E8F0', boxShadow:'0 2px 8px rgba(0,0,0,.04)', borderRadius:'16px' }}>
-                      <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color:'#94A3B8' }}>{l}</p>
-                      <p className="text-2xl font-black" style={{ color:c }}>{v}</p>
+              <motion.div key="att" initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0}} className="space-y-6">
+                
+                {/* Visual Status Indicator & Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[{l:'Overall Attendance Pct',v:`${attPct}%`,c:attPct>=75?'#10B981':'#EF4444', desc: attPct>=75?'Safe academic standing (>=75%)':'Action required: below 75% limit'},
+                    {l:'Presents Count',  v:presentDays,          c:'#10B981', desc:'Days marked present'},
+                    {l:'Absents Count',   v:absentDays,           c:'#EF4444', desc:'Days marked absent'},
+                    {l:'Lates Count',     v:attendance.filter(a=>a.status==='Late').length, c:'#F59E0B', desc:'Late arrivals'}].map(({l,v,c, desc}) => (
+                    <div key={l} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{l}</p>
+                        <p className="text-3xl font-black mt-1" style={{ color:c }}>{v}</p>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-medium mt-3 border-t border-slate-50 pt-2">{desc}</p>
                     </div>
                   ))}
                 </div>
-                <div className="rounded-2xl overflow-hidden" style={{ background:'#FFFFFF', border:'1px solid #E2E8F0', boxShadow:'0 2px 12px rgba(0,0,0,.05)' }}>
-                  <div className="px-4 py-3.5 border-b" style={{ borderColor:'#E2E8F0' }}>
-                    <p className="font-black text-slate-900 text-sm">Attendance History</p>
-                  </div>
-                  {attendance.length===0 ? (
-                    <div className="px-4 py-12 text-center text-slate-400 text-sm">No attendance records yet</div>
-                  ) : (
-                    <div className="divide-y divide-slate-50">
-                      {attendance.slice(0,30).map((a,i) => (
-                        <motion.div key={a.id||i}
-                          initial={{ opacity:0, x:-4 }} animate={{ opacity:1, x:0 }} transition={{ delay:i*0.02 }}
-                          className="flex items-center justify-between px-4 py-3 gap-3">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0',
-                              a.status==='Present'?'bg-emerald-100 text-emerald-700':
-                              a.status==='Late'   ?'bg-amber-100  text-amber-700' :
-                                                   'bg-red-100    text-red-700')}>
-                              {a.status==='Present'?'✓':a.status==='Late'?'L':'✗'}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-slate-900 truncate">{a.subject_name||'Class'}</p>
-                              <p className="text-[11px] text-slate-400">
-                                {new Date(a.date).toLocaleDateString('en-PK',{weekday:'short',day:'2-digit',month:'short'})}
-                                {a.period_number ? ` · Period ${a.period_number}` : ''}
-                              </p>
-                            </div>
-                          </div>
-                          <span className={cn('text-[11px] font-black px-2.5 py-1 rounded-full flex-shrink-0',
-                            a.status==='Present'?'bg-emerald-100 text-emerald-700':
-                            a.status==='Late'   ?'bg-amber-100  text-amber-700' :
-                                                 'bg-red-100    text-red-700')}>
-                            {a.status}
-                          </span>
-                        </motion.div>
+
+                {/* Filter Tab Selection & Detail Title */}
+                <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h3 className="font-black text-slate-900 text-base">Detailed Attendance Ledger</h3>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">Showing verified logs compiled from biometric RFID gates & manual classroom rolls.</p>
+                    </div>
+                    
+                    {/* Filter Pills */}
+                    <div className="flex flex-wrap gap-1.5 bg-slate-50 p-1 rounded-2xl border border-slate-100 self-start sm:self-center">
+                      {(['all', 'Present', 'Absent', 'Late'] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() => setAttStatusFilter(opt)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-black transition-all capitalize",
+                            attStatusFilter === opt
+                              ? "bg-slate-900 text-white shadow-sm"
+                              : "text-slate-500 hover:text-slate-800"
+                          )}
+                        >
+                          {opt === 'all' ? 'All Logs' : opt}
+                        </button>
                       ))}
                     </div>
-                  )}
+                  </div>
+
+                  {/* Filter Logic */}
+                  {(() => {
+                    const filtered = attendance.filter(a => attStatusFilter === 'all' || a.status === attStatusFilter);
+                    
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-16 text-center text-slate-400 space-y-2">
+                          <AlertCircle size={32} className="mx-auto text-slate-300" />
+                          <p className="font-bold text-sm">No {attStatusFilter !== 'all' ? attStatusFilter.toLowerCase() : ''} attendance records found</p>
+                          <p className="text-[11px] text-slate-400">Try switching your status filter tab above to view other logs.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        {filtered.map((a, i) => {
+                          const statusColor = a.status === 'Present' 
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-100' 
+                            : a.status === 'Late' 
+                            ? 'text-amber-700 bg-amber-50 border-amber-100' 
+                            : 'text-red-700 bg-red-50 border-red-100';
+
+                          return (
+                            <motion.div
+                              key={a.id || i}
+                              initial={{ opacity: 0, y: 12 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: Math.min(i * 0.03, 0.4) }}
+                              className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100/80 hover:border-slate-300/60 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                            >
+                              {/* Left: Date Display & Subject details */}
+                              <div className="flex items-start gap-3.5 min-w-0">
+                                {/* Cute Calendar-style sheet */}
+                                <div className="w-12 h-14 rounded-2xl bg-white border border-slate-100 flex flex-col items-center justify-center shadow-xs flex-shrink-0">
+                                  <div className={cn(
+                                    "w-full text-[8.5px] font-black uppercase tracking-tight py-0.5 rounded-t-2xl text-center text-white",
+                                    a.status === 'Present' ? 'bg-emerald-500' : a.status === 'Late' ? 'bg-amber-500' : 'bg-red-500'
+                                  )}>
+                                    {new Date(a.date).toLocaleDateString('en-PK', { month: 'short' })}
+                                  </div>
+                                  <div className="text-base font-black text-slate-800 leading-none py-1">
+                                    {new Date(a.date).toLocaleDateString('en-PK', { day: 'numeric' })}
+                                  </div>
+                                  <div className="text-[8px] text-slate-400 font-bold uppercase tracking-widest pb-1">
+                                    {new Date(a.date).toLocaleDateString('en-PK', { weekday: 'short' })}
+                                  </div>
+                                </div>
+
+                                <div className="min-w-0 space-y-1">
+                                  <p className="text-sm font-black text-slate-800 truncate">
+                                    {a.subject_name || 'General Campus Attendance'}
+                                  </p>
+                                  
+                                  {/* Badges/Details Row */}
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {/* Clock / Arrival Time */}
+                                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 bg-slate-100 border border-slate-200/50 px-2 py-0.5 rounded-lg">
+                                      <Clock size={11} className="text-slate-400" />
+                                      {a.time_in ? `${a.time_in}` : '08:15 AM (Scheduled)'}
+                                    </span>
+
+                                    {/* Action/Period indicator */}
+                                    {a.period_number && (
+                                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200/40 px-2 py-0.5 rounded-lg">
+                                        Period: {a.period_number}
+                                      </span>
+                                    )}
+
+                                    {/* Source indicator */}
+                                    <span className={cn(
+                                      "text-[10px] font-bold px-2 py-0.5 rounded-lg border",
+                                      a.source === 'biometric' 
+                                        ? "bg-sky-50 text-sky-700 border-sky-100"
+                                        : "bg-slate-100 text-slate-600 border-slate-200"
+                                    )}>
+                                      {a.source === 'biometric' ? '🤖 RFID Gate System' : '✍️ Instructor Manual'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right: Status Pill and late arrivals description */}
+                              <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 border-slate-100 pt-3 sm:pt-0 gap-2">
+                                <span className={cn("text-xs font-black px-3 py-1 rounded-full border shadow-xs flex items-center gap-1", statusColor)}>
+                                  {a.status === 'Present' && <CheckCircle size={12} className="text-emerald-500" />}
+                                  {a.status === 'Late' && <Clock size={12} className="text-amber-500" />}
+                                  {a.status === 'Absent' && <X size={12} className="text-red-500" />}
+                                  {a.status}
+                                </span>
+                                
+                                {a.status === 'Late' && a.late_minutes && (
+                                  <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100">
+                                    Late by {a.late_minutes} min
+                                  </span>
+                                )}
+                              </div>
+
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.div>
             )}

@@ -552,6 +552,53 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           return defaultValue;
         };
 
+        const getRowsFromSheet = (sheet: any): any[] => {
+          if (!sheet) return [];
+          const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+          if (rawRows.length === 0) return [];
+          
+          let headerIndex = 0;
+          let maxMatches = 0;
+          const headerKeywords = ['topic', 'subject', 'class', 'section', 'lesson', 'chapter', 'day', 'time', 'start', 'end'];
+          
+          for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+            const row = rawRows[i];
+            if (!row || !Array.isArray(row)) continue;
+            let matches = 0;
+            row.forEach(cell => {
+              const s = String(cell || '').toLowerCase();
+              if (headerKeywords.some(kw => s.includes(kw))) {
+                matches++;
+              }
+            });
+            if (matches > maxMatches) {
+              maxMatches = matches;
+              headerIndex = i;
+            }
+          }
+          
+          if (maxMatches > 0) {
+            const headers = rawRows[headerIndex].map(h => String(h || '').trim());
+            const objects: any[] = [];
+            for (let j = headerIndex + 1; j < rawRows.length; j++) {
+              const rowValues = rawRows[j];
+              if (!rowValues || rowValues.length === 0) continue;
+              if (rowValues.every(val => val === null || val === undefined || String(val).trim() === '')) continue;
+              
+              const obj: any = {};
+              headers.forEach((header, index) => {
+                if (header) {
+                  obj[header] = rowValues[index];
+                }
+              });
+              objects.push(obj);
+            }
+            return objects;
+          }
+          
+          return XLSX.utils.sheet_to_json(sheet);
+        };
+
         // Determine fallback subject from file name or sheet names
         let fileSubject = '';
         const nameToCheck = (file.name + ' ' + wb.SheetNames.join(' ')).toLowerCase();
@@ -567,11 +614,11 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
         // 1. Parse SOS Sheet
         const sosSheet = wb.Sheets['SOS'] || wb.Sheets[wb.SheetNames[0]];
-        const sosData = sosSheet ? XLSX.utils.sheet_to_json(sosSheet) : [] as any[];
+        const sosData = sosSheet ? getRowsFromSheet(sosSheet) : [] as any[];
         
         // 2. Parse Timetable Sheet
         const ttSheet = wb.Sheets['Timetable'] || wb.Sheets[wb.SheetNames[1]];
-        const ttData = ttSheet ? XLSX.utils.sheet_to_json(ttSheet) : [] as any[];
+        const ttData = ttSheet ? getRowsFromSheet(ttSheet) : [] as any[];
 
         if (sosData.length === 0 && ttData.length === 0) {
           throw new Error('No data found in SOS or Timetable sheets. Please ensure sheet names are "SOS" and "Timetable".');

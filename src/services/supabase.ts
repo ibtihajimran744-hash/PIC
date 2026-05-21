@@ -682,6 +682,7 @@ export async function markAttendance(studentId: number) {
 
   if (attendanceError) throw attendanceError;
 
+  // Notification for parents
   if (student.parent_phone) {
     const notifTitle = status === 'Late'
       ? `⚠️ Late Arrival — ${student.full_name}`
@@ -690,13 +691,45 @@ export async function markAttendance(studentId: number) {
       ? `${student.full_name} arrived late at ${time}. Please ensure punctuality.`
       : `${student.full_name} has been marked Present today at ${time}.`;
     await supabase.from('notifications').insert([{
-      target_user_id: student.roll_no,
+      target_user_id: String(student.roll_no),
       title: notifTitle,
       message: notifMessage,
       type: status === 'Late' ? 'late_alert' : 'attendance',
       target_role: 'PARENT'
     }]);
   }
+
+  // Always notify the student directly on their portal so they see it instantly in real-time
+  const studentTitle = status === 'Late'
+    ? `⚠️ Late Arrival — ${student.full_name}`
+    : `✅ Present — ${student.full_name}`;
+  const studentMsg = status === 'Late'
+    ? `You checked in late today at ${time}. Try to arrive earlier next time.`
+    : `You checked in Present today at ${time}. Welcome on campus!`;
+  await supabase.from('notifications').insert([{
+    target_user_id: String(student.roll_no),
+    title: studentTitle,
+    message: studentMsg,
+    type: status === 'Late' ? 'late_alert' : 'attendance',
+    target_role: 'STUDENT'
+  }]);
+
+  // Always notify the Vice Principal (VP) on every attendance event
+  const vpTitle = status === 'Late'
+    ? `⚠️ Late Arrival — ${student.full_name}`
+    : `✅ Present — ${student.full_name}`;
+  const vpMessage = status === 'Late'
+    ? `${student.full_name} (Roll: ${student.roll_no}) arrived late at ${time} via Biometric Scanning.`
+    : `${student.full_name} (Roll: ${student.roll_no}) arrived on campus at ${time} via Biometric Scanning.`;
+  await supabase.from('admin_notifications').insert([{
+    sender: 'Biometric Gate',
+    title: vpTitle,
+    message: vpMessage,
+    target: 'VP',
+    target_role: 'vp',
+    is_read: false,
+    type: status === 'Late' ? 'late_alert' : 'attendance_alert'
+  }]);
 
   if (status === 'Present') {
     await supabase.from('xp_logs').insert([{
@@ -794,6 +827,46 @@ export async function markAttendanceByTeacher(
       xp_gained: 10,
     }]).then(() => {}, console.error);
   }
+
+  // Always send standard student notification so they see it instantly in their portal
+  const studTitle = finalStatus === 'Present'
+    ? `✅ Checked-In — Present`
+    : finalStatus === 'Late'
+    ? `⚠️ Late Check-In — Late`
+    : `❌ Marked Absent — Absent`;
+  const studMsg = finalStatus === 'Present'
+    ? `You have been marked Present by your class instructor today at ${time}.`
+    : finalStatus === 'Late'
+    ? `You have been marked Late at ${time}. Please try to attend class on time.`
+    : `You have been marked Absent today by your instructor. If this is an error, please contact administration.`;
+  await supabase.from('notifications').insert([{
+    target_user_id: String(student.roll_no),
+    title: studTitle,
+    message: studMsg,
+    type: finalStatus === 'Late' ? 'late_alert' : finalStatus === 'Absent' ? 'absence_alert' : 'attendance',
+    target_role: 'STUDENT'
+  }]);
+
+  // Always send VP / Admin notification
+  const vpTitle = finalStatus === 'Present'
+    ? `✅ Present — ${student.full_name}`
+    : finalStatus === 'Late'
+    ? `⚠️ Late Arrival — ${student.full_name}`
+    : `❌ Absent Today — ${student.full_name}`;
+  const vpMessage = finalStatus === 'Present'
+    ? `${student.full_name} (Roll: ${student.roll_no}, Class: ${student.class_section}) has been marked Present today at ${time} by Instructor.`
+    : finalStatus === 'Late'
+    ? `${student.full_name} (Roll: ${student.roll_no}, Class: ${student.class_section}) arrived late today at ${time} and was marked Late by Instructor.`
+    : `${student.full_name} (Roll: ${student.roll_no}, Class: ${student.class_section}) was marked Absent today by Instructor.`;
+  await supabase.from('admin_notifications').insert([{
+    sender: 'Instructor Gate',
+    title: vpTitle,
+    message: vpMessage,
+    target: 'VP',
+    target_role: 'vp',
+    is_read: false,
+    type: finalStatus === 'Late' ? 'late_alert' : finalStatus === 'Absent' ? 'absence_sub_alert' : 'attendance_alert'
+  }]);
 }
 
 export async function getLiveAttendance() {

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../lib/utils';
+import { BRANDING } from '../lib/constants';
 import { AcademicsPortal } from './AcademicsPortal';
 import { ReceptionistPortal } from './ReceptionistPortal';
 import BoysCoordinatorPortal from './BoysCoordinatorPortal';
@@ -734,6 +735,8 @@ const [coordinatorType, setCoordinatorType] = useState<string | null>(null);
   const [feeGroups,    setFeeGroups]    = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
+  const [selectedStudentRolls, setSelectedStudentRolls] = useState<string[]>([]);
+  const [showBulkPrint, setShowBulkPrint] = useState(false);
   const [discounts,    setDiscounts]    = useState<any[]>([]);
   const [expenses,     setExpenses]     = useState<any[]>([]);
   const [editingExpense, setEditingExpense] = useState<any>(null);
@@ -3670,12 +3673,46 @@ const active = tab === id; const badgeN = getBadge(id);
 
               return (
                 <motion.div key="ledger" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+                  {/* High Contrast Banner with Filter Control and Print Action */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm print:hidden">
                     <div className="flex items-center gap-3">
-                      <DollarSign size={16} className="text-blue-600 flex-shrink-0" />
-                      <p className="text-sm font-bold text-blue-900">Fee Ledger — Grouped by student. Click "View Ledger" to see individual fees.</p>
+                      <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <DollarSign size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800">Student Accounts & Fee Ledger</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Bulk select rows on the table below to print batch ledger drafts.</p>
+                      </div>
                     </div>
-                    <p className="text-xs font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-100">Total Balance: {PKR(totalOutstanding)}</p>
+                    
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-black text-rose-600 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-100 mr-2">Total Balance: {PKR(totalOutstanding)}</p>
+                      {selectedStudentRolls.length > 0 && (
+                        <button
+                          onClick={() => setSelectedStudentRolls([])}
+                          className="px-3.5 py-2 hover:bg-slate-100 text-slate-500 rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
+                        >
+                          Clear ({selectedStudentRolls.length})
+                        </button>
+                      )}
+                      
+                      <button
+                        onClick={() => {
+                          setShowBulkPrint(true);
+                          setTimeout(() => {
+                            window.print();
+                          }, 250);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 text-xs font-black shadow-lg shadow-slate-200 flex items-center gap-2 transition-all active:scale-95"
+                      >
+                        <Printer size={14} />
+                        <span>
+                          {selectedStudentRolls.length > 0 
+                            ? `Print Selected Ledger (${selectedStudentRolls.length})` 
+                            : 'Print All Ledger'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-4 gap-3">
                     {[{ l: 'Total Balanced', v: feeGroups.filter(g=>g.status === 'Paid').length, c: '#059669', bg: 'bg-emerald-50' }, { l: 'Partial', v: feeGroups.filter(g=>g.status === 'Partial').length, c: '#D97706', bg: 'bg-amber-50' }, { l: 'Unpaid Items', v: feeGroups.filter(g=>g.status === 'Unpaid').length, c: '#C0392B', bg: 'bg-rose-50' }, { l: 'Students List', v: studentsWithFees.length, c: '#1e3a8a', bg: 'bg-blue-50' }].map(({ l, v, c, bg }) => (
@@ -3730,14 +3767,56 @@ const active = tab === id; const badgeN = getBadge(id);
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs min-w-[700px]">
                         <thead style={{ background: '#f8f9fd' }}>
-                          <tr>{['Roll #', 'Student Name', 'Program', 'Total Package', 'Paid', 'Balance', 'Action'].map(h => <th key={h} className="px-5 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">{h}</th>)}</tr>
+                          <tr>
+                            <th className="px-5 py-4 text-center border-b border-slate-50" style={{ width: '50px' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={studentsWithFees.length > 0 && studentsWithFees.every(s => selectedStudentRolls.includes(s.roll_no))}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStudentRolls(studentsWithFees.map(s => s.roll_no));
+                                  } else {
+                                    setSelectedStudentRolls([]);
+                                  }
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                            </th>
+                            {['Roll #', 'Student Name', 'Program', 'Total Package', 'Paid', 'Balance', 'Action'].map(h => (
+                              <th key={h} className="px-5 py-4 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">{h}</th>
+                            ))}
+                          </tr>
                         </thead>
                         <tbody>
                           {studentsWithFees.map((s, i) => {
                              const sFees = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
                              const totalOut = sFees.reduce((acc, g) => acc + (g.balance || 0), 0);
+                             const isChecked = selectedStudentRolls.includes(s.roll_no);
                              return (
-                               <motion.tr key={s.roll_no} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i*0.01, 0.4) }} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+                               <motion.tr 
+                                 key={s.roll_no} 
+                                 initial={{ opacity: 0 }} 
+                                 animate={{ opacity: 1 }} 
+                                 transition={{ delay: Math.min(i*0.01, 0.4) }} 
+                                 className={cn(
+                                   "border-b border-slate-50 hover:bg-slate-50/85 transition-colors", 
+                                   isChecked ? "bg-indigo-50/35" : ""
+                                 )}
+                               >
+                                 <td className="px-5 py-3 text-center">
+                                   <input 
+                                     type="checkbox" 
+                                     checked={isChecked}
+                                     onChange={(e) => {
+                                       if (e.target.checked) {
+                                         setSelectedStudentRolls(prev => [...prev, s.roll_no]);
+                                       } else {
+                                         setSelectedStudentRolls(prev => prev.filter(r => r !== s.roll_no));
+                                       }
+                                     }}
+                                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                   />
+                                 </td>
                                  <td className="px-5 py-3 font-mono font-bold text-slate-900">{s.roll_no}</td>
                                  <td className="px-5 py-3">
                                    <p className="font-black text-slate-800 leading-none">{s.full_name}</p>
@@ -3754,7 +3833,7 @@ const active = tab === id; const badgeN = getBadge(id);
                                      const { data } = await supabase.from('fee_groups').select('*').eq('student_roll', s.roll_no).order('created_at', { ascending: false });
                                      setStuFeeGroups((data || []).map((g: any) => ({ ...g, balance: (g.amount || 0) + (g.fine || 0) - (g.paid || 0) - (g.discount || 0) })));
                                      setStuFeeLoading(false);
-                                   }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-200" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                                   }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all active:scale-95" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
                                      {stuFeeLoading && selectedLedgerRoll === s.roll_no ? <Loader2 size={12} className="animate-spin" /> : <><Eye size={12} /> View Ledger</>}
                                    </button>
                                  </td>
@@ -3766,6 +3845,229 @@ const active = tab === id; const badgeN = getBadge(id);
                       </table>
                     </div>
                   </div>
+
+                  {/* ── HIGH-CONTRAST BULK LEDGER PRINT MODAL ──────────────── */}
+                  <AnimatePresence>
+                    {showBulkPrint && (() => {
+                      const printedStudents = studentsWithFees.filter(s => 
+                        selectedStudentRolls.length === 0 || selectedStudentRolls.includes(s.roll_no)
+                      );
+
+                      const totalPackagesSum = printedStudents.reduce((acc, s) => acc + (s.total_package || 0), 0);
+                      const totalPaidSum = printedStudents.reduce((acc, s) => acc + (s.paid_amount || 0), 0);
+                      const totalOutstandingSum = printedStudents.reduce((acc, s) => {
+                         const groups = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
+                         return acc + groups.reduce((s2, g) => s2 + (g.balance || 0), 0);
+                      }, 0);
+
+                      return (
+                        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-6 overflow-y-auto print-portal" id="printable-ledger-outer">
+                          <motion.div 
+                            initial={{ scale: 0.95, opacity: 0 }} 
+                            animate={{ scale: 1, opacity: 1 }} 
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white rounded-[2rem] w-full max-w-5xl p-10 shadow-3xl relative border border-slate-100 max-h-[90vh] overflow-y-auto text-slate-800" 
+                            id="printable-ledger-report"
+                          >
+                            {/* Top actions panel - hidden in print */}
+                            <div className="flex justify-between items-center pb-5 border-b border-slate-100 mb-8 print:hidden">
+                              <div className="flex items-center gap-2.5">
+                                <Printer className="text-indigo-600 animate-pulse" size={20} />
+                                <div>
+                                  <h4 className="font-black text-slate-900 text-sm">Official Bulk Fee Ledger Statement</h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Pak Informatics Group of Colleges</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <button 
+                                  onClick={() => window.print()} 
+                                  className="px-5 py-2.5 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 shadow-lg shadow-emerald-100 transition-all active:scale-95 border border-emerald-500"
+                                >
+                                  <Printer size={14} /> 
+                                  <span>Trigger Device PDF/Print</span>
+                                </button>
+                                <button 
+                                  onClick={() => setShowBulkPrint(false)} 
+                                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center gap-1.5 text-slate-500 font-black text-xs transition-all border border-slate-200"
+                                >
+                                  <X size={14} /> Close Preview
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 🏫 INSTITUTIONAL OFFICIAL LETTERHEAD */}
+                            <div className="text-center space-y-2 pb-6 border-b-2 border-slate-800 relative">
+                              {/* Centered logo */}
+                              <div className="flex justify-center mb-2">
+                                <img src={LOGO_BASE64} alt="College Logo" className="w-20 h-20 object-contain" referrerPolicy="no-referrer" />
+                              </div>
+                              <h2 className="font-black text-slate-900 text-2xl uppercase tracking-wider leading-none">
+                                {BRANDING?.name || "Pak Informatics Group of Colleges"}
+                              </h2>
+                              <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest leading-relaxed">
+                                {BRANDING?.address || "P.C Tower, Sialkot Bypass Road, GRW"}
+                              </p>
+                              <p className="text-[10px] font-bold text-slate-600 tracking-wide">
+                                Official Contact: {BRANDING?.phone || "0300-0642973"} · Academic Term Session: {BRANDING?.session || "2026-28"}
+                              </p>
+                              
+                              {/* Official Badge Title */}
+                              <div className="pt-4">
+                                <span className="bg-slate-950 text-white text-[11px] font-black px-6 py-2 rounded-full uppercase tracking-widest">
+                                  Official Student Fee Ledger Statement
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 📋 REPORT SPECIFICATION METADATA CHUNKS */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-6 border-b border-slate-200 text-xs font-bold text-slate-600">
+                              <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Generated By</p>
+                                <p className="text-slate-800 font-black text-sm">{adminData.full_name}</p>
+                                <p className="text-slate-400 text-[10px] uppercase font-black tracking-wide">{adminData.role} Office</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Print Session bounds</p>
+                                <p className="text-slate-800 font-black text-sm">
+                                  {new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                </p>
+                                <p className="text-slate-400 text-[10px] uppercase font-black tracking-wide">Generated Time: {new Date().toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Applied Filters</p>
+                                <p className="text-slate-800 font-black text-xs">
+                                  {(ledgerProgram || 'All Programs')}
+                                </p>
+                                <p className="text-slate-400 text-[10px] uppercase font-black tracking-wide">
+                                  Section: {ledgerSection || 'All Sections'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Print Filter Scope</p>
+                                <p className="text-slate-800 font-black text-sm">
+                                  {selectedStudentRolls.length > 0 ? "Subset Checkbox" : "Full Query List"}
+                                </p>
+                                <p className="text-indigo-600 text-[10px] uppercase font-black tracking-wide font-mono">
+                                  {printedStudents.length} Students Included
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* 📊 SUMMARY STATISTICS CHUNKS */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6 py-4 bg-slate-50/70 rounded-2xl border border-slate-100 text-center">
+                              <div className="border-r border-slate-200/60 last:border-r-0">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Allocated Revenue</p>
+                                <p className="text-xl font-black text-slate-800 font-mono">{PKR(totalPackagesSum)}</p>
+                              </div>
+                              <div className="border-r border-slate-200/60 last:border-r-0">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Recovered Payments</p>
+                                <p className="text-xl font-black text-emerald-600 font-mono">{PKR(totalPaidSum)}</p>
+                              </div>
+                              <div className="border-r border-slate-200/60 last:border-r-0">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Outstanding Dues</p>
+                                <p className="text-xl font-black text-rose-600 font-mono">{PKR(totalOutstandingSum)}</p>
+                              </div>
+                            </div>
+
+                            {/* 📄 STATEMENTS DATA TABLE */}
+                            <div className="mt-4">
+                              <table className="w-full text-xs text-left" style={{ width: '100%' }}>
+                                <thead>
+                                  <tr className="border-b-2 border-slate-900 text-[10px] font-black uppercase text-slate-400 pb-3">
+                                    <th className="py-3 px-1 text-left">Roll No</th>
+                                    <th className="py-3 px-2 text-left">Student Name</th>
+                                    <th className="py-3 px-2 text-left">Class & Sec</th>
+                                    <th className="py-3 px-2 text-left">Academic Program</th>
+                                    <th className="py-3 px-2 text-right">Package</th>
+                                    <th className="py-3 px-2 text-right">Paid Amount</th>
+                                    <th className="py-3 px-2 text-right">Outstanding</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 text-slate-800">
+                                  {printedStudents.map(s => {
+                                    const sFees = feeGroups.filter(g => String(g.student_roll) === String(s.roll_no));
+                                    const totalOut = sFees.reduce((acc, g) => acc + (g.balance || 0), 0);
+                                    return (
+                                      <tr key={s.roll_no} className="hover:bg-slate-50/20">
+                                        <td className="py-3.5 px-1 font-mono font-bold text-slate-900">#{s.roll_no}</td>
+                                        <td className="py-3.5 px-2 font-black text-slate-900">{s.full_name}</td>
+                                        <td className="py-3.5 px-2 font-bold text-slate-600">{s.class_section}</td>
+                                        <td className="py-3.5 px-2 text-slate-500">{s.program}</td>
+                                        <td className="py-3.5 px-2 text-right font-medium font-mono text-slate-700">{PKR(s.total_package)}</td>
+                                        <td className="py-3.5 px-2 text-right font-bold font-mono text-emerald-600">{PKR(s.paid_amount)}</td>
+                                        <td className="py-3.5 px-2 text-right font-black font-mono text-rose-600">{PKR(totalOut)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                              {printedStudents.length === 0 && (
+                                <div className="p-16 text-center text-slate-400 text-sm italic">
+                                  No ledger records found matching selection criteria.
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ✍️ AUTHORIZED INSTITUTION SIGNATURE BLOCKS */}
+                            <div className="mt-16 pt-10 border-t-2 border-slate-900 grid grid-cols-2 gap-16 text-center text-xs font-black text-slate-700">
+                              <div className="space-y-4">
+                                <div className="h-12 border-b border-dashed border-slate-300 w-64 mx-auto"></div>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Accounts & Treasury Authority Signature</p>
+                              </div>
+                              <div className="space-y-4">
+                                <div className="h-12 border-b border-dashed border-slate-300 w-64 mx-auto"></div>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Director Office Audit Verification</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-12 text-center text-[9px] text-slate-400 font-bold tracking-wide italic">
+                              Document generated secure-side via Pak Informatics digital management database terminal. Verified authentic record.
+                            </div>
+                          </motion.div>
+                        </div>
+                      );
+                    })()}
+                  </AnimatePresence>
+
+                  {/* Print CSS Injection */}
+                  <style>{`
+                    @media print {
+                      /* Hide everything except the printable ledger report */
+                      body * {
+                        visibility: hidden !important;
+                        background: none !important;
+                      }
+                      #printable-ledger-report, #printable-ledger-report * {
+                        visibility: visible !important;
+                      }
+                      #printable-ledger-outer {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        height: auto !important;
+                        max-height: 100% !important;
+                        overflow: visible !important;
+                        background: none !important;
+                        z-index: 9999999 !important;
+                      }
+                      #printable-ledger-report {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: visible !important;
+                      }
+                      .print\\:hidden {
+                        display: none !important;
+                      }
+                    }
+                  `}</style>
 
                   {/* Table */}
                 </motion.div>
