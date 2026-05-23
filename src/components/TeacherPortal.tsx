@@ -103,6 +103,8 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [selectedNotif, setSelectedNotif] = useState<any | null>(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [verifications, setVerifications] = useState<any[]>([]);
+  const [verTab, setVerTab] = useState<'claim_orders' | 'exam_marks'>('claim_orders');
+  const [pendingExamMarks, setPendingExamMarks] = useState<any[]>([]);
   const [loadingVer, setLoadingVer] = useState(false);
   const [submittingVerAction, setSubmittingVerAction] = useState(false);
 
@@ -242,6 +244,40 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
 
       toast.success(`Verification ${action.toLowerCase()}`);
       loadAcademicsData();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSubmittingVerAction(false);
+    }
+  };
+
+  const handleResolveExamMark = async (mark: any, revisedMarks: number, notes: string) => {
+    if (!teacherData) return;
+    setSubmittingVerAction(true);
+    try {
+      const { error } = await supabase
+        .from('exam_marks')
+        .update({
+          marks_obtained: revisedMarks,
+          is_verified: true,
+          examiner_edited: false,
+          remarks: notes || 'Verified by Teacher'
+        })
+        .eq('id', mark.id);
+
+      if (error) throw error;
+
+      // Add student notification
+      await supabase.from('notifications').insert([{
+        target_user_id: String(mark.student_roll),
+        target_role: 'STUDENT',
+        title: `✅ Exam Mark Verified`,
+        message: `Your requested marks verification for subject ${mark.subject} has been resolved. Approved Marks: ${revisedMarks}. Remarks: ${notes}`,
+        type: 'verification_resolved'
+      }]);
+
+      toast.success("Exam mark successfully verified and resolved!");
+      setPendingExamMarks(prev => prev.filter(m => m.id !== mark.id));
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -504,12 +540,39 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
         })
       );
       setGrades(filteredGrades);
+
+      // Fetch pending exam marks for verification request
+      const { data: emRes, error: emError } = await supabase
+        .from('exam_marks')
+        .select('*')
+        .eq('examiner_edited', true)
+        .eq('is_verified', false);
+      if (emError) {
+        console.error('Error fetching pending exam marks:', emError);
+      } else {
+        setPendingExamMarks(emRes || []);
+      }
     };
     init();
     const ch3 = supabase.channel('notif-teacher').on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
       if (teacherData) getNotifications(teacherData.id, 'TEACHER').then(setNotifications);
     }).subscribe();
-    return () => { supabase.removeChannel(ch3); };
+
+    const ch4 = supabase.channel('rv-teacher').on('postgres_changes', { event: '*', schema: 'public', table: 'result_verifications' }, async () => {
+      const { data: verRes } = await supabase.from('result_verifications').select('*').eq('status', 'Pending-Teacher').order('created_at', { ascending: false });
+      setVerifications(verRes || []);
+    }).subscribe();
+
+    const ch5 = supabase.channel('em-teacher').on('postgres_changes', { event: '*', schema: 'public', table: 'exam_marks' }, async () => {
+      const { data: emRes } = await supabase.from('exam_marks').select('*').eq('examiner_edited', true).eq('is_verified', false);
+      setPendingExamMarks(emRes || []);
+    }).subscribe();
+
+    return () => { 
+      supabase.removeChannel(ch3); 
+      supabase.removeChannel(ch4);
+      supabase.removeChannel(ch5);
+    };
   }, [teacherData]);
 
   // ── Load reschedule data ───────────────────────────────────────────────────
@@ -947,83 +1010,170 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
       case 'ResultVerifications':
         return (
           <motion.div key="rv" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center transition-all hover:bg-slate-100 hover:scale-105 active:scale-95"><ChevronLeft size={20} /></button>
-              <div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">Correction Orders</h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">24h Deadline Flow</p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button onClick={() => setSubPage(null)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center transition-all hover:bg-slate-100 hover:scale-105 active:scale-95"><ChevronLeft size={20} /></button>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Verification Center</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Real-time Approval & Processing</p>
+                </div>
+              </div>
+              
+              {/* Tab Selector */}
+              <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 self-start md:self-auto">
+                <button 
+                  onClick={() => setVerTab('claim_orders')}
+                  className={cn("px-4 py-2 rounded-xl text-xs font-black transition-all", verTab === 'claim_orders' ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-800")}
+                >
+                  Correction Claims ({verifications.length})
+                </button>
+                <button 
+                  onClick={() => setVerTab('exam_marks')}
+                  className={cn("px-4 py-2 rounded-xl text-xs font-black transition-all", verTab === 'exam_marks' ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-800")}
+                >
+                  Marks Re-verification ({pendingExamMarks.length})
+                </button>
               </div>
             </div>
-            
-            {verifications.length === 0 ? (
-              <div className="bg-white rounded-[2.5rem] p-16 text-center border border-dashed border-slate-200 shadow-sm flex flex-col items-center justify-center">
-                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-6 text-slate-300">
-                  <CheckSquare size={32} />
-                </div>
-                <p className="text-slate-400 font-bold">No active correction requests.</p>
-                <p className="text-[11px] text-slate-300 mt-2 font-medium tracking-wide">Pending requests from students will appear here.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {verifications.map(v => {
-                   const diff = new Date(v.teacher_deadline).getTime() - new Date().getTime();
-                   const hoursLeft = Math.max(0, Math.floor(diff / (1000 * 60 * 60)));
-                   const isUrgent = hoursLeft < 4;
 
-                   return (
-                    <motion.div key={v.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            {verTab === 'claim_orders' ? (
+              verifications.length === 0 ? (
+                <div className="bg-white rounded-[2.5rem] p-16 text-center border border-dashed border-slate-200 shadow-sm flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-6 text-slate-300">
+                    <CheckSquare size={32} />
+                  </div>
+                  <p className="text-slate-400 font-bold">No active correction requests.</p>
+                  <p className="text-[11px] text-slate-300 mt-2 font-medium tracking-wide">Pending requests from students will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {verifications.map(v => {
+                     const diff = new Date(v.teacher_deadline).getTime() - new Date().getTime();
+                     const hoursLeft = Math.max(0, Math.floor(diff / (1000 * 60 * 60)));
+                     const isUrgent = hoursLeft < 4;
+
+                     return (
+                      <motion.div key={v.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                        className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
+                        <div className={cn("absolute top-0 left-0 w-1.5 h-full", isUrgent ? "bg-rose-500" : "bg-amber-500")} />
+                        
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", isUrgent ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600")}>
+                              <Clock size={20} />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{v.student_roll} · {v.student_name}</p>
+                              <h4 className="font-black text-slate-900 leading-tight">{v.subject} — {v.exam_name}</h4>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={cn("text-xs font-black uppercase tracking-tighter", isUrgent ? "text-rose-600 animate-pulse" : "text-amber-600")}>
+                               {hoursLeft}H REMAINING
+                            </p>
+                            <p className="text-[9px] font-bold text-slate-300 mt-0.5">Escalates to Examiner soon</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-2xl p-4 mb-6">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><FileText size={10}/> Student's Reason: {v.reason}</p>
+                          <p className="text-xs text-slate-600 font-bold leading-relaxed italic">"{v.detail}"</p>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={() => {
+                              const note = prompt("Enter resolution notes (e.g. Corrected to 85 marks):");
+                              if (note) handleResolveVerification(v, 'Resolved', note);
+                            }}
+                            disabled={submittingVerAction}
+                            className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                          >
+                            Mark Resolved
+                          </button>
+                          <button 
+                            onClick={() => {
+                              const note = prompt("Enter reason for rejection:");
+                              if (note) handleResolveVerification(v, 'Rejected', note);
+                            }}
+                            disabled={submittingVerAction}
+                            className="flex-1 py-4 rounded-2xl bg-white text-rose-600 font-black text-xs uppercase tracking-widest border border-rose-100 hover:bg-rose-50 transition-all disabled:opacity-50"
+                          >
+                            Reject Request
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              pendingExamMarks.length === 0 ? (
+                <div className="bg-white rounded-[2.5rem] p-16 text-center border border-dashed border-slate-200 shadow-sm flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-6 text-slate-400">
+                    <CheckSquare size={32} />
+                  </div>
+                  <p className="text-slate-400 font-bold">No active exam marks verification requests.</p>
+                  <p className="text-[11px] text-slate-300 mt-2 font-medium tracking-wide">Pending verification requests from students will show up here in real time.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingExamMarks.map(em => (
+                    <motion.div key={em.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                       className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
-                      <div className={cn("absolute top-0 left-0 w-1.5 h-full", isUrgent ? "bg-rose-500" : "bg-amber-500")} />
+                      <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500" />
                       
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", isUrgent ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600")}>
-                            <Clock size={20} />
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <CheckSquare size={20} />
                           </div>
                           <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{v.student_roll} · {v.student_name}</p>
-                            <h4 className="font-black text-slate-900 leading-tight">{v.subject} — {v.exam_name}</h4>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Student Roll: {em.student_roll}</p>
+                            <h4 className="font-black text-slate-900 leading-tight">{em.subject} — Marks Verification Request</h4>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className={cn("text-xs font-black uppercase tracking-tighter", isUrgent ? "text-rose-600 animate-pulse" : "text-amber-600")}>
-                             {hoursLeft}H REMAINING
-                          </p>
-                          <p className="text-[9px] font-bold text-slate-300 mt-0.5">Escalates to Examiner soon</p>
+                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1 rounded-full">
+                            Pending Verification
+                          </span>
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 rounded-2xl p-4 mb-6">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><FileText size={10}/> Student's Reason: {v.reason}</p>
-                        <p className="text-xs text-slate-600 font-bold leading-relaxed italic">"{v.detail}"</p>
+                      <div className="bg-slate-50 rounded-2xl p-4 mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Obtained Marks</p>
+                          <p className="text-lg font-black text-slate-850">{em.marks_obtained}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Marks</p>
+                          <p className="text-lg font-black text-slate-850">{em.total_marks || '100'}</p>
+                        </div>
+                        <div className="col-span-2 text-left">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status / Comments</p>
+                          <p className="text-xs text-slate-600 font-bold truncate">{em.remarks || 'Verification Requested by Student'}</p>
+                        </div>
                       </div>
 
                       <div className="flex gap-3">
                         <button 
                           onClick={() => {
-                            const note = prompt("Enter resolution notes (e.g. Corrected to 85 marks):");
-                            if (note) handleResolveVerification(v, 'Resolved', note);
+                            const newMarks = prompt(`Enter revised marks (Current: ${em.marks_obtained}):`, em.marks_obtained);
+                            if (newMarks === null) return;
+                            const comment = prompt("Enter verification remarks:", "Marks verified and confirmed by teacher.");
+                            if (comment === null) return;
+                            handleResolveExamMark(em, Number(newMarks), comment);
                           }}
                           disabled={submittingVerAction}
-                          className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                          className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all disabled:opacity-50"
                         >
-                          Mark Resolved
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const note = prompt("Enter reason for rejection:");
-                            if (note) handleResolveVerification(v, 'Rejected', note);
-                          }}
-                          disabled={submittingVerAction}
-                          className="flex-1 py-4 rounded-2xl bg-white text-rose-600 font-black text-xs uppercase tracking-widest border border-rose-100 hover:bg-rose-50 transition-all disabled:opacity-50"
-                        >
-                          Reject Request
+                          Process & Verify Marks
                         </button>
                       </div>
                     </motion.div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </motion.div>
         );
@@ -1125,14 +1275,21 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
               <h3 className="text-xl font-black text-slate-900">Tests — {selectedItem?.full_name}</h3>
             </div>
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-4">
-              {grades.filter(g => g.student_roll === String(selectedItem?.roll_no)).length === 0
+              {grades.filter(g => String(g.student_roll) === String(selectedItem?.roll_no)).length === 0
                 ? <p className="text-center text-slate-400 py-8">No results yet.</p>
-                : grades.filter(g => g.student_roll === String(selectedItem?.roll_no)).map(g => (
-                  <div key={`g-${g.id}`} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
-                    <div><p className="text-sm font-bold text-slate-800">{g.chapter_name}</p><p className="text-[10px] text-slate-400 uppercase">{g.subject}</p></div>
-                    <span className="text-lg font-black text-[#2D3494]">{g.score}/{g.total_marks} <span className="text-xs text-slate-400">({Math.round(g.score / g.total_marks * 100)}%)</span></span>
-                  </div>
-                ))}
+                : grades.filter(g => String(g.student_roll) === String(selectedItem?.roll_no)).map(g => {
+                    const matchingExam = exams.find(e => String(e.id) === String(g.exam_id));
+                    const displayName = matchingExam ? (matchingExam.chapter_name || matchingExam.title) : (g.chapter_name || 'Class Assessment');
+                    return (
+                      <div key={`g-${g.id}`} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{displayName}</p>
+                          <p className="text-[10px] text-slate-400 uppercase">{g.subject}</p>
+                        </div>
+                        <span className="text-lg font-black text-[#2D3494]">{g.score}/{g.total_marks} <span className="text-xs text-slate-400">({Math.round(g.score / g.total_marks * 100)}%)</span></span>
+                      </div>
+                    );
+                  })}
             </div>
           </motion.div>
         );
@@ -2214,12 +2371,6 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
                       <div className="grid grid-cols-2 gap-4">
                         <StatCard icon={BarChart3} label="Class Average" value={`${classAverage}%`} color="bg-emerald-50 text-emerald-600" />
                         <StatCard icon={TrendingUp} label="Highest" value={`${highestGrade}%`} color="bg-blue-50 text-blue-600" />
-                      </div>
-                      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                        <h3 className="text-lg font-black mb-6">Grade Distribution</h3>
-                        <div className="flex justify-between items-end h-20 px-4">
-                          {gradeDistribution.map(item => <div key={`dist-${item.label}`} className="flex flex-col items-center gap-2"><span className="text-sm font-black text-blue-600">{item.count}</span><span className="text-[10px] text-slate-400 font-bold uppercase">{item.label}</span></div>)}
-                        </div>
                       </div>
                     </div>
                   )}

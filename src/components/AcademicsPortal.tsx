@@ -86,6 +86,24 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [students,       setStudents]       = useState<any[]>([]);
   const [courseProgress, setCourseProgress] = useState<any[]>([]);
   const [timetable,      setTimetable]      = useState<any[]>([]);
+  const [topicSubject, setTopicSubject] = useState('');
+  const [topicProgram, setTopicProgram] = useState('ICS');
+  const [topicExcelRows, setTopicExcelRows] = useState<any[]>([
+    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '' }
+  ]);
+  const [ttProgramId, setTtProgramId] = useState('');
+  const [ttGenderGroup, setTtGenderGroup] = useState('Girls-I');
+  const [ttExcelRows, setTtExcelRows] = useState<any[]>([
+    { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '08:00', to_time: '08:45' },
+    { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '08:45', to_time: '09:30' },
+    { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '09:30', to_time: '10:15' },
+    { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '10:15', to_time: '11:00' },
+    { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '11:00', to_time: '11:45' }
+  ]);
   const [announcements,  setAnnouncements]  = useState<any[]>([]);
   const [messages,       setMessages]       = useState<any[]>([]);
   const [grades,         setGrades]         = useState<any[]>([]);
@@ -359,6 +377,140 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       setModal(null); loadAll();
     } catch (e: any) { showToast(e.message, false); }
     finally { setSaving(false); }
+  };
+
+  const saveTopicExcelSheet = async () => {
+    if (!topicSubject) {
+      showToast('Please choose a subject first', false);
+      return;
+    }
+    const filledRows = topicExcelRows.filter((r: any) => r.topicName.trim() && r.teacherName.trim());
+    if (filledRows.length === 0) {
+      showToast('Please fill at least one row with Topic Name and Teacher Name', false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const sosRows = filledRows.map((r: any, idx: number) => {
+        const matchedTeacherObj = teachers.find(t => 
+          t.full_name?.toLowerCase().trim() === r.teacherName.toLowerCase().trim()
+        );
+        return {
+          title: `${topicSubject} SOS`,
+          subject: topicSubject,
+          topic: r.topicName,
+          book_name: r.book || null,
+          teacher_name: r.teacherName,
+          part: Number(r.part) || 1,
+          class_section: r.section || null,
+          program: topicProgram,
+          description: `Imported via Academic Spreadsheet Editor`,
+          lecture_no: idx + 1,
+          status: 'Pending',
+          teacher_id: matchedTeacherObj?.id || null
+        };
+      });
+
+      const { error } = await supabase.from('scheme_of_study').insert(sosRows);
+      if (error) throw error;
+
+      // Send roadmaps to teacher portals via notifications for each unique teacher
+      const uniqueTeachers = [...new Set(filledRows.map((r: any) => r.teacherName.trim()))];
+      for (const teacher of uniqueTeachers) {
+        await supabase.from('notifications').insert([{
+          target_role: 'TEACHER',
+          title: `📅 New Roadmap: ${topicSubject}`,
+          message: `Academics has assigned a new Roadmap / Scheme of Study for ${topicSubject} with ${filledRows.filter((r: any) => r.teacherName === teacher).length} topics.`,
+          type: 'sos_update'
+        }]);
+      }
+
+      showToast(`Successfully uploaded ${sosRows.length} topics!`);
+      setModal(null);
+      // Reset sheet
+      setTopicExcelRows([
+        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '' }
+      ]);
+      loadAll();
+    } catch (e: any) {
+      showToast('Failed to save topics: ' + e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveTimetableExcelSheet = async () => {
+    if (!ttProgramId) {
+      showToast('Please select a program first', false);
+      return;
+    }
+    const filledRows = ttExcelRows.filter((r: any) => r.subject.trim() && r.teacher.trim() && r.section.trim());
+    if (filledRows.length === 0) {
+      showToast('Please fill at least one row with Subject, Teacher, and Section', false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const selectedProgName = activePrograms.find(p => String(p.id) === String(ttProgramId))?.name || 'ICS';
+
+      const ttRows = filledRows.map((r: any) => {
+        const matchedTeacherObj = teachers.find(t => 
+          t.full_name?.toLowerCase().trim() === r.teacher.toLowerCase().trim()
+        );
+        return {
+          teacher_id: matchedTeacherObj?.id || teachers[0]?.id || 1,
+          day_of_week: r.day || 'Monday',
+          start_time: r.from_time || '08:00',
+          end_time: r.to_time || '08:45',
+          class_section: r.section,
+          room: r.room || '101',
+          gender_group: ttGenderGroup,
+          program: selectedProgName,
+          subject: r.subject,
+          teacher_name: matchedTeacherObj?.full_name || r.teacher,
+          period_number: 1,
+        };
+      });
+
+      const { error } = await supabase.from('timetable').insert(ttRows);
+      if (error) throw error;
+
+      for (const row of ttRows) {
+        const tObj = teachers.find(t => String(t.id) === String(row.teacher_id));
+        if (tObj?.username) {
+          await supabase.from('teacher_messages').insert([{
+            from_user: adminData.username,
+            from_role: adminData.role,
+            to_teacher_username: tObj.username,
+            subject: `🗓️ Timetable Updated: ${row.subject}`,
+            body: `You have been assigned "${row.subject}" for ${row.class_section} (${row.gender_group}) on ${row.day_of_week}s from ${row.start_time} to ${row.end_time}. Please check your schedule in the Teacher Portal.`,
+            is_read: false,
+          }]);
+        }
+      }
+
+      showToast(`Successfully uploaded ${ttRows.length} timetable entries!`);
+      setModal(null);
+      // Reset sheet
+      setTtExcelRows([
+        { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '08:00', to_time: '08:45' },
+        { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '08:45', to_time: '09:30' },
+        { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '09:30', to_time: '10:15' },
+        { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '10:15', to_time: '11:00' },
+        { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '11:00', to_time: '11:45' }
+      ]);
+      loadAll();
+    } catch (e: any) {
+      showToast('Failed to save timetable entries: ' + e.message, false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteScheme = async (id: number) => {
@@ -1972,76 +2124,181 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
-              className="relative bg-white rounded-3xl w-full max-w-xl z-20 shadow-2xl overflow-hidden">
+              className="relative bg-white rounded-3xl w-full max-w-4xl z-20 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
               <div className="h-1" style={{ background: GRADIENT }} />
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-xl font-black text-slate-900">Add Timetable Entry</h3>
-                  <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 text-sm font-bold uppercase tracking-widest">Close</button>
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#e0e7ff' }}><Calendar size={16} className="text-indigo-600" /></div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">Timetable Excel Import</h3>
+                    <p className="text-[10px] text-slate-400">Fill standard headings to create class timetable schedules</p>
+                  </div>
                 </div>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 font-bold text-sm uppercase">Close</button>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto">
+                <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Program</p>
-                      <select value={ttForm.program_id} onChange={e => setTtForm({...ttForm, program_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Program</p>
+                      <select value={ttProgramId} onChange={e => setTtProgramId(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400 font-semibold">
                         <option value="">Select Program</option>
                         {activePrograms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
-                      <select value={ttForm.subject_id} onChange={e => setTtForm({...ttForm, subject_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
-                        <option value="">Select Subject</option>
-                        {allSubjects.filter(s => !ttForm.program_id || String(s.program_id) === String(ttForm.program_id)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Gender Group</p>
+                      <select value={ttGenderGroup} onChange={e => setTtGenderGroup(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-indigo-400 font-semibold">
+                        <option value="Girls-I">Girls-I</option>
+                        <option value="Boys-I">Boys-I</option>
+                        <option value="Girls-II">Girls-II</option>
+                        <option value="Boys-II">Boys-II</option>
                       </select>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teacher</p>
-                      <select value={ttForm.teacher_id} onChange={e => setTtForm({...ttForm, teacher_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
-                        <option value="">Select Teacher</option>
-                        {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Class Section</p>
-                      <input value={ttForm.class_section} onChange={e => setTtForm({...ttForm, class_section: e.target.value})} placeholder="e.g. ICS-Phy-A-B" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Group</p>
-<TS value={ttForm.gender_group} onChange={e => setTtForm({...ttForm, gender_group: e.target.value})}>
-  <option>Girls-I</option><option>Boys-I</option><option>Girls-II</option><option>Boys-II</option>
-</TS>
-</div>
-<div className="space-y-1.5">
-<p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Day</p>
-                      <select value={ttForm.day_of_week} onChange={e => setTtForm({...ttForm, day_of_week: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400">
-                        {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room No.</p>
-                      <input value={ttForm.room} onChange={e => setTtForm({...ttForm, room: e.target.value})} placeholder="e.g. 101" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">From</p>
-                      <input type="time" value={ttForm.start_time} onChange={e => setTtForm({...ttForm, start_time: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">To</p>
-                      <input type="time" value={ttForm.end_time} onChange={e => setTtForm({...ttForm, end_time: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-400" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 pt-4">
-                    <button onClick={() => setModal(null)} className="py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-400 bg-slate-50 hover:bg-slate-100 transition-all">Cancel</button>
-                    <button onClick={saveScheduleEntry} disabled={saving} className="py-4 rounded-2xl text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all disabled:opacity-50" style={{ background: GRADIENT }}>
-                      {saving ? 'Saving...' : 'Add Entry'}
-                    </button>
                   </div>
                 </div>
+
+                {/* Timetable spreadsheet style editor */}
+                <div className="border border-slate-200 rounded-xl overflow-x-auto bg-slate-50">
+                  <table className="w-full text-left border-collapse border border-slate-200 min-w-[800px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700">
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Subject</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Teacher</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Class Section</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Day</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Room No</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">From (Start)</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">To (End)</th>
+                        <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase text-center w-12">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ttExcelRows.map((row: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-slate-50 bg-white">
+                          <td className="border border-slate-200 p-1">
+                            <input 
+                              type="text" 
+                              value={row.subject} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].subject = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              placeholder="e.g. Physics"
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-bold"
+                            />
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <select 
+                              value={row.teacher} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].teacher = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-semibold"
+                            >
+                              <option value="">Select Teacher</option>
+                              {teachers.map(t => <option key={t.id} value={t.full_name}>{t.full_name}</option>)}
+                            </select>
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <input 
+                              type="text" 
+                              value={row.section} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].section = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              placeholder="e.g. ICS-A"
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-semibold"
+                            />
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <select 
+                              value={row.day} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].day = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                            >
+                              {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <input 
+                              type="text" 
+                              value={row.room} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].room = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              placeholder="e.g. 101"
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                            />
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <input 
+                              type="time" 
+                              value={row.from_time} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].from_time = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-bold"
+                            />
+                          </td>
+                          <td className="border border-slate-200 p-1">
+                            <input 
+                              type="time" 
+                              value={row.to_time} 
+                              onChange={e => {
+                                const updated = [...ttExcelRows];
+                                updated[idx].to_time = e.target.value;
+                                setTtExcelRows(updated);
+                              }} 
+                              className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-bold"
+                            />
+                          </td>
+                          <td className="border border-slate-200 p-1 text-center">
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                const updated = ttExcelRows.filter((_, i) => i !== idx);
+                                setTtExcelRows(updated);
+                              }}
+                              className="text-rose-500 hover:text-rose-700 font-bold text-xs"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-between items-center">
+                  <button 
+                    type="button" 
+                    onClick={() => setTtExcelRows([...ttExcelRows, { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '', to_time: '' }])}
+                    className="px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-black uppercase text-slate-700 transition-all flex items-center gap-1"
+                  >
+                    + Add Row
+                  </button>
+                  <p className="text-[10px] text-slate-400 font-bold">Total entries: {ttExcelRows.filter((r: any) => r.subject.trim() && r.teacher.trim() && r.section.trim()).length}</p>
+                </div>
+              </div>
+              <div className="px-6 pb-6 flex gap-3 flex-shrink-0">
+                <button onClick={() => setModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
+                <button onClick={saveTimetableExcelSheet} disabled={saving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white hover:opacity-90 transition-all disabled:opacity-50" style={{ background: GRADIENT }}>
+                  {saving ? 'Saving...' : 'Save Timetable Sheet'}
+                </button>
               </div>
             </motion.div>
           </div>
@@ -2271,109 +2528,151 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
     <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
-      className="relative bg-white rounded-3xl w-full max-w-2xl z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      className="relative bg-white rounded-3xl w-full max-w-4xl z-10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
       <div className="h-1" style={{ background: GRADIENT }} />
       <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#f0fdf4' }}><BookMarked size={16} style={{ color: ACCENT }} /></div>
           <div>
-            <h3 className="font-black text-slate-900">Scheme of Study Entry</h3>
-            <p className="text-[10px] text-slate-400">PIC Format · One lecture per row</p>
+            <h3 className="font-black text-slate-900">Scheme of Study Excel Import</h3>
+            <p className="text-[10px] text-slate-400">Fill standard headings to upload subject syllabus roadmap</p>
           </div>
         </div>
         <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700"><X size={20} /></button>
       </div>
       <div className="p-6 space-y-5 overflow-y-auto">
-        {/* Header info — matches SOS format top section */}
-        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-4">
-          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Subject Info</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <FM label="Subject" req>
-              <TS value={schemeForm.subject} onChange={e => setSchemeForm((p: any) => ({ ...p, subject: e.target.value }))}>
-                <option value="">Select Subject</option>
-                {SUBJECTS_17.map(s => <option key={s}>{s}</option>)}
-              </TS>
-            </FM>
-            <FM label="Book Name" req><TI placeholder="e.g. Physics Part I" value={schemeForm.book_name} onChange={e => setSchemeForm((p: any) => ({ ...p, book_name: e.target.value }))} /></FM>
-            <FM label="Author"><TI placeholder="e.g. Halliday & Resnick" value={schemeForm.author} onChange={e => setSchemeForm((p: any) => ({ ...p, author: e.target.value }))} /></FM>
-          </div>
+        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FM label="Teacher Name" req>
-              <TS value={schemeForm.teacher_name} onChange={e => setSchemeForm((p: any) => ({ ...p, teacher_name: e.target.value }))}>
-                <option value="">Select Teacher</option>
-                {teachers.map(t => <option key={t.id} value={t.full_name}>{t.full_name} ({t.subject_dept})</option>)}
+            <FM label="Target Subject" req>
+              <TS value={topicSubject} onChange={e => setTopicSubject(e.target.value)}>
+                <option value="">Select Subject</option>
+                {SUBJECTS_17.map(s => <option key={s} value={s}>{s}</option>)}
               </TS>
             </FM>
-            <FM label="Department"><TI placeholder="e.g. Physics" value={schemeForm.department} onChange={e => setSchemeForm((p: any) => ({ ...p, department: e.target.value }))} /></FM>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <FM label="Program" req>
-              <TS value={schemeForm.program} onChange={e => setSchemeForm((p: any) => ({ ...p, program: e.target.value }))}>
-                {PROGRAMS.map(p => <option key={p}>{p}</option>)}
+            <FM label="Target Program" req>
+              <TS value={topicProgram} onChange={e => setTopicProgram(e.target.value)}>
+                {PROGRAMS.map(p => <option key={p} value={p}>{p}</option>)}
               </TS>
             </FM>
-            <FM label="Part">
-              <TS value={schemeForm.part} onChange={e => setSchemeForm((p: any) => ({ ...p, part: e.target.value }))}>
-                <option value={1}>Part 1</option><option value={2}>Part 2</option>
-              </TS>
-            </FM>
-            <FM label="Section"><TI placeholder="e.g. ICS-Phy-A-B" value={schemeForm.class_section} onChange={e => setSchemeForm((p: any) => ({ ...p, class_section: e.target.value }))} /></FM>
           </div>
         </div>
 
-        {/* Per-lecture row — matches DATE / DAY / LECT.s / SYLLABUS columns */}
-        <div className="border border-slate-100 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Lecture Entry</p>
-            <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label="DATE · DAY · LECT · SYLLABUS" />
-          </div>
-          <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <FM label="Date" req><TI type="date" value={schemeForm.date} onChange={e => setSchemeForm((p: any) => ({ ...p, date: e.target.value }))} /></FM>
-            <FM label="Day">
-              <TS value={schemeForm.day} onChange={e => setSchemeForm((p: any) => ({ ...p, day: e.target.value }))}>
-                <option value="">Select</option>
-                {['Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <option key={d}>{d}</option>)}
-              </TS>
-            </FM>
-            <FM label="Lecture No."><TI type="number" placeholder="e.g. 7" value={schemeForm.lecture_no} onChange={e => setSchemeForm((p: any) => ({ ...p, lecture_no: e.target.value }))} /></FM>
-            <FM label="Month">
-              <TS value={schemeForm.month} onChange={e => setSchemeForm((p: any) => ({ ...p, month: e.target.value }))}>
-                <option value="">Select</option>
-                {MONTHS.map(m => <option key={m}>{m}</option>)}
-              </TS>
-            </FM>
-          </div>
-          <div className="px-4 pb-4 space-y-3">
-
-  {/* LEAVE TOGGLE */}
-  <div className="flex items-center justify-between p-3 bg-rose-50 border border-rose-100 rounded-xl">
-    <div>
-      <p className="text-sm font-black text-rose-700">Mark as Leave Day</p>
-      <p className="text-[10px] text-rose-400">No lecture on this date</p>
-    </div>
-    <button type="button"
-      onClick={() => setSchemeForm((p: any) => ({ ...p, is_leave: !p.is_leave }))}
-      className={`w-12 h-6 rounded-full transition-all relative ${schemeForm.is_leave ? 'bg-rose-500' : 'bg-slate-200'}`}>
-      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${schemeForm.is_leave ? 'left-6' : 'left-0.5'}`} />
-    </button>
-  </div>
-
-  {/* SHOW LEAVE REASON if leave, otherwise show Topic */}
-  {schemeForm.is_leave
-    ? <FM label="Leave Reason"><TI placeholder="e.g. Eid Holiday, College Event…" value={schemeForm.leave_reason} onChange={e => setSchemeForm((p: any) => ({ ...p, leave_reason: e.target.value }))} /></FM>
-    : <FM label="Syllabus / Topic" req><TI placeholder="e.g. Chapter 1: Physical Quantities and Their Units" value={schemeForm.topic} onChange={e => setSchemeForm((p: any) => ({ ...p, topic: e.target.value }))} /></FM>
-  }
-
-  <FM label="Description / Notes"><TA rows={2} placeholder="Extra notes, sub-topics, references…" value={schemeForm.description} onChange={e => setSchemeForm((p: any) => ({ ...p, description: e.target.value }))} /></FM>
-
-</div>
+        {/* Excel Spreadsheet style table */}
+        <div className="border border-slate-200 rounded-xl overflow-x-auto bg-slate-50">
+          <table className="w-full text-left border-collapse border border-slate-200 min-w-[700px]">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700">
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Topic Name</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Book</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Teacher Name</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Part 1 or 2</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Section</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase text-center w-12">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topicExcelRows.map((row: any, idx: number) => (
+                <tr key={idx} className="hover:bg-slate-50 bg-white">
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="text" 
+                      value={row.topicName} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].topicName = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      placeholder="e.g. Chapter 1: Newton's Laws"
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-bold"
+                    />
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="text" 
+                      value={row.book} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].book = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      placeholder="e.g. Physics XI"
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                    />
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <select 
+                      value={row.teacherName} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].teacherName = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 font-semibold"
+                    >
+                      <option value="">Select Teacher</option>
+                      {teachers.map(t => <option key={t.id} value={t.full_name}>{t.full_name}</option>)}
+                    </select>
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <select 
+                      value={row.part} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].part = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                    >
+                      <option value="1">Part 1</option>
+                      <option value="2">Part 2</option>
+                    </select>
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="text" 
+                      value={row.section} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].section = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      placeholder="e.g. ICS-A"
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                    />
+                  </td>
+                  <td className="border border-slate-200 p-1 text-center">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        const updated = topicExcelRows.filter((_, i) => i !== idx);
+                        setTopicExcelRows(updated);
+                      }}
+                      className="text-rose-500 hover:text-rose-700 font-bold text-xs"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-between items-center">
+          <button 
+            type="button" 
+            onClick={() => setTopicExcelRows([...topicExcelRows, { topicName: '', book: '', teacherName: '', part: '1', section: '' }])}
+            className="px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-black uppercase text-slate-700 transition-all flex items-center gap-1"
+          >
+            + Add Row
+          </button>
+          <p className="text-[10px] text-slate-400 font-bold">Total filled lectures: {topicExcelRows.filter((r: any) => r.topicName.trim() && r.teacherName.trim()).length}</p>
         </div>
       </div>
       <div className="px-6 pb-6 flex gap-3 flex-shrink-0">
-        <button onClick={() => setModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100">Cancel</button>
-        <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveScheme}
+        <button onClick={() => setModal(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Cancel</button>
+        <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveTopicExcelSheet}
           className="flex-1 py-3 rounded-2xl text-sm font-black text-white disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: GRADIENT }}>
-          {saving ? 'Saving…' : <><CheckCircle size={14} /> Save Lecture</>}
+          {saving ? 'Saving…' : <><CheckCircle size={14} /> Save Roadmap Sheet</>}
         </motion.button>
       </div>
     </motion.div>

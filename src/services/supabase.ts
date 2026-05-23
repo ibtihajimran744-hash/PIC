@@ -595,12 +595,19 @@ export async function sendGlobalNotification(title: string, message: string) {
   return data;
 }
 
-export async function getNotifications(userId?: number, role?: string) {
+export async function getNotifications(userId?: number | string, role?: string) {
   // Build OR filter: match by target_user_id OR by target_role
   const filters: string[] = [];
-  if (userId) filters.push(`target_user_id.eq.${userId}`);
-  if (role)   filters.push(`target_role.eq.${role.toUpperCase()}`);
+  if (userId) {
+    filters.push(`target_user_id.eq.${userId}`);
+    filters.push(`target_user_id.eq."${userId}"`);
+  }
+  if (role) {
+    filters.push(`target_role.eq.${role.toUpperCase()}`);
+    filters.push(`target_role.eq.${role.toLowerCase()}`);
+  }
   filters.push('target_role.eq.ALL');
+  filters.push('target_role.eq.all');
 
   const { data, error } = await supabase
     .from('notifications').select('*')
