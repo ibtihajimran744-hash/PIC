@@ -1033,7 +1033,7 @@ export const ExcelReportsTab: React.FC<ExcelReportsTabProps> = ({
       filename = `transactions-${new Date().toISOString().slice(0,10)}.csv`;
       csv = 'Date,Roll No,Amount,Method,Collected By,Receipt,Type,Confirmed By\n';
       transactions.forEach(t => {
-        csv += `"${t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-PK') : ''}","${t.student_roll_link}",${t.amount_paid},"${t.payment_method || ''}","${t.collected_by || ''}","${t.receipt_serial || ''}","${t.transaction_type || 'Payment'}","${t.confirmed_by || ''}"\n`;
+        csv += `"${t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}","${t.student_roll_link}",${t.amount_paid},"${t.payment_method || ''}","${t.collected_by || ''}","${t.receipt_serial || ''}","${t.transaction_type || 'Payment'}","${t.confirmed_by || ''}"\n`;
       });
     }
     else if (reportType === 'defaulters') {

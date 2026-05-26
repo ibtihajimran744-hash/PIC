@@ -4,7 +4,7 @@ import {
   Users, Bell, LogOut, Plus, Calendar, LayoutDashboard, Search,
   Clock, MapPin, GraduationCap, FileText, CheckSquare, BookOpen,
   TrendingUp, BarChart3, ChevronLeft, Trophy, X, Phone, CreditCard,
-  CheckCircle2, User, RefreshCw, AlertCircle, Loader2,
+  CheckCircle2, User, RefreshCw, AlertCircle, Loader2, XCircle, Edit3, CheckCircle,
   BookMarked, BookCheck, UserCheck, Inbox, FileSpreadsheet,
   HelpCircle, Zap
 } from 'lucide-react';
@@ -107,6 +107,11 @@ export const TeacherPortal: React.FC<TeacherPortalProps> = ({ onLogout, teacherD
   const [pendingExamMarks, setPendingExamMarks] = useState<any[]>([]);
   const [loadingVer, setLoadingVer] = useState(false);
   const [submittingVerAction, setSubmittingVerAction] = useState(false);
+
+  const [activeVerRequest, setActiveVerRequest] = useState<any | null>(null);
+  const [revisedScore, setRevisedScore] = useState<string>('');
+  const [resolutionNotes, setResolutionNotes] = useState<string>('');
+  const [showResolveModal, setShowResolveModal] = useState<boolean>(false);
 
   const [todaySchedule, setTodaySchedule] = useState<TeacherScheduleEntry[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(true);
@@ -220,13 +225,59 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
     }
   };
 
-  const handleResolveVerification = async (ver: any, action: 'Resolved' | 'Rejected', note: string) => {
+  const handleResolveVerification = async (ver: any, action: 'Resolved' | 'Rejected', note: string, revisedScore?: number) => {
     if (!teacherData) return;
     setSubmittingVerAction(true);
     try {
+      let resolutionNoteText = note;
+      if (action === 'Resolved' && revisedScore !== undefined) {
+        resolutionNoteText = `${note} (Marks revised to ${revisedScore})`;
+        
+        // 1. Fetch current grade
+        const { data: gradeRes, error: fetchErr } = await supabase
+          .from('grades')
+          .select('*')
+          .eq('id', ver.grade_id)
+          .single();
+
+        if (fetchErr) {
+          console.error("Error fetching grade for verification:", fetchErr);
+        } else if (gradeRes) {
+          const total_marks = Number(gradeRes.total_marks) || 100;
+          const percentage = (revisedScore / total_marks) * 100;
+          const grade_letter = getGradeLetterFromPct(percentage);
+
+          // 2. Update grades table
+          const { error: gradeUpdateErr } = await supabase
+            .from('grades')
+            .update({
+              score: revisedScore,
+              percentage: percentage.toFixed(2),
+              grade_letter: grade_letter,
+              is_verified: true
+            })
+            .eq('id', ver.grade_id);
+
+          if (gradeUpdateErr) {
+            console.error("Error updating grade score:", gradeUpdateErr);
+          } else {
+            // Also attempt to update exam_marks/result_cards if applicable
+            await supabase
+              .from('exam_marks')
+              .update({
+                marks_obtained: revisedScore,
+                is_verified: true,
+                remarks: `Revised and Verified by Teacher: ${note}`
+              })
+              .eq('student_roll', ver.student_roll)
+              .eq('subject', ver.subject);
+          }
+        }
+      }
+
       const { error } = await supabase.from('result_verifications').update({
         status: action,
-        resolution_note: note,
+        resolution_note: resolutionNoteText,
         resolved_by: teacherData.full_name,
         resolved_at: new Date().toISOString()
       }).eq('id', ver.id);
@@ -238,9 +289,54 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
         target_user_id: String(ver.student_roll),
         target_role: 'STUDENT',
         title: `Verification Order ${action}`,
-        message: `Your verification request for ${ver.exam_name} was ${action.toLowerCase()}. Details: ${note}`,
+        message: `Your verification request for ${ver.exam_name} was ${action.toLowerCase()}.${revisedScore !== undefined ? ` Marks were revised to ${revisedScore}.` : ''} Details: ${note}`,
         type: 'verification_resolved'
       }]);
+
+      // Notify VP and Examiner
+      const broadcastMsg = `Verification resolved for ${ver.student_name} (Roll: ${ver.student_roll}) in ${ver.subject} — ${ver.exam_name}. Status: ${action}.${revisedScore !== undefined ? ` Score revised to ${revisedScore}.` : ''} Note: ${note}`;
+      
+      await supabase.from('notifications').insert([
+        {
+          target_role: 'vice_principal',
+          title: `Verification Resolved: ${action}`,
+          message: broadcastMsg,
+          type: 'verification_resolved'
+        },
+        {
+          target_role: 'vp',
+          title: `Verification Resolved: ${action}`,
+          message: broadcastMsg,
+          type: 'verification_resolved'
+        },
+        {
+          target_role: 'EXAMINER',
+          title: `Verification Resolved: ${action}`,
+          message: broadcastMsg,
+          type: 'verification_resolved'
+        }
+      ]);
+
+      await supabase.from('admin_notifications').insert([
+        {
+          sender: teacherData.full_name,
+          title: `📝 Verification: ${action}`,
+          message: broadcastMsg,
+          target: 'EXAMINER',
+          target_role: 'examiner',
+          is_read: false,
+          type: 'verification_resolved'
+        },
+        {
+          sender: teacherData.full_name,
+          title: `📝 Verification: ${action}`,
+          message: broadcastMsg,
+          target: 'VP',
+          target_role: 'vp',
+          is_read: false,
+          type: 'verification_resolved'
+        }
+      ]);
 
       toast.success(`Verification ${action.toLowerCase()}`);
       loadAcademicsData();
@@ -1082,24 +1178,24 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
 
                         <div className="flex gap-3">
                           <button 
-                            onClick={() => {
-                              const note = prompt("Enter resolution notes (e.g. Corrected to 85 marks):");
-                              if (note) handleResolveVerification(v, 'Resolved', note);
+                            onClick={async () => {
+                              setActiveVerRequest(v);
+                              setResolutionNotes('');
+                              setRevisedScore('');
+                              try {
+                                const { data } = await supabase.from('grades').select('score').eq('id', v.grade_id).maybeSingle();
+                                if (data) {
+                                  setRevisedScore(String(data.score));
+                                }
+                              } catch (e) {
+                                console.error(e);
+                              }
+                              setShowResolveModal(true);
                             }}
                             disabled={submittingVerAction}
-                            className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                            className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
                           >
-                            Mark Resolved
-                          </button>
-                          <button 
-                            onClick={() => {
-                              const note = prompt("Enter reason for rejection:");
-                              if (note) handleResolveVerification(v, 'Rejected', note);
-                            }}
-                            disabled={submittingVerAction}
-                            className="flex-1 py-4 rounded-2xl bg-white text-rose-600 font-black text-xs uppercase tracking-widest border border-rose-100 hover:bg-rose-50 transition-all disabled:opacity-50"
-                          >
-                            Reject Request
+                            <Edit3 size={14} /> Process Request
                           </button>
                         </div>
                       </motion.div>
@@ -2753,6 +2849,114 @@ const [schedView,        setSchedView]          = useState<'today'|'week'>('toda
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── RESOLVE VERIFICATION MODAL ────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showResolveModal && activeVerRequest && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
+              onClick={() => setShowResolveModal(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="relative bg-white rounded-3xl w-full max-w-lg z-10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              
+              <div className="h-2 w-full bg-indigo-600" />
+              
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg flex items-center gap-2"><Edit3 size={20} className="text-indigo-600" /> Process Verification</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Edit marks & resolve correction claim</p>
+                </div>
+                <button onClick={() => setShowResolveModal(false)} className="text-slate-400 hover:text-slate-700 transition-colors bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center"><X size={18} /></button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-6">
+                {/* Request Context Card */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+                  <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <span>Student Details</span>
+                    <span className="text-indigo-600 font-black">Roll: {activeVerRequest.student_roll}</span>
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-950 text-base">{activeVerRequest.student_name}</h4>
+                    <p className="text-xs text-slate-500 font-bold">{activeVerRequest.subject} • {activeVerRequest.exam_name}</p>
+                  </div>
+                  <div className="border-t border-slate-200/60 pt-2 shrink-0">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Student's Stated Issue ({activeVerRequest.reason}):</p>
+                    <p className="text-xs font-bold text-slate-700 italic">"{activeVerRequest.detail}"</p>
+                  </div>
+                </div>
+
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  {/* Revised Marks Input */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Revised Obtained Marks</label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        value={revisedScore}
+                        onChange={e => setRevisedScore(e.target.value)}
+                        placeholder="e.g. 78 (Leave empty if no marks change)"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-5 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                        Obtained Score
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold ml-1">If approved/resolved, the student's marks and percentage will automatically update in real-time.</p>
+                  </div>
+
+                  {/* Comments/Notes */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Resolution Comments / Remarks</label>
+                    <textarea 
+                      value={resolutionNotes}
+                      onChange={e => setResolutionNotes(e.target.value)}
+                      placeholder="Explain the correction or reasoning for this action..."
+                      rows={3}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-5 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons Footer */}
+              <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-3 shrink-0">
+                <button 
+                  onClick={() => {
+                    if (!resolutionNotes.trim()) {
+                      toast.error("Please add resolution notes before proceeding.");
+                      return;
+                    }
+                    const parsed = revisedScore ? Number(revisedScore) : undefined;
+                    handleResolveVerification(activeVerRequest, 'Resolved', resolutionNotes, parsed);
+                    setShowResolveModal(false);
+                  }}
+                  disabled={submittingVerAction}
+                  className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/15"
+                >
+                  <CheckCircle size={14} /> Approve & Update
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!resolutionNotes.trim()) {
+                      toast.error("Please explain the reason for rejection in comments.");
+                      return;
+                    }
+                    handleResolveVerification(activeVerRequest, 'Rejected', resolutionNotes);
+                    setShowResolveModal(false);
+                  }}
+                  disabled={submittingVerAction}
+                  className="flex-1 py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/15"
+                >
+                  <XCircle size={14} /> Reject Request
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <TutorialOverlay />
     </div>
   );

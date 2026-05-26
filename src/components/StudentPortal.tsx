@@ -413,7 +413,7 @@ const [aiInsight,       setAiInsight]       = useState<any>(null);
       supabase.from('fee_groups').select('*').eq('student_roll', roll).order('due_date'),
       supabase.from('instalment_schedules').select('*').eq('student_roll', roll).order('instalment_no'),
       supabase.from('notifications').select('*').eq('target_user_id', String(roll)).order('created_at',{ ascending:false }).limit(60),
-      supabase.from('grades').select('*,exams(exam_type,chapter_name,date,teacher_id)').eq('student_roll', roll).order('created_at',{ ascending:false }).limit(30),
+      supabase.from('grades').select('*').eq('student_roll', roll).order('created_at',{ ascending:false }).limit(30),
       supabase.from('attendance').select('*').eq('student_roll', roll).order('date',{ ascending:false }).limit(60),
       supabase.from('timetable').select('*')
         .or(`class_section.eq.${studentData.class_section},and(program.eq.${studentData.program},part.eq.${studentData.part})`)
@@ -670,14 +670,57 @@ if (insightData) setAiInsight(insightData);
         .eq('student_roll', student.roll_no)
         .eq('subject', grade.subject);
       
-      // Notify teacher
-      await supabase.from('notifications').insert([{
-        target_user_id: String(grade.teacher_id || 'GENERAL'),
-        target_role: 'TEACHER',
-        title: '⚠️ Result Verification Request',
-        message: `${student.full_name} (${student.roll_no}) has requested verification for ${grade.subject}. Reason: ${reason}`,
-        type: 'verification'
-      }]);
+      // Notify teacher, VP, and Examiner
+      const broadcastMsg = `Student ${student.full_name} (${student.roll_no}) requested verification for ${grade.subject} (${grade.chapter_name || 'N/A'}). Reason: ${reason}`;
+      
+      await supabase.from('notifications').insert([
+        {
+          target_user_id: String(grade.teacher_id || 'GENERAL'),
+          target_role: 'TEACHER',
+          title: '⚠️ Result Verification Request',
+          message: broadcastMsg,
+          type: 'verification'
+        },
+        {
+          target_role: 'vice_principal',
+          title: '⚠️ Verification Request Info',
+          message: broadcastMsg,
+          type: 'verification'
+        },
+        {
+          target_role: 'vp',
+          title: '⚠️ Verification Request Info',
+          message: broadcastMsg,
+          type: 'verification'
+        },
+        {
+          target_role: 'EXAMINER',
+          title: '⚠️ Verification Request Info',
+          message: broadcastMsg,
+          type: 'verification'
+        }
+      ]);
+
+      await supabase.from('admin_notifications').insert([
+        {
+          sender: student.full_name,
+          title: '⚠️ Verification Request',
+          message: broadcastMsg,
+          target: 'EXAMINER',
+          target_role: 'examiner',
+          is_read: false,
+          type: 'verification_pending'
+        },
+        {
+          sender: student.full_name,
+          title: '⚠️ Verification Request',
+          message: broadcastMsg,
+          target: 'VP',
+          target_role: 'vp',
+          is_read: false,
+          type: 'verification_pending'
+        }
+      ]);
 
       toast.success("✅ Verification request sent to teacher!");
       setSelectedGrade(null);
@@ -717,13 +760,12 @@ if (insightData) setAiInsight(insightData);
       if (!selectedGrade) throw new Error("Result not found");
 
       const now = new Date();
-      const teacherDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000); 
-      const examinerDeadline = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000); 
+      const teacherDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const examinerDeadline = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
 
-      // Safe values from studentData (prop) or fallback to student (state)
       const targetRoll = studentData?.roll_no || student?.roll_no || 0;
       const targetName = studentData?.full_name || student?.full_name || 'Student';
-      const targetTeacherId = selectedGrade.teacher_id || selectedGrade.exams?.teacher_id || null;
+      const targetTeacherId = selectedGrade.teacher_id || null;
       const resolvedDetail = verForm.detail?.trim() || 'Result re-verification requested by student via student portal.';
 
       const { error } = await supabase.from('result_verifications').insert([{
@@ -731,7 +773,7 @@ if (insightData) setAiInsight(insightData);
         student_name: targetName,
         grade_id: selectedGrade.id,
         subject: selectedGrade.subject,
-        exam_name: selectedGrade.chapter_name || selectedGrade.exams?.chapter_name || selectedGrade.subject,
+        exam_name: selectedGrade.chapter_name || selectedGrade.subject,
         reason: verForm.reason,
         detail: resolvedDetail,
         status: 'Pending-Teacher',
@@ -752,14 +794,58 @@ if (insightData) setAiInsight(insightData);
         .eq('student_roll', targetRoll)
         .eq('subject', selectedGrade.subject);
 
-      // Insert notification
-      await supabase.from('notifications').insert([{
-        target_role: 'TEACHER',
-        target_user_id: targetTeacherId ? String(targetTeacherId) : undefined,
-        title: 'New Verification Request',
-        message: `${targetName} has requested verification for ${selectedGrade.chapter_name || selectedGrade.exams?.chapter_name || selectedGrade.subject}. 24h deadline.`,
-        type: 'verification_pending'
-      }]);
+      // Insert notification for Teacher, VP, and Examiner
+      const broadcastMsg = `Student ${targetName} (${targetRoll}) requested verification for ${selectedGrade.chapter_name || selectedGrade.subject}.`;
+      
+      await supabase.from('notifications').insert([
+        {
+          target_role: 'TEACHER',
+          target_user_id: targetTeacherId ? String(targetTeacherId) : 'GENERAL',
+          title: 'New Verification Request',
+          message: `${targetName} has requested verification for ${selectedGrade.chapter_name || selectedGrade.subject}. 24h deadline.`,
+          type: 'verification_pending'
+        },
+        {
+          target_role: 'vice_principal',
+          title: 'New Verification Request (VP Info)',
+          message: broadcastMsg,
+          type: 'verification_pending'
+        },
+        {
+          target_role: 'vp',
+          title: 'New Verification Request (VP Info)',
+          message: broadcastMsg,
+          type: 'verification_pending'
+        },
+        {
+          target_role: 'EXAMINER',
+          title: 'New Verification Request (Examiner Info)',
+          message: broadcastMsg,
+          type: 'verification_pending'
+        }
+      ]);
+
+      // Also insert into admin_notifications for both VP and Examiner
+      await supabase.from('admin_notifications').insert([
+        {
+          sender: targetName,
+          title: '⚠️ New Verification Request',
+          message: broadcastMsg,
+          target: 'EXAMINER',
+          target_role: 'examiner',
+          is_read: false,
+          type: 'verification_pending'
+        },
+        {
+          sender: targetName,
+          title: '⚠️ New Verification Request',
+          message: broadcastMsg,
+          target: 'VP',
+          target_role: 'vp',
+          is_read: false,
+          type: 'verification_pending'
+        }
+      ]);
 
       toast.success('Verification request submitted successfully!');
       setShowVerModal(false);
@@ -2954,38 +3040,52 @@ if (insightData) setAiInsight(insightData);
                      const reportDate = new Date(selectedGrade.created_at);
                      const diff = Date.now() - reportDate.getTime();
                      const daysOld = Math.floor(diff / (1000 * 60 * 60 * 24));
-                     const canApply = daysOld < 3; // Within 3 days
-                     
-                     const existing = verifications.find(v => v.subject === selectedGrade.subject && (v.status === 'Pending-Teacher' || v.status === 'Pending-Examiner'));
+                     const canApply = daysOld < 30; // Within 30 days
+                      
+                      // Fix: Match via unique grade_id instead of string subject names
+                      const existing = verifications.find(
+                        v => String(v.grade_id) === String(selectedGrade.id) && 
+                        (v.status === 'Pending-Teacher' || v.status === 'Pending-Examiner')
+                      );
 
-                     if (existing) {
-                       return (
-                         <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold text-center">
-                           ⚠️ Verification Request already active for this subject.
-                         </div>
-                       );
-                     }
+                      if (existing) {
+                        return (
+                          <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold text-center">
+                            ⚠️ Verification Request already active for this result.
+                          </div>
+                        );
+                      }
 
-                     if (!canApply) {
-                       return (
-                         <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold text-center">
-                           ❌ Correction window closed. Verification must be requested within 3 days of results.
-                         </div>
-                       );
-                     }
+                      if (!canApply) {
+                        return (
+                          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 text-xs font-bold text-center">
+                            ❌ Correction window closed. Verification must be requested within 3 days of results.
+                          </div>
+                        );
+                      }
 
-                     return (
-                       <button
-                         onClick={() => {
-                           setVerForm(prev => ({ ...prev, grade_id: selectedGrade.id }));
-                           setShowVerModal(true);
-                         }}
-                         disabled={verifying}
-                         className="w-full py-4 rounded-[1.5rem] bg-indigo-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
-                       >
-                         {verifying ? 'Processing...' : <><AlertCircle size={18}/> Request Result Verification</>}
-                       </button>
-                     );
+                      return (
+                        <button
+                          onClick={() => {
+                            // 1. Populate the form state with the explicit active grade metadata
+                            setVerForm({
+                              grade_id: String(selectedGrade.id),
+                              reason: 'Marks Entry Error',
+                              detail: ''
+                            });
+                            // 2. Shut the detail modal down
+                            setSelectedGrade(null); 
+                            // 3. Let the DOM clear for a microsecond, then fire the global input sheet
+                            setTimeout(() => {
+                              setShowVerModal(true); 
+                            }, 150);
+                          }}
+                          disabled={verifying}
+                          className="w-full py-4 rounded-[1.5rem] bg-indigo-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <AlertCircle size={18}/> Request Result Verification
+                        </button>
+                      );
                    })()}
                    <p className="text-[10px] text-slate-400 font-bold text-center mt-4 px-4">Verification requests are routed first to the Subject Teacher, and then escalated to the Examiner if unresolved.</p>
                 </div>
@@ -2994,7 +3094,6 @@ if (insightData) setAiInsight(insightData);
           </div>
         )}
       </AnimatePresence>
-
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50" style={{background:'rgba(255,255,255,0.96)',backdropFilter:'blur(20px)',borderTop:'1px solid rgba(0,0,0,0.06)',boxShadow:'0 -4px 24px rgba(0,0,0,0.08)'}}>
   <div className="flex items-center gap-1 px-2 overflow-x-auto scrollbar-hide" style={{paddingBottom:'max(8px, env(safe-area-inset-bottom))',paddingTop:8}}>

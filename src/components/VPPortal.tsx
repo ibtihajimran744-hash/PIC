@@ -3343,7 +3343,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
                         return (
                           <motion.tr key={t.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:Math.min(i*0.008,0.3)}}
                             className={cn('border-b border-slate-50 transition-colors',t.is_reversed?'bg-rose-50/30 opacity-60':'hover:bg-slate-50/50')}>
-                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{t.payment_date?new Date(t.payment_date).toLocaleDateString('en-PK',{day:'2-digit',month:'short'}):'—'}</td>
+                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{t.payment_date ? new Date(t.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}</td>
                             <td className="px-4 py-3"><p className="font-black text-slate-900 leading-none">{stu?.full_name||'Unknown'}</p><p className="text-[10px] font-bold mt-0.5" style={{color:ACCENT}}>#{t.student_roll_link}</p></td>
                             <td className="px-4 py-3 font-black" style={{color:t.is_reversed?'#9CA3AF':'#059669'}}>{PKR(Number(t.amount_paid))}{t.is_reversed&&<span className="block text-[8px] font-bold text-rose-400 leading-none mt-0.5">REVERSED</span>}</td>
                             <td className="px-4 py-3 text-slate-600">{t.payment_method||'—'}</td>
