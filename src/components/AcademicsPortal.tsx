@@ -89,11 +89,11 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [topicSubject, setTopicSubject] = useState('');
   const [topicProgram, setTopicProgram] = useState('ICS');
   const [topicExcelRows, setTopicExcelRows] = useState<any[]>([
-    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-    { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-    { topicName: '', book: '', teacherName: '', part: '1', section: '' }
+    { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+    { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' }
   ]);
   const [ttProgramId, setTtProgramId] = useState('');
   const [ttGenderGroup, setTtGenderGroup] = useState('Girls-I');
@@ -396,6 +396,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         const matchedTeacherObj = teachers.find(t => 
           t.full_name?.toLowerCase().trim() === r.teacherName.toLowerCase().trim()
         );
+        let finalDescription = r.syllabus || `Imported via Academic Spreadsheet Editor`;
+        if (r.date) {
+          finalDescription = `${r.date}${r.day ? ' (' + r.day + ')' : ''} | Syllabus: ${r.syllabus || r.topicName}`;
+        }
         return {
           title: `${topicSubject} SOS`,
           subject: topicSubject,
@@ -405,10 +409,13 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           part: Number(r.part) || 1,
           class_section: r.section || null,
           program: topicProgram,
-          description: `Imported via Academic Spreadsheet Editor`,
-          lecture_no: idx + 1,
+          description: finalDescription,
+          lecture_no: r.lectureNo ? Number(r.lectureNo) : idx + 1,
+          week_no: r.lectureNo ? Number(r.lectureNo) : idx + 1,
           status: 'Pending',
-          teacher_id: matchedTeacherObj?.id || null
+          teacher_id: matchedTeacherObj?.id || null,
+          scheduled_date: r.date || null,
+          day: r.day || null,
         };
       });
 
@@ -428,13 +435,13 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
       showToast(`Successfully uploaded ${sosRows.length} topics!`);
       setModal(null);
-      // Reset sheet
+      // Reset sheet with expanded schema fields
       setTopicExcelRows([
-        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-        { topicName: '', book: '', teacherName: '', part: '1', section: '' },
-        { topicName: '', book: '', teacherName: '', part: '1', section: '' }
+        { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' },
+        { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' }
       ]);
       loadAll();
     } catch (e: any) {
@@ -2559,7 +2566,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
 
         {/* Excel Spreadsheet style table */}
         <div className="border border-slate-200 rounded-xl overflow-x-auto bg-slate-50">
-          <table className="w-full text-left border-collapse border border-slate-200 min-w-[700px]">
+          <table className="w-full text-left border-collapse border border-slate-200 min-w-[1240px]">
             <thead>
               <tr className="bg-slate-100 text-slate-700">
                 <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Topic Name</th>
@@ -2567,6 +2574,10 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Teacher Name</th>
                 <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Part 1 or 2</th>
                 <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Section</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Date</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Day</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Lecture no</th>
+                <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase">Syllabus</th>
                 <th className="border border-slate-200 px-3 py-2 text-xs font-black uppercase text-center w-12">Action</th>
               </tr>
             </thead>
@@ -2640,6 +2651,64 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                       className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
                     />
                   </td>
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="date" 
+                      value={row.date} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].date = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 text-slate-700"
+                    />
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <select 
+                      value={row.day} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].day = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50 text-slate-700 font-semibold"
+                    >
+                      <option value="">Day</option>
+                      <option value="Monday">Monday</option>
+                      <option value="Tuesday">Tuesday</option>
+                      <option value="Wednesday">Wednesday</option>
+                      <option value="Thursday">Thursday</option>
+                      <option value="Friday">Friday</option>
+                      <option value="Saturday">Saturday</option>
+                      <option value="Sunday">Sunday</option>
+                    </select>
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="number" 
+                      value={row.lectureNo} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].lectureNo = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      placeholder="e.g. 1"
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                    />
+                  </td>
+                  <td className="border border-slate-200 p-1">
+                    <input 
+                      type="text" 
+                      value={row.syllabus} 
+                      onChange={e => {
+                        const updated = [...topicExcelRows];
+                        updated[idx].syllabus = e.target.value;
+                        setTopicExcelRows(updated);
+                      }} 
+                      placeholder="e.g. Ch 1 Intro"
+                      className="w-full px-2 py-1 text-sm bg-transparent outline-none focus:bg-slate-50"
+                    />
+                  </td>
                   <td className="border border-slate-200 p-1 text-center">
                     <button 
                       type="button" 
@@ -2660,7 +2729,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         <div className="flex justify-between items-center">
           <button 
             type="button" 
-            onClick={() => setTopicExcelRows([...topicExcelRows, { topicName: '', book: '', teacherName: '', part: '1', section: '' }])}
+            onClick={() => setTopicExcelRows([...topicExcelRows, { topicName: '', book: '', teacherName: '', part: '1', section: '', date: '', day: '', lectureNo: '', syllabus: '' }])}
             className="px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-xs font-black uppercase text-slate-700 transition-all flex items-center gap-1"
           >
             + Add Row
