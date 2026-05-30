@@ -51,6 +51,7 @@ const TABS_VP = [
   { id:'feemgmt',      label:'Fee Collection',      icon:DollarSign },
   { id:'hr',           label:'Human Resource',     icon:Users },
   { id:'academics',    label:'Academics',           icon:GraduationCap },
+  { id:'sessions',     label:'Academic Sessions',   icon:Calendar },
   { id:'communicate',  label:'Communication',       icon:Bell },
   { id:'transport',    label:'Transport',           icon:Truck },
   { id:'hostel',       label:'Hostel',              icon:Building2 },

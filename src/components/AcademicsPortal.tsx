@@ -104,6 +104,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '10:15', to_time: '11:00' },
     { subject: '', teacher: '', section: '', day: 'Monday', room: '', from_time: '11:00', to_time: '11:45' }
   ]);
+  const [editTtForm, setEditTtForm] = useState<any>(null);
   const [announcements,  setAnnouncements]  = useState<any[]>([]);
   const [messages,       setMessages]       = useState<any[]>([]);
   const [grades,         setGrades]         = useState<any[]>([]);
@@ -271,20 +272,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   };
   const [programForm, setProgramForm] = useState({ name: '', session_id: '' });
   const [subjects, setSubjects] = useState<any[]>([]);
-  const [sessionForm, setSessionForm] = useState({ name: '', is_active: true });
   const [subjForm,    setSubjForm]    = useState({ name: '', program_id: '', teacher_id: '' });
-
-  const saveSession = async () => {
-    if (!sessionForm.name) { showToast('Session name required', false); return; }
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('academic_sessions').insert([sessionForm]);
-      if (error) throw error;
-      showToast('New academic session created');
-      setModal(null); loadAll();
-    } catch (e: any) { showToast(e.message, false); }
-    finally { setSaving(false); }
-  };
 
   const saveProgram = async () => {
     if (!programForm.name || !programForm.session_id) { showToast('Name and Session required', false); return; }
@@ -517,6 +505,54 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
       showToast('Failed to save timetable entries: ' + e.message, false);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveSingleTimetableEntry = async () => {
+    if (!editTtForm.subject || !editTtForm.class_section) {
+      showToast('Subject and Class Section are required', false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const matchedTeacherObj = teachers.find(t => 
+        String(t.id) === String(editTtForm.teacher_id) || t.full_name?.toLowerCase().trim() === editTtForm.teacher_name?.toLowerCase().trim()
+      );
+      const updatePayload = {
+        subject: editTtForm.subject,
+        class_section: editTtForm.class_section,
+        day_of_week: editTtForm.day_of_week,
+        start_time: editTtForm.start_time,
+        end_time: editTtForm.end_time,
+        room: editTtForm.room || '101',
+        gender_group: editTtForm.gender_group || 'Girls-I',
+        program: editTtForm.program || 'ICS',
+        teacher_id: matchedTeacherObj?.id || editTtForm.teacher_id,
+        teacher_name: matchedTeacherObj?.full_name || editTtForm.teacher_name,
+      };
+
+      const { error } = await supabase.from('timetable').update(updatePayload).eq('id', editTtForm.id);
+      if (error) throw error;
+
+      showToast('Timetable entry updated successfully');
+      setEditTtForm(null);
+      loadAll();
+    } catch (e: any) {
+      showToast('Failed to update timetable: ' + e.message, false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteTimetableEntry = async (id: any) => {
+    if (!window.confirm('Are you sure you want to delete this timetable entry?')) return;
+    try {
+      const { error } = await supabase.from('timetable').delete().eq('id', id);
+      if (error) throw error;
+      showToast('Timetable entry deleted successfully');
+      loadAll();
+    } catch (e: any) {
+      showToast('Failed to delete timetable entry: ' + e.message, false);
     }
   };
 
@@ -1694,8 +1730,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                         <table className="w-full text-sm min-w-[600px]">
                           <thead>
                             <tr style={{ background: '#f8fafc' }}>
-                              {['Time','Class','Subject','Teacher','Room','Campus'].map(h => (
-                                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase border-b border-slate-100">{h}</th>
+                              {['Time','Class','Subject','Teacher','Room','Campus','Actions'].map(h => (
+                                <th key={h} className={`px-4 py-2.5 text-[10px] font-black text-slate-400 uppercase border-b border-slate-100 ${h === 'Actions' ? 'text-center' : 'text-left'}`}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -1710,6 +1746,20 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                                   <td className="px-4 py-2.5 text-xs text-slate-500">{teacher?.full_name || '—'}</td>
                                   <td className="px-4 py-2.5 text-xs text-slate-500">{tt.room || '—'}</td>
                                   <td className="px-4 py-2.5 text-xs text-slate-400">{tt.campus || '—'}</td>
+                                  <td className="px-4 py-1 text-center whitespace-nowrap">
+                                    <button 
+                                      onClick={() => setEditTtForm({ ...tt })}
+                                      className="px-2 py-1 text-xs font-black text-emerald-600 hover:text-emerald-800 uppercase tracking-wider transition-all mr-2"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button 
+                                      onClick={() => deleteTimetableEntry(tt.id)}
+                                      className="px-2 py-1 text-xs font-black text-rose-600 hover:text-rose-800 uppercase tracking-wider transition-all"
+                                    >
+                                      Delete
+                                    </button>
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -1962,8 +2012,7 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     <p className="text-xs text-slate-400">Define administrative sessions, academic programs and their subjects.</p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={saveSession} className="px-5 py-2.5 rounded-xl text-xs font-black text-white" style={{ background: GRADIENT }}>New Session</button>
-                    <button onClick={saveProgram} className="px-5 py-2.5 rounded-xl text-xs font-black text-slate-600 bg-slate-50 border border-slate-100">Add Program</button>
+                    <button onClick={() => setModal('session')} className="px-5 py-2.5 rounded-xl text-xs font-black text-white" style={{ background: GRADIENT }}>Academic Setup</button>
                   </div>
                 </div>
 
@@ -2311,6 +2360,120 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           </div>
         )}
 
+        {editTtForm && (
+          <div className="fixed inset-0 z-[201] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditTtForm(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-xl z-20 shadow-2xl overflow-hidden flex flex-col">
+              <div className="h-1" style={{ background: GRADIENT }} />
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-sm" style={{ background: ACCENT }}><Calendar size={16} /></div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">Edit Timetable Entry</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Modify Saved Class Period Details</p>
+                  </div>
+                </div>
+                <button onClick={() => setEditTtForm(null)} className="text-slate-400 hover:text-slate-700 font-bold text-sm uppercase">Close</button>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Subject" req>
+                    <TI 
+                      placeholder="e.g. Physics" 
+                      value={editTtForm.subject} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, subject: e.target.value })} 
+                    />
+                  </FM>
+                  <FM label="Teacher" req>
+                    <TS 
+                      value={editTtForm.teacher_id} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, teacher_id: e.target.value })}
+                    >
+                      <option value="">Select Teacher</option>
+                      {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                    </TS>
+                  </FM>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Class Section" req>
+                    <TI 
+                      placeholder="e.g. ICS-A" 
+                      value={editTtForm.class_section} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, class_section: e.target.value })} 
+                    />
+                  </FM>
+                  <FM label="Day of Week" req>
+                    <TS 
+                      value={editTtForm.day_of_week} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, day_of_week: e.target.value })}
+                    >
+                      {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => <option key={d} value={d}>{d}</option>)}
+                    </TS>
+                  </FM>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Start Time (From)" req>
+                    <TI 
+                      type="time" 
+                      value={editTtForm.start_time ? editTtForm.start_time.slice(0, 5) : '08:00'} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, start_time: e.target.value })} 
+                    />
+                  </FM>
+                  <FM label="End Time (To)" req>
+                    <TI 
+                      type="time" 
+                      value={editTtForm.end_time ? editTtForm.end_time.slice(0, 5) : '08:45'} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, end_time: e.target.value })} 
+                    />
+                  </FM>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FM label="Room Number">
+                    <TI 
+                      placeholder="e.g. 101" 
+                      value={editTtForm.room || ''} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, room: e.target.value })} 
+                    />
+                  </FM>
+                  <FM label="Gender Group">
+                    <TS 
+                      value={editTtForm.gender_group || 'Girls-I'} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, gender_group: e.target.value })}
+                    >
+                      <option value="Girls-I">Girls-I</option>
+                      <option value="Boys-I">Boys-I</option>
+                      <option value="Girls-II">Girls-II</option>
+                      <option value="Boys-II">Boys-II</option>
+                    </TS>
+                  </FM>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <FM label="Program">
+                    <TS 
+                      value={editTtForm.program || ''} 
+                      onChange={(e: any) => setEditTtForm({ ...editTtForm, program: e.target.value })}
+                    >
+                      <option value="">Select Program</option>
+                      {activePrograms.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </TS>
+                  </FM>
+                </div>
+              </div>
+              <div className="px-6 pb-6 flex gap-3 flex-shrink-0">
+                <button onClick={() => setEditTtForm(null)} className="flex-1 py-3 rounded-2xl text-sm font-black text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all font-semibold">Cancel</button>
+                <button onClick={saveSingleTimetableEntry} disabled={saving} className="flex-1 py-3 rounded-2xl text-sm font-black text-white hover:opacity-90 transition-all disabled:opacity-50 font-semibold" style={{ background: GRADIENT }}>
+                  {saving ? 'Saving...' : 'Update Entry'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {modal === 'session' && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
@@ -2328,22 +2491,14 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                 {/* Session Creation */}
                 <section>
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">1. Manage Sessions</h4>
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">1. Academic Sessions</h4>
                     {activeSession && <Badge c="bg-emerald-50 text-emerald-700 border-emerald-200" label={`Active: ${activeSession.name}`} />}
                   </div>
-                  <div className="flex gap-4">
-                    <div className="flex-1 min-w-0">
-                      <TI placeholder="e.g. 2026-27" value={sessionForm.name} onChange={e => setSessionForm({ ...sessionForm, name: e.target.value })} />
-                    </div>
-                    <button onClick={saveSession} disabled={saving} className="px-6 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
-                      {saving ? 'Creating...' : 'Create Session'}
-                    </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {sessions.map(s => (
-                      <button key={s.id} onClick={() => setSessionForm({ ...s, is_active: true })} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${s.is_active ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                      <div key={s.id} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${s.is_active ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
                         {s.name} {s.is_active ? ' (Active)' : ''}
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </section>
