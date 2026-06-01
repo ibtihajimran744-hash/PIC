@@ -1117,6 +1117,91 @@ const [netPayable,      setNetPayable]      = useState(0);
       })
       .join('');
 
+    const getCopyHtml = (label: string) => `
+<div class="header">
+<div class="logo-box"><img src="${logoUrl}" class="logo" /></div>
+<div class="header-text">
+<div class="college-name">Pak Informatics Group of Colleges</div>
+<div class="header-sub">Session: 2026-28 &nbsp;&nbsp;&nbsp; Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
+<div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
+</div>
+</div>
+
+<div class="copy-label">${label}</div>
+
+<div class="student-row">
+<div class="student-info">
+<strong>${student?.full_name ?? '—'}</strong> (${student?.roll_no ?? '—'})<br/>
+Father Name: ${student?.father_name ?? '—'}<br/>
+Class: ${student?.class_section ?? '—'}
+</div>
+<div class="date-label">Date: ${dateStr}</div>
+</div>
+
+<table class="fee-table">
+
+<thead>
+<tr>
+<th>Fees Group</th>
+<th style="text-align:center">Fees Code</th>
+<th style="text-align:center">Due Date</th>
+<th style="text-align:center">Status</th>
+<th style="text-align:right">Amount</th>
+<th style="text-align:center">Payment ID</th>
+<th style="text-align:center">Mode</th>
+<th style="text-align:center">Date</th>
+<th style="text-align:right">Paid</th>
+<th style="text-align:right">Fine</th>
+<th style="text-align:right">Discount</th>
+<th style="text-align:right">Balance</th>
+</tr>
+</thead>
+
+<tbody>
+
+${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee records found</td></tr>'}
+
+</tbody>
+
+<tfoot>
+<tr>
+<td colspan="4" style="text-align:right">Grand Total</td>
+<td style="text-align:right">${fmt(totalAmount)}</td>
+<td colspan="3"></td>
+<td style="text-align:right">${fmt(totalPaid)}</td>
+<td style="text-align:right">${fmt(totalFine)}</td>
+<td style="text-align:right">${fmt(totalDiscount)}</td>
+<td style="text-align:right">${fmt(totalBalance)}</td>
+</tr>
+</tfoot>
+
+</table>
+
+<div class="notes">
+<p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
+<p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
+<p class="urdu" style="direction:rtl;">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
+</div>
+
+<div class="payment-title">ONLINE PAYMENT DETAILS:</div>
+
+<div class="payment-cols">
+
+<div>
+<p><strong><u>1) UBL Bank Limited</u></strong></p>
+<p><u>Account No</u>: 0785335426309</p>
+<p><u>Account Title</u>: Pak Informatics Educational Network Pvt.</p>
+</div>
+
+<div>
+<p><strong><u>2) Jazz Cash Account:</u></strong></p>
+<p><u>Account No.</u>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
+<p><u>Account Title:</u> Informatics Group of Colleges GRW</p>
+</div>
+
+</div>
+`;
+
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -1295,98 +1380,10 @@ body{padding:6px 10px;}
 
 <body>
 
-<div class="header">
-<div class="logo-box"><img src="${logoUrl}" style="width:100%;height:100%;object-fit:contain;"/></div>
-<div class="header-text">
-<div class="college-name">Pak Informatics Group of Colleges</div>
-<div class="header-sub">Session: 2026-28 &nbsp;&nbsp;&nbsp; Head Office, Gujranwala &nbsp;&nbsp;&nbsp; ph: 0300-0642973</div>
-<div class="header-address">P.C Tower, Sialkot bypass Road Near Beacon House Palm Tree Campus GRW.</div>
-</div>
-</div>
+${getCopyHtml('STUDENT COPY')}
 
-<div class="copy-label">STUDENT COPY</div>
-
-</div>
 <div style="page-break-before:always;border-top:2px dashed #ccc;padding-top:16px;margin-top:8px;">
-<div class="header-top" style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-  <img src="${LOGO_BASE64}" class="logo" alt="Logo"/>
-  <div>
-    <div class="college-name">Pak Informatics Group of Colleges</div>
-    <div class="address">Head Office, Gujranwala | Ph: 0300-0642973</div>
-  </div>
-</div>
-<div class="copy-label">OFFICE COPY</div>
-
-<div class="student-row">
-<div class="student-info">
-<strong>${student?.full_name ?? '—'}</strong> (${student?.roll_no ?? '—'})<br/>
-Father Name: ${student?.father_name ?? '—'}<br/>
-Class: ${student?.class_section ?? '—'}
-</div>
-<div class="date-label">Date: ${dateStr}</div>
-</div>
-
-<table class="fee-table">
-
-<thead>
-<tr>
-<th>Fees Group</th>
-<th style="text-align:center">Fees Code</th>
-<th style="text-align:center">Due Date</th>
-<th style="text-align:center">Status</th>
-<th style="text-align:right">Amount</th>
-<th style="text-align:center">Payment ID</th>
-<th style="text-align:center">Mode</th>
-<th style="text-align:center">Date</th>
-<th style="text-align:right">Paid</th>
-<th style="text-align:right">Fine</th>
-<th style="text-align:right">Discount</th>
-<th style="text-align:right">Balance</th>
-</tr>
-</thead>
-
-<tbody>
-
-${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee records found</td></tr>'}
-
-</tbody>
-
-<tfoot>
-<tr>
-<td colspan="4" style="text-align:right">Grand Total</td>
-<td style="text-align:right">${fmt(totalAmount)}</td>
-<td colspan="3"></td>
-<td style="text-align:right">${fmt(totalPaid)}</td>
-<td style="text-align:right">${fmt(totalFine)}</td>
-<td style="text-align:right">${fmt(totalDiscount)}</td>
-<td style="text-align:right">${fmt(totalBalance)}</td>
-</tr>
-</tfoot>
-
-</table>
-
-<div class="notes">
-<p><strong>NOTE 1:</strong> The Fee once deposited is not refundable and transferable in any case.</p>
-<p><strong>NOTE 2:</strong> After the due date of the tuition fee, a fine of Rs. 100 per day will be charged.</p>
-<p class="urdu" style="direction:rtl;">بر ماہ کی 10 تاریخ فیس کی ادائیگی کے لیے مقرر ہے، بعد فیس جمع کروانے کی صورت میں مبلغ 100 روپے روزانہ جرمانہ وصول کیا جائے گا</p>
-</div>
-
-<div class="payment-title">ONLINE PAYMENT DETAILS:</div>
-
-<div class="payment-cols">
-
-<div>
-<p><strong><u>1) UBL Bank Limited</u></strong></p>
-<p><u>Account No</u>: 0785335426309</p>
-<p><u>Account Title</u>: Pak Informatics Educational Network Pvt.</p>
-</div>
-
-<div>
-<p><strong><u>2) Jazz Cash Account:</u></strong></p>
-<p><u>Account No.</u>: 03000642780 &nbsp; OR &nbsp; TILL ID: 980244377</p>
-<p><u>Account Title:</u> Informatics Group of Colleges GRW</p>
-</div>
-
+${getCopyHtml('OFFICE COPY')}
 </div>
 
 <script>
@@ -1396,7 +1393,6 @@ window.onafterprint=function(){window.close();}
 }
 </script>
 
-</div>
 </body>
 </html>`;
 
