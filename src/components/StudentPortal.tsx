@@ -13,6 +13,7 @@ import { supabase } from '../services/supabase';
 
 interface StudentPortalProps {
   onLogout: () => void;
+  onTriggerAPK?: () => void;
   studentData: { roll_no: number; full_name: string; class_section: string; username: string; program?: string; part?: number };
 }
 
@@ -290,7 +291,7 @@ const Badge = ({ c, label }: { c: string; label: string }) => (
   <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap", c)}>{label}</span>
 );
 
-export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentData }) => {
+export const StudentPortal: React.FC<StudentPortalProps> = ({ onLogout, studentData, onTriggerAPK }) => {
   const ACCENT = '#3B5BDB';
   const formatCleanTime = (createdAtStr: string) => {
     if (!createdAtStr) return '';
@@ -1399,6 +1400,18 @@ if (insightData) setAiInsight(insightData);
             );
           })}
         </nav>
+        {onTriggerAPK && (
+          <div className="mx-3 mt-2 mb-3 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100/50 rounded-2xl p-3 cursor-pointer transition-all duration-200"
+            onClick={onTriggerAPK}>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-indigo-600 rounded-xl flex items-center justify-center text-xs">📱</div>
+              <div>
+                <p className="text-[11px] font-black text-indigo-950">Android App (APK)</p>
+                <p className="text-[9px] text-indigo-500 font-bold uppercase tracking-widest mt-0.5">Install Official v2.5</p>
+              </div>
+            </div>
+          </div>
+        )}
         {overdueFees.length>0 && (
           <div className="mx-3 mb-3 rounded-xl p-3 cursor-pointer" onClick={() => setTab('fees')}
             style={{ background:'#FEF2F2', border:'1px solid #FECACA' }}>
@@ -1564,6 +1577,29 @@ if (insightData) setAiInsight(insightData);
                   <StatCard icon={BookOpen} label="Overdue Fines" value={PKR(totalFine)}
                     sub={totalFine>0?'Pay now to stop':'No fines'} accent={totalFine>0?'#D97706':'#059669'}/>
                 </div>
+
+                {/* Android App Promo Banner */}
+                {onTriggerAPK && (
+                  <div className="rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden"
+                    style={{ background:'linear-gradient(135deg,#3B5BDB,#2C4BC0)', border:'1px solid rgba(255,255,255,.1)' }}>
+                    <div className="absolute right-0 top-0 opacity-10 text-[100px] leading-none select-none translate-x-10 translate-y-[-10px]">📱</div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-xl">
+                        🤖
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-white">Download Pak Informatics College App</h4>
+                        <p className="text-[11px] text-indigo-100 font-medium mt-0.5">Stay connected with instant notifications, results, and offline fee receipts</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={onTriggerAPK}
+                      className="px-4 py-2.5 bg-white text-indigo-600 rounded-xl text-xs font-black shadow-lg hover:bg-slate-50 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap self-stretch md:self-auto justify-center"
+                    >
+                      Install Now 📥
+                    </button>
+                  </div>
+                )}
 
                 {/* AI Smart Insight Card */}
 {aiInsight && (
