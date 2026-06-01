@@ -1004,6 +1004,177 @@ if (insightData) setAiInsight(insightData);
     setNotifPanelOpen(false);
   };
 
+  const openNotificationDetailInNewTab = (n: any) => {
+    // 1. Synchronously open a blank new tab to bypass any browser popup blocker
+    const newTab = window.open('', '_blank');
+
+    // 2. Mark notification as read (updates db & state in the background)
+    markRead(String(n.id), n.type);
+
+    if (newTab) {
+      const formattedDate = new Date(n.created_at).toLocaleString('en-PK', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      let categoryLabel = 'General Information';
+      let themeColorHex = '#3b82f6'; // blue
+      let bgGradient = 'from-blue-500 to-indigo-600';
+      let iconSvg = `<svg class="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+
+      if (['fee_due', 'fee_overdue', 'fee_fine', 'fee_payment'].includes(n.type)) {
+        categoryLabel = 'Finance & Fees';
+        themeColorHex = n.type === 'fee_overdue' || n.type === 'fee_fine' ? '#ef4444' : '#f59e0b';
+        bgGradient = n.type === 'fee_overdue' || n.type === 'fee_fine' ? 'from-red-500 to-rose-600' : 'from-amber-400 to-amber-600';
+        iconSvg = `<svg class="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+      } else if (n.type === 'exam_schedule') {
+        categoryLabel = 'Academic Examinations';
+        themeColorHex = '#6366f1'; // indigo
+        bgGradient = 'from-indigo-500 to-purple-600';
+        iconSvg = `<svg class="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>`;
+      } else if (n.type === 'grade' || n.type === 'grade_verified') {
+        categoryLabel = 'Results & Grading';
+        themeColorHex = '#10b981'; // emerald
+        bgGradient = 'from-emerald-500 to-teal-600';
+        iconSvg = `<svg class="w-12 h-12 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 0 013.138 3.138 3.42 0 00.806 1.946a3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 0 00-1.946.806 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 0 01-3.138-3.138 3.42 0 00-.806-1.946a3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946a3.42 3.42 0 013.138-3.138z"></path></svg>`;
+      } else if (n.type === 'attendance' || n.type === 'absence_alert') {
+        categoryLabel = 'Attendance Notification';
+        themeColorHex = '#f59e0b'; // amber/orange
+        bgGradient = 'from-amber-500 to-red-500';
+        iconSvg = `<svg class="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+      }
+
+      newTab.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${n.title} - Notification Details</title>
+            <!-- Load Google Fonts -->
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <!-- Tailwind CSS -->
+            <script src="https://cdn.tailwindcss.com"></script>
+            <script>
+              tailwind.config = {
+                theme: {
+                  extend: {
+                    fontFamily: {
+                      sans: ['Inter', 'sans-serif'],
+                      display: ['Space Grotesk', 'sans-serif'],
+                    }
+                  }
+                }
+              }
+            </script>
+            <style>
+              body {
+                background-color: #f8fafc;
+                font-family: 'Inter', sans-serif;
+              }
+              @media print {
+                .no-print {
+                  display: none !important;
+                }
+                .print-card {
+                  box-shadow: none !important;
+                  border: 1px solid #e2e8f0 !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+              }
+            </style>
+          </head>
+          <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased">
+            <div class="flex-grow py-12 px-4 sm:px-6 lg:px-8">
+              <div class="max-w-2xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100 print-card transition-all duration-300">
+                
+                <!-- Color Accent Indicator Banner -->
+                <div class="h-3 bg-gradient-to-r ${bgGradient}"></div>
+                
+                <div class="p-8 sm:p-10">
+                  <!-- Branding Header -->
+                  <div class="flex items-center justify-between border-b border-rose-50/60 pb-6 mb-8">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-indigo-600 flex items-center justify-center font-black text-white text-base shadow-md">
+                        P
+                      </div>
+                      <div>
+                        <h1 class="text-sm font-black text-slate-900 tracking-wide font-display uppercase">Pioneer International</h1>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Collegiate Academic Portal</p>
+                      </div>
+                    </div>
+                    <span class="text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider bg-slate-100 text-slate-600 no-print">
+                      Official Notice
+                    </span>
+                  </div>
+
+                  <!-- Main Content Info Grid -->
+                  <div class="space-y-6">
+                    <div class="flex items-start gap-4">
+                      <div class="p-3 bg-slate-50 rounded-2xl border border-slate-100 mt-1">
+                        ${iconSvg}
+                      </div>
+                      <div class="flex-1">
+                        <span class="text-[10px] font-black tracking-widest uppercase text-slate-400 block mb-1">${categoryLabel}</span>
+                        <h2 class="text-2xl font-black text-slate-900 leading-tight font-display">${n.title}</h2>
+                        <p class="text-xs text-slate-400 mt-1.5 font-medium">Issue Date: ${formattedDate}</p>
+                      </div>
+                    </div>
+
+                    <!-- Details Divider -->
+                    <div class="border-t border-slate-100 my-6"></div>
+
+                    <!-- Detail Description Message Payload -->
+                    <div class="bg-slate-50 border border-slate-100 rounded-3xl p-6 sm:p-8">
+                      <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Notice details</h3>
+                      <p class="text-slate-700 text-sm leading-relaxed whitespace-pre-line">${n.message}</p>
+                    </div>
+
+                    <!-- Reference Information -->
+                    <div class="grid grid-cols-2 gap-4 text-xs mt-6 bg-slate-50/50 rounded-2xl p-4 border border-slate-100/60 font-medium">
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Recipient Roll No</span>
+                        <span class="text-slate-800 font-bold font-mono text-xs">${n.target_user_id || 'Student Profile'}</span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Notification Type</span>
+                        <span class="text-slate-800 font-bold font-mono text-xs uppercase tracking-wider">${n.type || 'Standard'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Print & Interactive Controls -->
+                  <div class="mt-8 flex flex-col sm:flex-row gap-3 pt-6 border-t border-slate-100 no-print">
+                    <button onclick="window.print()" class="flex-1 py-3 px-4 rounded-2xl text-sm font-black text-white hover:opacity-90 transition-all font-semibold flex flex-row items-center justify-center gap-2" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                      Print or Save Notice
+                    </button>
+                    <button onclick="window.close()" class="flex-1 py-3 px-4 rounded-2xl text-sm font-black text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all text-center font-semibold">
+                      Close Notice
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Secondary Footer Indicator -->
+              <div class="text-center mt-6 no-print">
+                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Powered by Pioneer International Academic Management</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      newTab.document.close();
+    }
+  };
+
   const handleViewExamSchedule = async (scheduleId: string | number) => {
     setExamScheduleLoading(true);
     try {
@@ -2687,7 +2858,7 @@ if (insightData) setAiInsight(insightData);
                     return (
                       <motion.div key={n.id}
                         initial={{ opacity:0, x:-6 }} animate={{ opacity:1, x:0 }} transition={{ delay:i*0.03 }}
-                        onClick={() => markRead(String(n.id), n.type)}
+                        onClick={() => openNotificationDetailInNewTab(n)}
                         className="rounded-2xl px-4 py-4 cursor-pointer transition-all hover:scale-[1.005] group"
                         style={{
                           background:!n.is_read?(isFee?`rgba(${n.type==='fee_overdue'||n.type==='fee_fine'?'254,242,242':'255,251,235'},1)`:'#EFF6FF'):'#FFFFFF',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
+import { validateAndSanitize } from './lib/utils';
 import { AdminPortal }       from './components/AdminPortal';
 import { ReceptionistPortal } from './components/ReceptionistPortal';
 import VPPortal              from './components/VPPortal';
@@ -24,29 +25,134 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
   const [error,    setError]    = useState('');
   const [showPwd,  setShowPwd]  = useState(false);
   const [showGuest, setShowGuest] = useState(false);
+  const [lockoutTime, setLockoutTime] = useState<number>(0);
+
+  // Clear attempts list on success & invoke original login callback
+  const handleSuccessfulLogin = (user: any, role: string) => {
+    localStorage.removeItem('pic_login_attempts');
+    onLogin(user, role);
+  };
+
+  useEffect(() => {
+    // Check initial lockout state
+    const checkLockout = () => {
+      try {
+        const stored = localStorage.getItem('pic_login_attempts');
+        if (stored) {
+          const attempts: number[] = JSON.parse(stored);
+          const now = Date.now();
+          const validAttempts = attempts.filter(t => now - t < 15 * 60 * 1000);
+          localStorage.setItem('pic_login_attempts', JSON.stringify(validAttempts));
+
+          if (validAttempts.length >= 5) {
+            const oldest = Math.min(...validAttempts);
+            const remainingMs = oldest + 15 * 60 * 1000 - now;
+            if (remainingMs > 0) {
+              setLockoutTime(Math.ceil(remainingMs / 1000));
+            } else {
+              setLockoutTime(0);
+            }
+          } else {
+            setLockoutTime(0);
+          }
+        }
+      } catch (err) {
+        console.error('Error reading lockout state', err);
+      }
+    };
+    checkLockout();
+  }, []);
+
+  useEffect(() => {
+    if (lockoutTime <= 0) return;
+    const interval = setInterval(() => {
+      setLockoutTime(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutTime]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) { setError('Enter credentials'); return; }
-    setLoading(true); setError('');
+
+    // 1. Check Rate Limiter
+    if (lockoutTime > 0) {
+      const min = Math.floor(lockoutTime / 60);
+      const sec = lockoutTime % 60;
+      setError(`Too many login attempts. Please wait ${min}m ${sec}s.`);
+      return;
+    }
+
+    // 2. Validate & Sanitize Username (max 40 chars, rejects unsafe expressions)
+    const usernameResult = validateAndSanitize(username, 40, "Username");
+    if (!usernameResult.isValid) {
+      setError(usernameResult.errorMessage || "Malformed input detected in username.");
+      return;
+    }
+
+    // 3. Validate & Sanitize Password (max 45 chars, rejects unsafe expressions)
+    const passwordResult = validateAndSanitize(password, 45, "Password");
+    if (!passwordResult.isValid) {
+      setError(passwordResult.errorMessage || "Malformed input detected in password.");
+      return;
+    }
+
+    const cleanUsername = usernameResult.sanitized;
+    const cleanPassword = passwordResult.sanitized;
+
+    if (!cleanUsername || !cleanPassword) {
+      setError('Enter credentials');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    // 4. Record attempted connection & verify rate bounds
+    let finalAttempts: number[] = [];
+    try {
+      const stored = localStorage.getItem('pic_login_attempts');
+      const attempts: number[] = stored ? JSON.parse(stored) : [];
+      const now = Date.now();
+      const valid = attempts.filter(t => now - t < 15 * 60 * 1000);
+      valid.push(now);
+      finalAttempts = valid;
+      localStorage.setItem('pic_login_attempts', JSON.stringify(valid));
+
+      if (valid.length >= 5) {
+        const oldest = Math.min(...valid);
+        const remainingMs = oldest + 15 * 60 * 1000 - now;
+        setLockoutTime(Math.ceil(remainingMs / 1000));
+        setError(`Too many login attempts. Please wait 15 minutes before trying again.`);
+        setLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('LocalStorage limit track failed:', err);
+    }
 
     // --- Guest/Verification Access Interceptor ---
     const guestPass = 'pic_guest_123';
-    if (password.trim() === guestPass) {
-      if (username.trim() === 'admin_guest') {
-        onLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin');
+    if (cleanPassword === guestPass) {
+      if (cleanUsername === 'admin_guest') {
+        handleSuccessfulLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin');
         return;
       }
-      if (username.trim() === 'teacher_guest') {
-        onLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher');
+      if (cleanUsername === 'teacher_guest') {
+        handleSuccessfulLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher');
         return;
       }
-      if (username.trim() === 'student_guest') {
-        onLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student');
+      if (cleanUsername === 'student_guest') {
+        handleSuccessfulLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student');
         return;
       }
-      if (username.trim() === 'examiner_guest') {
-        onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'admin');
+      if (cleanUsername === 'examiner_guest') {
+        handleSuccessfulLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'admin');
         return;
       }
     }
@@ -55,48 +161,48 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
       // ── 1. admin_users — lowercase username ──
       const { data: a1 } = await supabase
         .from('admin_users').select('*')
-        .eq('username', username.trim().toLowerCase())
-        .eq('password', password.trim()).single();
-      if (a1) { onLogin(a1, 'admin'); return; }
+        .eq('username', cleanUsername.toLowerCase())
+        .eq('password', cleanPassword).single();
+      if (a1) { handleSuccessfulLogin(a1, 'admin'); return; }
 
       // ── 2. admin_users — exact case ──
       const { data: a2 } = await supabase
         .from('admin_users').select('*')
-        .eq('username', username.trim())
-        .eq('password', password.trim()).single();
-      if (a2) { onLogin(a2, 'admin'); return; }
+        .eq('username', cleanUsername)
+        .eq('password', cleanPassword).single();
+      if (a2) { handleSuccessfulLogin(a2, 'admin'); return; }
 
       // ── 3. teachers — exact case ──
       const { data: t1 } = await supabase
         .from('teachers').select('*')
-        .eq('username', username.trim())
-        .eq('password', password.trim()).single();
-      if (t1) { onLogin(t1, 'teacher'); return; }
+        .eq('username', cleanUsername)
+        .eq('password', cleanPassword).single();
+      if (t1) { handleSuccessfulLogin(t1, 'teacher'); return; }
 
       // ── 4. teachers — lowercase ──
       const { data: t2 } = await supabase
         .from('teachers').select('*')
-        .eq('username', username.trim().toLowerCase())
-        .eq('password', password.trim()).single();
-      if (t2) { onLogin(t2, 'teacher'); return; }
+        .eq('username', cleanUsername.toLowerCase())
+        .eq('password', cleanPassword).single();
+      if (t2) { handleSuccessfulLogin(t2, 'teacher'); return; }
 
       // ── 5. students — exact case ──
       const { data: s1 } = await supabase
         .from('students').select('*')
-        .eq('username', username.trim())
-        .eq('password', password.trim())
+        .eq('username', cleanUsername)
+        .eq('password', cleanPassword)
         .neq('status', 'Deleted')
         .single();
-      if (s1) { onLogin(s1, 'student'); return; }
+      if (s1) { handleSuccessfulLogin(s1, 'student'); return; }
 
       // ── 6. students — lowercase ──
       const { data: s2 } = await supabase
         .from('students').select('*')
-        .eq('username', username.trim().toLowerCase())
-        .eq('password', password.trim())
+        .eq('username', cleanUsername.toLowerCase())
+        .eq('password', cleanPassword)
         .neq('status', 'Deleted')
         .single();
-      if (s2) { onLogin(s2, 'student'); return; }
+      if (s2) { handleSuccessfulLogin(s2, 'student'); return; }
 
       setError('Invalid username or password');
     } catch (err) {
@@ -221,19 +327,19 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any, role: string) => void }
               </div>
               
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => onLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin')}
+                <button type="button" onClick={() => handleSuccessfulLogin({ name: 'Guest Admin', full_name: 'Guest Administrator', role: 'Principal', id: 'guest_admin' }, 'admin')}
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Admin
                 </button>
-                <button type="button" onClick={() => onLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher')}
+                <button type="button" onClick={() => handleSuccessfulLogin({ name: 'Guest Teacher', full_name: 'Guest Teacher', username: 'guest_teacher', id: 9999, assigned_classes: '10th-A, 10th-B, 9th-A', subject_dept: 'Physics' }, 'teacher')}
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Teacher
                 </button>
-                <button type="button" onClick={() => onLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student')}
+                <button type="button" onClick={() => handleSuccessfulLogin({ name: 'Guest Student', full_name: 'Guest Student', username: 'guest_student', roll_no: 1001, class_section: '10th-A' }, 'student')}
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Student
                 </button>
-                <button type="button" onClick={() => onLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'examiner')}
+                <button type="button" onClick={() => handleSuccessfulLogin({ name: 'Guest Examiner', full_name: 'Guest Examiner', role: 'Examiner', id: 'guest_examiner' }, 'examiner')}
                   className="py-3 rounded-xl text-[9px] font-black uppercase tracking-widest text-white border border-white/10 bg-white/5 hover:bg-white/10 transition-colors">
                   Quick Examiner
                 </button>

@@ -1156,6 +1156,12 @@ font-size:28px;
 flex-shrink:0;
 }
 
+.logo{
+width:62px;
+height:62px;
+object-fit:contain;
+}
+
 .header-text{flex:1;}
 
 .college-name{
@@ -2481,6 +2487,19 @@ const handlePrintReport = (data: any) => {
     } catch (e: any) { showErr(e.message || 'Failed to delete income tag'); }
   };
 
+  const deleteFinancialRecord = async (id: string, type: 'Income' | 'Expense') => {
+    if (!confirm(`Are you sure you want to delete this ${type.toLowerCase()} record?`)) return;
+    try {
+      const table = type === 'Income' ? 'income' : 'expenses';
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+      showToast(`✅ ${type} record deleted`);
+      await refresh();
+    } catch (e: any) {
+      showErr(e.message || `Failed to delete ${type.toLowerCase()} record`);
+    }
+  };
+
   const saveFinancialRecord = async (overrideType?: 'Income' | 'Expense') => {
   const typeToUse = overrideType || finType;
   const amt = Number(finAmount);
@@ -2695,7 +2714,18 @@ const handlePrintReport = (data: any) => {
   const filteredSectionOptions = students
     .filter(s => !filterProgram || s.program === filterProgram)
     .map(s => s.class_section).filter((v, i, a) => a.indexOf(v) === i).sort();
-  const filteredAdmForms = admForms.filter(f => !admFilter || f.status === admFilter);
+  const filteredAdmForms = admForms.filter(f => {
+    if (admFilter && f.status !== admFilter) return false;
+    if (!searchQ) return true;
+    const q = searchQ.trim().toLowerCase();
+    return (
+      (f.student_name?.toLowerCase() || '').includes(q) ||
+      (f.father_name?.toLowerCase() || '').includes(q) ||
+      (f.student_roll_no && String(f.student_roll_no).toLowerCase().includes(q)) ||
+      (f.form_no && String(f.form_no).toLowerCase().includes(q)) ||
+      (f.program?.toLowerCase() || '').includes(q)
+    );
+  });
 
   // ── NAV definitions ────────────────────────────────────────────────────
   const SUPER_NAV_GROUPS = [
@@ -4230,6 +4260,132 @@ const active = tab === id; const badgeN = getBadge(id);
               });
               const totalAmount = filteredList.reduce((s, x) => s + x.amount, 0);
 
+              const printExpenseGroupReport = () => {
+                const groups: Record<string, any[]> = {};
+                filteredList.forEach(e => {
+                  const parentCat = e.category || 'Miscellaneous Expense';
+                  if (!groups[parentCat]) {
+                    groups[parentCat] = [];
+                  }
+                  groups[parentCat].push(e);
+                });
+
+                const groupNames = Object.keys(groups).sort();
+                let tableRowsHtml = '';
+                let grandTotal = 0;
+
+                groupNames.forEach(headName => {
+                  const items = groups[headName];
+                  items.sort((a, b) => new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime());
+                  let subTotal = 0;
+
+                  items.forEach((item, index) => {
+                    const amt = Number(item.amount) || 0;
+                    subTotal += amt;
+                    grandTotal += amt;
+                    
+                    const headCol = index === 0 ? headName : '';
+                    const formattedDate = item.expense_date ? new Date(item.expense_date).toLocaleDateString('en-GB') : '—';
+                    const formattedAmt = amt.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    
+                    tableRowsHtml += `
+                      <tr>
+                        <td style="font-weight: ${index === 0 ? 'bold' : 'normal'}; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${headCol}</td>
+                        <td style="font-family: monospace; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${item.id || '—'}</td>
+                        <td style="border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${item.description || item.name || '—'}</td>
+                        <td style="border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${formattedDate}</td>
+                        <td style="font-family: monospace; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${item.slip_no || '—'}</td>
+                        <td style="text-align: right; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${formattedAmt}</td>
+                      </tr>
+                    `;
+                  });
+
+                  const formattedSub = `PKR ${subTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  tableRowsHtml += `
+                    <tr style="background-color: #fafbfc; font-weight: bold;">
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="text-align: right; border-bottom: 2px solid #0f172a; color: #475569; font-size: 8.5pt; padding: 6px 8px;">Sub Total</td>
+                      <td style="text-align: right; border-bottom: 2px solid #0f172a; font-family: monospace; padding: 6px 8px;">${formattedSub}</td>
+                    </tr>
+                  `;
+                });
+
+                const formattedGrand = `PKR ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                const fromDateStr = reportFrom ? new Date(reportFrom).toLocaleDateString('en-GB') : '—';
+                const toDateStr = reportTo ? new Date(reportTo).toLocaleDateString('en-GB') : '—';
+
+                const html = `
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <meta charset="utf-8"/>
+                    <title>Expenditure Group Report</title>
+                    <style>
+                      * { margin:0; padding:0; box-sizing:border-box; }
+                      body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 9pt; color: #1e293b; padding: 40px; }
+                      .header-title { text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; color: #0f172a; }
+                      .header-period { text-align: center; font-size: 9.5pt; color: #475569; margin-bottom: 25px; font-weight: 500; }
+                      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                      th { border: 1px solid #475569; padding: 10px 8px; font-size: 8.5pt; font-weight: bold; text-align: left; background: #e2e8f0; color: #1e293b; }
+                      td { border: 1px solid #cbd5e1; padding: 8px; font-size: 8.2pt; vertical-align: middle; }
+                      .grand-total-row { font-weight: bold; background: #cbd5e1; }
+                      @media print {
+                        body { padding: 10px; }
+                        th { background: #e2e8f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .grand-total-row { background: #cbd5e1 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="header-title">Expenditure Group Report</div>
+                    <div class="header-period">Period: ${fromDateStr} to ${toDateStr}</div>
+                    
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style="width: 20%;">Expense Head</th>
+                          <th style="width: 10%;">Expense ID</th>
+                          <th style="width: 35%;">Name</th>
+                          <th style="width: 12%;">Date</th>
+                          <th style="width: 11%;">Invoice Number</th>
+                          <th style="text-align: right; width: 12%;">Amount (PKR)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${tableRowsHtml || '<tr><td colspan="6" style="text-align:center;padding:15px;font-style:italic;">No expense data found in selected period</td></tr>'}
+                        <tr class="grand-total-row">
+                          <td style="padding: 10px 8px;"></td>
+                          <td style="padding: 10px 8px;"></td>
+                          <td style="padding: 10px 8px;"></td>
+                          <td style="padding: 10px 8px;"></td>
+                          <td style="text-align: right; border-top: 2px solid #000; font-size: 9pt; padding: 10px 8px;">Total</td>
+                          <td style="text-align: right; border-top: 2px solid #000; font-family: monospace; font-size: 9pt; padding: 10px 8px;">${formattedGrand}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    <script>
+                      window.onload = function() {
+                        window.print();
+                        window.onafterprint = function() {
+                          window.close();
+                        }
+                      }
+                    </script>
+                  </body>
+                  </html>
+                `;
+
+                const win = window.open('', '_blank');
+                if (win) {
+                  win.document.write(html);
+                  win.document.close();
+                }
+              };
+
               return (
                 <motion.div key="exp-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -4330,7 +4486,14 @@ const active = tab === id; const badgeN = getBadge(id);
                                       <span className="mx-2 text-slate-300">to</span>
                                       <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="text-[11px] font-black outline-none w-24" />
                                    </div>
-                                   <button 
+                                   
+                                    <button 
+                                      onClick={printExpenseGroupReport}
+                                      className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95 transition-all"
+                                    >
+                                       <Printer size={14} /> Group Report
+                                    </button>
+                                    <button 
                                      onClick={() => {
                                        const rows = filteredList.map(x => [fmtDate(x.expense_date), x.name || '—', x.category, x.description, PKR(x.amount)]);
                                        handlePrintList(`Expense Report (${reportFrom} to ${reportTo})`, ['Date','Payer/Recipient','Category','Description','Amount'], rows, `Total Expenditure: ${PKR(totalAmount)}`);
@@ -4344,1123 +4507,63 @@ const active = tab === id; const badgeN = getBadge(id);
                           </div>
 
                           <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-50">
-                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
-                                <p className="text-lg font-black text-slate-900">{filteredList.length}</p>
-                             </div>
-                             <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 col-span-1 sm:col-span-2">
-                                <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-1">Total Expenses</p>
-                                <p className="text-lg font-black text-orange-700">{PKR(totalAmount)}</p>
-                             </div>
-                          </div>
-
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                              <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <tr>
-                                  <th className="px-6 py-3 text-left">Date</th>
-                                  <th className="px-6 py-3 text-left">Recipient</th>
-                                  <th className="px-6 py-3 text-left">Category</th>
-                                  <th className="px-6 py-3 text-right">Amount</th>
-                                  <th className="px-6 py-3 text-center">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {filteredList.length === 0 ? (
-                                  <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold italic">No expenses found for the selected period</td></tr>
-                                ) : filteredList.map(x => (
-                                  <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
-                                    <td className="px-6 py-4 text-slate-500 font-medium">{fmtDate(x.expense_date)}</td>
-                                    <td className="px-6 py-4">
-                                      <p className="font-bold text-slate-800">{x.name || '—'}</p>
-                                      <p className="text-[10px] text-slate-400 font-medium line-clamp-1">{x.description}</p>
-                                      {x.slip_no && <p className="text-[9px] text-orange-600 font-bold mt-1">Ref: {x.slip_no}</p>}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px] border border-slate-200">{x.category}</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(x.amount)}</td>
-                                    <td className="px-6 py-4 text-center">
-                                      <button
-                                        onClick={() => setEditingExpense({ ...x })}
-                                        className="p-1.5 rounded-xl bg-slate-50 text-slate-500 hover:bg-purple-50 hover:text-purple-600 transition-all border border-slate-100 inline-flex items-center justify-center cursor-pointer"
-                                        title="Edit Expense"
-                                      >
-                                        <PenLine size={13} />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                                {filteredList.length > 0 && (
-                                  <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
-                                    <td colSpan={4} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Expenditure</td>
-                                    <td className="px-6 py-3 text-right text-rose-600">{PKR(totalAmount)}</td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                       </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })()}
-
-            {isAccountant && tab === 'admissions' && (
-              <motion.div key="acc-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex-1 w-full relative">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                    <input 
-                      type="text" 
-                      placeholder="Search candidate name or roll number..." 
-                      value={searchQ} 
-                      onChange={e => setSearchQ(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all"
-                    />
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {[{ v: '', l: 'All' }, { v: 'Pending', l: 'Pending' }, { v: 'Approved', l: 'Approved' }, { v: 'Rejected', l: 'Rejected' }].map(({ v, l }) => (
-                      <button key={v} onClick={() => setAdmFilter(v)} className={cn('px-4 py-1.5 rounded-xl text-xs font-black border transition-all', admFilter === v ? 'text-white border-transparent' : 'bg-white text-slate-500 border-slate-200')} style={admFilter === v ? { background: GRADIENT } : {}}>{l} ({admForms.filter(f => !v || f.status === v).length})</button>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setShowUpload(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black bg-white text-slate-700 border border-slate-200">
-                      <Upload size={15} className="text-blue-600" /> Bulk Upload
-                    </motion.button>
-                    <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('new-admission')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: GRADIENT }}>
-                      <UserPlus size={15} /> New Admission
-                    </motion.button>
-                  </div>
-                </div>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-slate-100 mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admission Forms</p>
-                      <button 
-                        onClick={() => {
-                          const rows = filteredAdmForms.map(f => [f.student_name, f.father_name, f.program, f.matric_percentage+'%', f.status, f.cell_no || '—', f.created_at?.slice(0,10) || '—']);
-                          handlePrintList('Admissions Report', ['Candidate','Parent','Program','Matric %','Status','Contact','Date'], rows);
-                        }}
-                        className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
-                      >
-                        <Printer size={12} /> Print Report
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs min-w-[640px]">
-                      <thead style={{ background: '#f8f9fd' }}>
-                        <tr>{['Form', 'Student', 'Father', 'Program', 'Section', '%', 'Status', 'Date', ''].map(h => <th key={h} className="px-4 py-3 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {filteredAdmForms.map((f: any, i: number) => (
-                          <motion.tr key={f.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }} className="border-b border-slate-50 hover:bg-slate-50/50">
-                            <td className="px-4 py-3 font-mono font-bold" style={{ color: ACCENT }}>{f.form_no}</td>
-                            <td className="px-4 py-3 font-black text-slate-900">{f.student_name}</td>
-                            <td className="px-4 py-3 text-slate-500">{f.father_name}</td>
-                            <td className="px-4 py-3 text-slate-600"><p>{f.program}</p><p className="text-[10px] text-slate-400">Part {f.part}</p></td>
-                            <td className="px-4 py-3">{f.suggested_section ? <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200">{f.suggested_section}</span> : '—'}</td>
-                            <td className="px-4 py-3 font-bold text-slate-700">{f.matric_percentage ? `${f.matric_percentage}%` : '—'}</td>
-                            <td className="px-4 py-3"><span className={cn('px-2.5 py-1 rounded-full text-[10px] font-black', f.status === 'Approved' ? 'bg-emerald-50 text-emerald-700' : f.status === 'Rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700')}>{f.status}</span></td>
-                            <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{fmtDate(f.created_at)}</td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-1.5">
-                                <button onClick={() => {
-                                    setPreview(f);
-                                    setManualRoll(f.student_roll_no || '');
-                                    const saved = f.custom_installments || f.admission_data?.custom_installments;
-                                    if (saved && Array.isArray(saved) && saved.length > 0) {
-                                      setInstData(saved);
-                                    } else {
-                                      const count = f.num_installments || f.installments || 1;
-                                      const pkgAmt = Number(f.fee_package) || 0;
-                                      const perInst = Math.floor(pkgAmt / count);
-                                      setInstData(Array.from({ length: count }, (_, i) => ({
-                                          date: new Date().toISOString().split('T')[0],
-                                          amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                      })));
-                                    }
-                                }} className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-slate-50 text-slate-600 border border-slate-200 flex items-center gap-1"><Eye size={10} />View</button>
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => {
-                                  const savedInst = f.custom_installments || f.admission_data?.custom_installments || [];
-                                  setInstData(savedInst);
-                                  setAdmForm({
-                                    applied_for:        f.applied_for        || 'Intermediate',
-                                    program:            f.program            || 'ICS Physics',
-                                    part:               f.part               || 1,
-                                    session:            f.session            || '2026-28',
-                                    student_name:       f.student_name       || '',
-                                    b_form_nic:         f.b_form_nic         || '',
-                                    father_name:        f.father_name        || '',
-                                    father_nic:         f.father_nic         || '',
-                                    father_occupation:  f.father_occupation  || '',
-                                    student_dob:        f.student_dob        || '',
-                                    contact_home:       f.contact_home       || '',
-                                    cell_no:            f.cell_no            || '',
-                                    whatsapp_no:        f.whatsapp_no        || '',
-                                    email:              f.email              || '',
-                                    religion:           f.religion           || 'Islam',
-                                    gender:             f.gender             || 'Male',
-                                    current_address:    f.current_address    || '',
-                                    matric_year:        f.matric_year        || '',
-                                    matric_roll_no:     f.matric_roll_no     || '',
-                                    matric_marks:       f.matric_marks       || '',
-                                    matric_subjects:    f.matric_subjects    || '',
-                                    matric_board:       f.matric_board       || 'BISE Gujranwala',
-                                    matric_division:    f.matric_division    || '',
-                                    matric_percentage:  f.matric_percentage  || '',
-                                    inter_year:         f.inter_year         || '',
-                                    inter_roll_no:      f.inter_roll_no      || '',
-                                    inter_marks:        f.inter_marks       || '',
-                                    inter_subjects:     f.inter_subjects     || '',
-                                    inter_board:        f.inter_board        || 'BISE Gujranwala',
-                                    inter_division:     f.inter_division     || '',
-                                    graduation_year:    f.graduation_year    || '',
-                                    graduation_roll_no: f.graduation_roll_no || '',
-                                    graduation_marks:   f.graduation_marks   || '',
-                                    graduation_board:   f.graduation_board   || '',
-                                    graduation_division:f.graduation_division|| '',
-                                    fee_package:        f.fee_package        || 8000,
-                                    student_type:       f.student_type       || 'Regular',
-                                    is_fresher:         f.is_fresher         ?? true,
-                                    num_installments:    f.num_installments   || f.installments || 1,
-                                    notes:              f.notes              || '',
-                                    include_summer_camp: !!f.include_summer_camp,
-                                    summer_camp_amount:   Number(f.summer_camp_amount) || 7000,
-                                    include_uniform:     !!f.include_uniform,
-                                    uniform_amount:       Number(f.uniform_amount) || 1000,
-                                    include_welcome_party: !!f.include_welcome_party,
-                                    welcome_party_amount: Number(f.welcome_party_amount) || 0,
-                                    include_exam_fee:      !!f.include_exam_fee,
-                                    exam_fee_amount:      Number(f.exam_fee_amount) || 0,
-                                    include_registration_fee: !!f.include_registration_fee,
-                                    registration_fee_amount: Number(f.registration_fee_amount) || 0,
-                                    include_student_card:     !!f.include_student_card,
-                                    student_card_amount:  Number(f.student_card_amount) || 500,
-                                    include_annual_charges:   !!f.include_annual_charges,
-                                    annual_charges_amount: Number(f.annual_charges_amount) || 0,
-                                    _editingId:         f.id,
-                                  });
-                                  setInstData(f.custom_installments || []);
-                                  setTab('new-admission');
-                                }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-                                  <Save size={10} /> Edit
-                                </motion.button>
-                                {isAccountant && f.status === 'Approved' && f.student_roll_no && (
-                                  <button 
-                                    onClick={() => syncFormToLedger(f.student_roll_no, f)}
-                                    className="px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"
-                                  >
-                                    <RefreshCw size={10} /> Sync Ledger
-                                  </button>
-                                )}
-                                {f.status === 'Pending' && <>
-                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => confirmToDatabase(f, f.student_roll_no)} disabled={saving} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                    {saving ? <Loader2 size={10} className="animate-spin" /> : <Database size={10} />} Confirm
-                                  </motion.button>
-                                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => rejectForm(f)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200"><X size={10} /> Reject</motion.button>
-                                </>}
+                              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
+                                 <p className="text-lg font-black text-slate-900">{filteredList.length}</p>
                               </div>
-                            </td>
-                          </motion.tr>
-                        ))}
-                        {filteredAdmForms.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">No forms found</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ════ ACCOUNTANT NEW ADMISSION — with Notes field ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'new-admission' && (() => {
-              const FA = '#c2410c';
-              const FG = 'linear-gradient(135deg,#ea580c,#c2410c)';
-              return (
-                <motion.div key="new-adm" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                  <div className="max-w-4xl mx-auto bg-white rounded-3xl overflow-hidden border border-slate-100" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
-                    <div className="border-b-4 px-6 md:px-8 py-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4" style={{ borderColor: FA }}>
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full border-4 flex items-center justify-center bg-orange-50 flex-shrink-0" style={{ borderColor: FA }}><GraduationCap size={28} style={{ color: FA }} /></div>
-                        <div><p className="font-black text-slate-900 text-lg leading-tight">PAK INFORMATICS</p><p className="font-bold text-slate-600 text-sm">Group of Colleges</p><span className="text-white text-[9px] font-black px-2 py-0.5 rounded" style={{ background: FA }}>Gujranwala</span><p className="text-[10px] text-slate-400 mt-1">Saddar Bypass Road · 055-3200545</p></div>
-                      </div>
-                      <div className="text-center md:text-right">
-                        <p className="text-2xl font-black uppercase tracking-wide" style={{ color: FA }}>Admission Form</p>
-                        <p className="text-sm text-slate-500 mt-1">Session: <strong>2026-28</strong></p>
-                        <div className="mt-2 w-20 h-24 border-2 border-dashed border-slate-300 rounded flex flex-col items-center justify-center text-[9px] text-slate-400 font-bold ml-auto overflow-hidden relative group">
-                          {admForm._localPhotoPreview ? (
-                            <img src={admForm._localPhotoPreview} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="text-center p-2">
-                               <Camera size={16} className="mx-auto mb-1 text-slate-300" />
-                               PHOTO
-                            </div>
-                          )}
-                          <input type="file" accept="image/*" onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setF('_localPhotoPreview', URL.createObjectURL(file));
-                              const url = await uploadStudentPhoto(file);
-                              if (url) setF('student_photo_url', url);
-                            }
-                          }} className="absolute inset-0 opacity-0 cursor-pointer" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="px-6 md:px-8 py-6 space-y-6">
-                      <div className="grid grid-cols-3 gap-4 pb-5 border-b border-slate-100">
-                        <F label="Form No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>Auto-assigned</div></F>
-                        <F label="Roll No."><div className="border-b-2 border-slate-200 px-1 py-1.5 text-sm font-black" style={{ color: FA }}>Auto (2628XXX)</div></F>
-                        <F label="Session"><TS value={admForm.session} onChange={e => setF('session', e.target.value)}><option>2026-28</option><option>2025-27</option><option>2024-26</option></TS></F>
-                      </div>
-                      <div className="pb-5 border-b border-slate-100 space-y-4">
-                        <F label="Applied For" req>
-                          <div className="flex flex-wrap gap-5 mt-2">
-                            {['Intermediate', 'ADP', 'BS', 'BS 5th Semester', 'Category B', 'Others'].map(o => (
-                              <label key={o} className="flex items-center gap-2 cursor-pointer" onClick={() => {
-                                setF('applied_for', o);
-                                if (isUniversityProgram(o)) {
-                                  const progs = getUniversityPrograms(o);
-                                  setF('program', progs[0] || '');
-                                } else {
-                                  setF('program', 'ICS Physics');
-                                }
-                              }}>
-                                <div className="w-4 h-4 rounded border-2 flex items-center justify-center" style={admForm.applied_for === o ? { background: FA, borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.applied_for === o && <div className="w-2 h-2 bg-white rounded-sm" />}</div>
-                                <span className="text-sm text-slate-700">{o}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </F>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <F label="Program" req>
-                            <TS value={admForm.program} onChange={e => setF('program', e.target.value)}>
-                              {(isUniversityProgram(admForm.applied_for) ? getUniversityPrograms(admForm.applied_for) : PROGRAMS).map(p => <option key={p}>{p}</option>)}
-                            </TS>
-                          </F>
-                          <F label="Part / Semester" req>
-                            <TS value={admForm.part} onChange={e => setF('part', Number(e.target.value))}>
-                              {isUniversityProgram(admForm.applied_for) ? (
-                                [1,2,3,4,5,6,7,8].map(s => <option key={s} value={s}>Semester {s}</option>)
-                              ) : (
-                                <>
-                                  <option value={1}>Part 1 (XI)</option>
-                                  <option value={2}>Part 2 (XII)</option>
-                                </>
-                              )}
-                            </TS>
-                          </F>
-                          <F label="Student Type"><TS value={admForm.student_type} onChange={e => {
-                                const val = e.target.value;
-                                setF('student_type', val);
-                                if (val === 'Summer Camp') {
-                                  setF('include_summer_camp', true);
-                                  setF('fee_package', 0);
-                                  setF('num_installments', 1);
-                                } else {
-                                  setF('include_summer_camp', false);
-                                  setF('fee_package', 8000);
-                                }
-                          }}><option>Regular</option><option>Summer Camp</option><option>Transfer</option><option>Franchisee</option></TS></F>
-                        </div>
-                      </div>
-                      <div className="pb-5 border-b border-slate-100 space-y-4">
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Personal Details</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <F label="Student's Roll Number (Manual)" req><TI type="number" placeholder="Enter Roll Number" value={admForm.student_roll_no} onChange={e => setF('student_roll_no', e.target.value)} /></F>
-                          <F label="Student's Name" req><TI placeholder="Full name as per B-Form" value={admForm.student_name} onChange={e => setF('student_name', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <F label="B Form / NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.b_form_nic} onChange={e => setF('b_form_nic', e.target.value)} /></F>
-                          <F label="Father's Name" req><TI placeholder="Father's full name" value={admForm.father_name} onChange={e => setF('father_name', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <F label="Father's NIC"><TI placeholder="_ _ _ _ _ - _ _ _ _ _ _ _ - _" value={admForm.father_nic} onChange={e => setF('father_nic', e.target.value)} /></F>
-                          <F label="Father's Occupation"><TI placeholder="Business / Service / etc." value={admForm.father_occupation} onChange={e => setF('father_occupation', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <F label="Student's D.O.B"><TI type="date" value={admForm.student_dob} onChange={e => setF('student_dob', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <F label="Cell No."><TI placeholder="0300-XXXXXXX" value={admForm.cell_no} onChange={e => setF('cell_no', e.target.value)} /></F>
-                          <F label="WhatsApp"><TI placeholder="0300-XXXXXXX" value={admForm.whatsapp_no} onChange={e => setF('whatsapp_no', e.target.value)} /></F>
-                          <F label="Email"><TI type="email" placeholder="student@email.com" value={admForm.email} onChange={e => setF('email', e.target.value)} /></F>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <F label="Religion"><TS value={admForm.religion} onChange={e => setF('religion', e.target.value)}><option>Islam</option><option>Christianity</option><option>Hinduism</option><option>Other</option></TS></F>
-                          <F label="Gender" req>
-                            <div className="flex gap-6 mt-2">
-                              {['Male', 'Female'].map(g => (
-                                <label key={g} className="flex items-center gap-2 cursor-pointer" onClick={() => setF('gender', g)}>
-                                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center" style={admForm.gender === g ? { borderColor: FA } : { borderColor: '#94a3b8' }}>{admForm.gender === g && <div className="w-2 h-2 rounded-full" style={{ background: FA }} />}</div>
-                                  <span className="text-sm text-slate-700">{g}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </F>
-                        </div>
-                        <F label="Current Address"><textarea value={admForm.current_address} onChange={e => setF('current_address', e.target.value)} rows={2} placeholder="Street, Mohalla, City..." className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors resize-none" /></F>
-                      </div>
-                      <div className="space-y-3">
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: FA }}>Academic Record</div>
-                        <div className="overflow-x-auto rounded-xl border border-slate-200">
-                          <table className="w-full text-xs min-w-[680px]">
-                            <thead><tr style={{ background: FA }}>{['Particulars', 'Year', 'Roll No', 'Marks', 'Subjects', 'Board / University', 'Division', 'Remarks (%)'].map(h => <th key={h} className="px-3 py-2.5 text-left text-white font-black text-[10px] uppercase tracking-widest whitespace-nowrap">{h}</th>)}</tr></thead>
-                            <tbody>
-                              <tr className="border-b border-slate-100 bg-slate-50/40">
-                                <td className="px-3 py-3 font-black text-slate-700">Matric</td>
-                                <td className="px-2 py-2"><TI placeholder="2024" value={admForm.matric_year} onChange={e => setF('matric_year', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.matric_roll_no} onChange={e => setF('matric_roll_no', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.matric_marks} onChange={e => {
-                                  const obtained = Number(e.target.value);
-                                  const total = 1100; // usually
-                                  const pctVal = obtained > 0 ? (obtained / total) * 100 : 0;
-                                  setAdmForm((p: any) => ({ ...p, matric_marks: obtained, matric_percentage: pctVal.toFixed(1) }));
-                                }} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Science" value={admForm.matric_subjects} onChange={e => setF('matric_subjects', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TS value={admForm.matric_board} onChange={e => setF('matric_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.matric_division} onChange={e => setF('matric_division', e.target.value)} /></td>
-                                <td className="px-2 py-2">
-                                  <TI type="number" placeholder="%" value={admForm.matric_percentage} onChange={e => setF('matric_percentage', e.target.value)} />
-                                  {pct > 0 && <div className="mt-1 px-2 py-0.5 rounded text-[9px] font-black inline-block bg-orange-50 border border-orange-200" style={{ color: FA }}>→ {sec}</div>}
-                                </td>
-                              </tr>
-                              <tr className="border-b border-slate-100">
-                                <td className="px-3 py-3 font-black text-slate-700">Intermediate</td>
-                                <td className="px-2 py-2"><TI placeholder="2026" value={admForm.inter_year} onChange={e => setF('inter_year', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.inter_roll_no} onChange={e => setF('inter_roll_no', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.inter_marks} onChange={e => setF('inter_marks', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.inter_subjects} onChange={e => setF('inter_subjects', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TS value={admForm.inter_board} onChange={e => setF('inter_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.inter_division} onChange={e => setF('inter_division', e.target.value)} /></td>
-                                <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
-                              </tr>
-                              <tr>
-                                <td className="px-3 py-3 font-black text-slate-700">Graduation</td>
-                                <td className="px-2 py-2"><TI placeholder="Year" value={admForm.graduation_year} onChange={e => setF('graduation_year', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Roll No" value={admForm.graduation_roll_no} onChange={e => setF('graduation_roll_no', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI type="number" placeholder="Marks" value={admForm.graduation_marks} onChange={e => setF('graduation_marks', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TI placeholder="Subjects" value={admForm.graduation_subjects} onChange={e => setF('graduation_subjects', e.target.value)} /></td>
-                                <td className="px-2 py-2"><TS value={admForm.graduation_board} onChange={e => setF('graduation_board', e.target.value)}>{BOARDS.map(b => <option key={b}>{b}</option>)}</TS></td>
-                                <td className="px-2 py-2"><TI placeholder="A/B/C" value={admForm.graduation_division} onChange={e => setF('graduation_division', e.target.value)} /></td>
-                                <td className="px-2 py-2 text-slate-300 text-[10px]">—</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                        </div>
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest mt-6" style={{ background: ACCENT }}>Fee Package</div>
-                      <div className="pb-5 border-b border-slate-100 space-y-4">
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: ACCENT }}>Fee Package Settings</div>
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <F label="Total Package Amount (Accountant Defined)" req>
-                              <TI type="number" value={admForm.fee_package} onChange={(e: any) => {
-                                const pkgAmt = Number(e.target.value);
-                                setF('fee_package', pkgAmt);
-                                const count = Number(admForm.num_installments) || 1;
-                                const perInst = Math.floor(pkgAmt / count);
-                                setInstData(Array.from({ length: count }, (_, j) => ({
-                                  date: new Date().toISOString().split('T')[0],
-                                  amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                })));
-                              }} placeholder="e.g. 50000" />
-                            </F>
-                            <F label="No. of Installments" req>
-                              <TS value={admForm.num_installments} onChange={(e: any) => {
-                                const count = Number(e.target.value);
-                                setF('num_installments', count);
-                                const pkgAmt = Number(admForm.fee_package) || 0;
-                                const perInst = Math.floor(pkgAmt / count);
-                                setInstData(Array.from({ length: count }, (_, j) => ({
-                                  date: new Date().toISOString().split('T')[0],
-                                  amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                })));
-                              }}>
-                                {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n}</option>)}
-                              </TS>
-                            </F>
-                          </div>
-                          {admForm.num_installments > 0 && (
-                            <div className="mt-4 p-5 rounded-3xl bg-slate-50 border border-slate-100 space-y-4">
-                              <div className="flex items-center gap-2">
-                                <Calendar size={16} className="text-sky-500" />
-                                <div className="flex-1">
-                                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-500">Scheduled Installments</h4>
-                                    <p className="text-[9px] text-slate-400 font-bold italic">Adjust dates and amounts manually</p>
-                                </div>
-                                <button onClick={() => {
-                                   const count = Number(admForm.num_installments) || 1;
-                                   const pkgAmt = Number(admForm.fee_package) || 0;
-                                   const perInst = Math.floor(pkgAmt / count);
-                                   setInstData(Array.from({ length: count }, (_, j) => ({
-                                     date: new Date().toISOString().split('T')[0],
-                                     amount: j === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
-                                   })));
-                                }} className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-black text-blue-600 shadow-sm hover:bg-blue-50">Reset to Equal</button>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {Array.from({ length: Number(admForm.num_installments) }).map((_, i) => {
-                                  const d = instData[i] || { date: new Date().toISOString().split('T')[0], amount: 0 };
-                                  return (
-                                    <div key={i} className="space-y-2 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm focus-within:border-sky-200 transition-colors">
-                                      <label className="text-[10px] font-black text-slate-400 uppercase">Inst #{i+1}</label>
-                                      <div className="space-y-1.5">
-                                        <input 
-                                          type="date" 
-                                          value={d.date} 
-                                          onChange={(e) => {
-                                            const next = [...instData];
-                                            while(next.length <= i) next.push({date: new Date().toISOString().split('T')[0], amount: 0});
-                                            next[i] = { ...next[i], date: e.target.value };
-                                            setInstData(next);
-                                          }}
-                                          className="w-full text-[11px] p-2 border border-slate-100 rounded-xl outline-none focus:border-sky-300"
-                                        />
-                                        <div className="relative">
-                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">Rs</span>
-                                          <input 
-                                            type="number"
-                                            value={d.amount}
-                                            onChange={(e) => {
-                                              const next = [...instData];
-                                              while(next.length <= i) next.push({date: new Date().toISOString().split('T')[0], amount: 0});
-                                              next[i] = { ...next[i], amount: Number(e.target.value) };
-                                              setInstData(next);
-                                            }}
-                                            className="w-full text-[11px] font-black pl-7 p-2 border border-slate-100 rounded-xl outline-none focus:border-sky-300 text-sky-600"
-                                            placeholder="Amount"
-                                          />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-5 rounded-3xl bg-blue-50/50 border border-blue-100">
-                            {[
-                              { label: 'Summer Camp Fee', id: 'include_summer_camp', amt: 'summer_camp_amount', def: 7000 },
-                              { label: 'Uniform Fee', id: 'include_uniform', amt: 'uniform_amount', def: 1000 },
-                              { label: 'Welcome Party', id: 'include_welcome_party', amt: 'welcome_party_amount', def: 0 },
-                              { label: 'Exam Fee', id: 'include_exam_fee', amt: 'exam_fee_amount', def: 0 },
-                              { label: 'Registration Fee', id: 'include_registration_fee', amt: 'registration_fee_amount', def: 0 },
-                              { label: 'Student Card', id: 'include_student_card', amt: 'student_card_amount', def: 500 },
-                              { label: 'Annual Charges', id: 'include_annual_charges', amt: 'annual_charges_amount', def: 0 },
-                            ].map(opt => (
-                              <div key={opt.id} className="space-y-2">
-                                <label className="flex items-center gap-3 cursor-pointer group">
-                                  <div className="relative">
-                                    <input 
-                                      type="checkbox" 
-                                      checked={admForm[opt.id]} 
-                                      onChange={e => {
-                                        setF(opt.id, e.target.checked);
-                                        if (e.target.checked && !admForm[opt.amt]) setF(opt.amt, opt.def);
-                                      }} 
-                                      className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500 transition-all cursor-pointer" 
-                                    />
-                                  </div>
-                                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider group-hover:text-blue-600 transition-colors">{opt.label}</span>
-                                </label>
-                                <AnimatePresence>
-                                  {admForm[opt.id] && (
-                                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="relative bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
-                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
-                                      <div className="relative flex items-center">
-                                        <span className="pl-3 text-[10px] font-black text-slate-400">Rs</span>
-                                        <input 
-                                          type="number" 
-                                          value={admForm[opt.amt] || 0} 
-                                          onChange={e => setF(opt.amt, e.target.value)}
-                                          className="w-full bg-transparent p-2 text-xs font-black text-blue-700 outline-none placeholder:text-slate-300"
-                                          placeholder="Amount"
-                                        />
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                            <p className="text-xs text-slate-500 font-bold flex items-center gap-2 italic">
-                              <AlertTriangle size={14} className="text-slate-400"/> Note: Selected optional fees will be added to the student's final package.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* ══ NOTES FIELD — at the end of admission form ══ */}
-                      <div className="pb-5 border-b border-slate-100 space-y-3">
-                        <div className="inline-block text-white text-[10px] font-black px-3 py-1 rounded uppercase tracking-widest" style={{ background: '#64748b' }}>Notes</div>
-                        <F label="Additional Notes (optional)">
-                          <textarea
-                            value={admForm.notes || ''}
-                            onChange={e => setF('notes', e.target.value)}
-                            rows={3}
-                            placeholder="Any additional information, special remarks, or notes about this student or admission…"
-                            className="w-full border-2 border-slate-200 focus:border-blue-500 rounded-xl bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition-colors resize-none placeholder:text-slate-300"
-                          />
-                        </F>
-                      </div>
-
-                      <div className="flex gap-3 pt-2">
-                        <button onClick={() => setAdmForm({ ...EMPTY_FORM })} className="px-6 py-4 rounded-2xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Clear Form</button>
-                        <motion.button whileTap={{ scale: 0.97 }} disabled={saving} onClick={saveAdmission}
-                          className="flex-1 py-4 rounded-2xl text-sm font-black text-white flex items-center justify-center gap-2 disabled:opacity-50"
-                          style={{ background: FG, boxShadow: '0 6px 20px rgba(194,65,12,0.35)' }}>
-                          {saving ? <><Loader2 size={15} className="animate-spin" /> {admForm._editingId ? 'Updating…' : 'Saving…'}</> : <><Save size={15} /> {admForm._editingId ? 'Update Admission Form' : 'Save Admission Form'}</>}
-                        </motion.button>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })()}
-
-            {/* ════ ACCOUNTANT DISCOUNTS ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'discounts' && (
-              <motion.div key="disc" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {[{ l: 'Total', v: discounts.length, c: 'text-slate-900' }, { l: 'Pending', v: pendingDisc, c: 'text-amber-600' }, { l: 'Approved', v: discounts.filter(d => d.status === 'Approved').length, c: 'text-emerald-600' }].map(({ l, v, c }) => (
-                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className={cn('text-2xl font-black', c)}>{v}</p></div>
-                  ))}
-                </div>
-                <div className="space-y-3">
-                  {discounts.length === 0 ? (
-                    <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center"><Tag size={28} className="mx-auto mb-3 text-slate-300" /><p className="text-slate-400 font-bold">No discount requests</p></div>
-                  ) : discounts.map((d: any, i: number) => {
-                    const st = students.find(s => s.roll_no === d.student_roll);
-                    const isPending = d.status === 'Pending';
-                    return (
-                      <motion.div key={d.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                        className={cn('bg-white rounded-2xl overflow-hidden shadow-sm', isPending ? 'border-l-4 border border-amber-200' : 'border border-slate-100')}
-                        style={isPending ? { borderLeftColor: '#D97706' } : {}}>
-                        <div className="px-4 py-4">
-                          <div className="flex items-start gap-3">
-                            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0', d.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : d.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}><Tag size={16} /></div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2"><p className="font-black text-slate-900">{st?.full_name || `Roll #${d.student_roll}`}</p><span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black', d.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : d.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>{d.status || 'Pending'}</span></div>
-                              <p className="text-xs text-slate-500 mt-0.5">{d.reason}</p>
-                              <div className="flex items-center gap-3 mt-1.5"><span className="text-[11px] text-slate-400">Amount: <strong className="font-black" style={{ color: ACCENT }}>{PKR(d.discount_amount)}</strong></span>{d.reference_name && <span className="text-[11px] text-slate-400">Ref: {d.reference_name}</span>}</div>
-                            </div>
-                            {isPending && (
-                              <div className="flex gap-1.5 flex-shrink-0">
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => approveDiscount(d)} disabled={discSaving === d.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
-                                  {discSaving === d.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Approve
-                                </motion.button>
-                                <motion.button whileTap={{ scale: 0.9 }} onClick={() => rejectDiscount(d)} disabled={discSaving === d.id} className="flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50"><X size={10} /> Reject</motion.button>
-                              </div>
-                            )}
-                            {!isPending && d.reviewed_by && <p className="text-[10px] text-slate-400 flex-shrink-0">by {d.reviewed_by}</p>}
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ════ ACCOUNTANT STUDENTS — Profile view only, no fee collection ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'students' && (
-              <motion.div key="acc-stu" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-                  <GraduationCap size={16} className="text-blue-600 flex-shrink-0" />
-                  <p className="text-sm font-bold text-blue-900">Student Profiles — Click any row to view full profile including results, course progress and fee summary. To collect fees, use the <button onClick={() => setTab('fee-ledger')} className="underline font-black text-blue-700">Fee Ledger</button> tab.</p>
-                </div>
-
-                {/* Summary */}
-                <div className="grid grid-cols-3 gap-3">
-                  {[{ l: 'Showing', v: filteredStudents.length, c: ACCENT }, { l: 'Total Enrolled', v: students.length, c: '#059669' }, { l: 'Fee Groups', v: feeGroups.length, c: '#D97706' }].map(({ l, v, c }) => (
-                    <div key={l} className="bg-white rounded-2xl border border-slate-100 p-4 text-center shadow-sm"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{l}</p><p className="text-2xl font-black" style={{ color: c }}>{v}</p></div>
-                  ))}
-                </div>
-
-                {/* Filter */}
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                    <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Filter Students</p>
-                    {(filterProgram || filterSection || filterGender || filterStudentType || searchQ) && <button onClick={() => { setFilterProgram(''); setFilterSection(''); setFilterGender(''); setFilterStudentType(''); setSearchQ(''); }} className="flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl transition-all" style={{ color: ACCENT, background: `${ACCENT}12` }}><X size={11} /> Clear All</button>}
-                  </div>
-                  <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Program</p>
-                        <div className="flex flex-wrap gap-2">
-                          {PROGRAMS.map(prog => {
-                            const count = students.filter(s => s.program === prog).length;
-                            const active = filterProgram === prog;
-                            return (
-                              <motion.button key={prog} whileTap={{ scale: 0.96 }} onClick={() => { setFilterProgram(active ? '' : prog); setFilterSection(''); }} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT, borderColor: 'transparent' } : {}}>
-                                {prog} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span>
-                              </motion.button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex gap-4">
-                           <div className="flex-1">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Gender</p>
-                              <div className="flex gap-2">
-                                {['Male', 'Female'].map(g => {
-                                  const active = filterGender === g;
-                                  const count = students.filter(s => s.gender === g && (!filterProgram || s.program === filterProgram)).length;
-                                  return (
-                                    <button key={g} onClick={() => setFilterGender(active ? '' : g)} className={cn('flex-1 py-1.5 rounded-xl text-[10px] font-black border transition-all', active ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
-                                      {g === 'Male' ? 'Boys' : 'Girls'} <span className="opacity-60 ml-1">{count}</span>
-                                    </button>
-                                  );
-                                })}
+                              <div className="bg-rose-50 p-3 rounded-2xl border border-rose-100 col-span-1 sm:col-span-2">
+                                 <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest mb-1">Total Expenditure</p>
+                                 <p className="text-lg font-black text-rose-700">{PKR(totalAmount)}</p>
                               </div>
                            </div>
-                            <div className="flex-1">
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Student Type</p>
-                               <div className="flex flex-wrap gap-2">
-                                 {['Regular', 'Franchisee', 'Summer Camp', 'Transfer'].map(t => {
-                                   const active = filterStudentType === t;
-                                   const count = students.filter(s => s.student_type === t && (!filterProgram || s.program === filterProgram)).length;
-                                   return (
-                                     <button key={t} onClick={() => setFilterStudentType(active ? '' : t)} className={cn('px-2 py-1.5 rounded-xl text-[10px] font-black border transition-all', active ? 'bg-amber-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')}>
-                                       {t === 'Summer Camp' ? 'Summer' : t} <span className="opacity-60 ml-0.5">{count}</span>
-                                     </button>
-                                   );
-                                 })}
-                               </div>
-                            </div>
+
+                           <div className="overflow-x-auto">
+                             <table className="w-full text-xs">
+                               <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                 <tr>
+                                   <th className="px-6 py-3 text-left">Date</th>
+                                   <th className="px-6 py-3 text-left">Receipt/Payer</th>
+                                   <th className="px-6 py-3 text-left">Category</th>
+                                   <th className="px-6 py-3 text-left">Description</th>
+                                   <th className="px-6 py-3 text-right">Amount</th>
+                                   <th className="px-6 py-3 text-center">Action</th>
+                                 </tr>
+                               </thead>
+                               <tbody className="divide-y divide-slate-50">
+                                 {filteredList.length === 0 ? (
+                                   <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold italic">No records found for the selection</td></tr>
+                                 ) : filteredList.map(x => (
+                                   <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
+                                     <td className="px-6 py-4 text-slate-500 font-medium">{fmtDate(x.expense_date)}</td>
+                                     <td className="px-6 py-4">
+                                       <div className="font-bold text-slate-800">{x.name || '—'}</div>
+                                       {x.slip_no && <div className="text-[9px] font-mono text-slate-400 mt-0.5">Slip: {x.slip_no}</div>}
+                                     </td>
+                                     <td className="px-6 py-4"><span className="px-2.5 py-1 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100">{x.category}</span></td>
+                                     <td className="px-6 py-4 max-w-xs truncate text-slate-600 font-medium">{x.description || '—'}</td>
+                                     <td className="px-6 py-4 text-right font-black text-slate-900 font-mono">{PKR(x.amount)}</td>
+                                     <td className="px-6 py-4 text-center">
+                                       <div className="flex items-center justify-center gap-1.5">
+                                         <button onClick={() => setEditingExpense(x)} className="text-slate-400 hover:text-blue-600 p-1 rounded-lg hover:bg-blue-50 transition-colors"><PenLine size={13} /></button>
+                                         <button onClick={() => deleteFinancialRecord(x.id, 'Expense')} className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={13} /></button>
+                                       </div>
+                                     </td>
+                                   </tr>
+                                 ))}
+                                 {filteredList.length > 0 && (
+                                   <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
+                                     <td colSpan={4} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total Expenditures</td>
+                                     <td className="px-6 py-3 text-right text-rose-600 font-mono">{PKR(totalAmount)}</td>
+                                     <td></td>
+                                   </tr>
+                                 )}
+                               </tbody>
+                             </table>
+                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                    <AnimatePresence>
-                      {filteredSectionOptions.length > 0 && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }}>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Section</p>
-                          <div className="flex flex-wrap gap-2">
-                            {filteredSectionOptions.map(sec => {
-                              const count = students.filter(s => s.class_section === sec).length;
-                              const active = filterSection === sec;
-                              return <motion.button key={sec} whileTap={{ scale: 0.96 }} onClick={() => setFilterSection(active ? '' : sec)} className={cn('px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all', active ? 'text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300')} style={active ? { background: GRADIENT } : {}}>{sec} <span className={cn('ml-1 text-[9px]', active ? 'text-white/70' : 'text-slate-400')}>{count}</span></motion.button>;
-                            })}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    <div className="relative pt-1">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                      <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search name, roll no, father name…" className="w-full border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none bg-slate-50 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/10 transition-all" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Student table — click opens full profile panel */}
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <p className="text-xs font-bold text-slate-500">{filteredStudents.length} of {students.length} students · click a row to view full profile</p>
-                      <button 
-                        onClick={() => {
-                          const rows = filteredStudents.map(s => [s.roll_no, s.full_name, s.father_name || '—', s.class_section, s.program, s.gender, s.status]);
-                          handlePrintList('Student Record Report', ['Roll','Name','Father','Class','Program','Gender','Status'], rows);
-                        }}
-                        className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:underline"
-                      >
-                        <Printer size={12} /> Print Student List
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto" style={{ maxHeight: 400 }}>
-                    <table className="w-full text-xs min-w-[580px]">
-                      <thead className="sticky top-0" style={{ background: '#f8f9fd' }}>
-                        <tr>{['Roll', 'Name', 'Father', 'Class', 'Program', 'Gender', 'Status', ''].map(h => <th key={h} className="px-3 md:px-4 py-3.5 text-left text-[9px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap border-b border-slate-100">{h}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {filteredStudents.map((s, i) => {
-                          const isSelected = selectedAccStu?.roll_no === s.roll_no;
-                          return (
-                            <motion.tr key={s.roll_no} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i * 0.008, 0.25) }}
-                              onClick={() => openAccStudentProfile(s)}
-                              className={cn('border-b border-slate-50 hover:bg-blue-50/40 cursor-pointer transition-colors', isSelected ? 'bg-blue-50/60' : '')}>
-                              <td className="px-3 md:px-4 py-3 font-mono text-slate-400 text-[10px]">{s.roll_no}</td>
-                              <td className="px-3 md:px-4 py-3 font-black text-slate-900 max-w-[130px] truncate">{s.full_name}</td>
-                              <td className="px-3 md:px-4 py-3 text-slate-500 max-w-[100px] truncate">{s.father_name || '—'}</td>
-                              <td className="px-3 md:px-4 py-3 whitespace-nowrap"><span className="px-2 py-0.5 rounded text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100">{s.class_section}</span></td>
-                              <td className="px-3 md:px-4 py-3 text-slate-500 max-w-[80px] truncate">{s.program}</td>
-                              <td className="px-3 md:px-4 py-3"><span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', s.gender === 'Male' ? 'bg-blue-50 text-blue-700' : 'bg-pink-50 text-pink-700')}>{s.gender}</span></td>
-                              <td className="px-3 md:px-4 py-3"><span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', s.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>{s.status}</span></td>
-                              <td className="px-3 md:px-4 py-3"><Eye size={14} className="text-blue-400" /></td>
-                            </motion.tr>
-                          );
-                        })}
-                        {filteredStudents.length === 0 && <tr><td colSpan={8} className="px-4 py-12 text-center"><Users size={28} className="mx-auto mb-2 text-slate-200" /><p className="text-slate-400 text-sm font-bold">No students match</p></td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* ── Full Student Profile Panel ── */}
-                <AnimatePresence>
-                  {selectedAccStu && (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="bg-white rounded-3xl border border-blue-200 overflow-hidden shadow-md">
-                      {/* Header */}
-                      <div className="px-5 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)' }}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white text-lg flex-shrink-0" style={{ background: `hsl(${(selectedAccStu.roll_no * 37) % 360},55%,48%)` }}>{selectedAccStu.full_name?.charAt(0)}</div>
-                          <div>
-                            <p className="font-black text-slate-900">{selectedAccStu.full_name}</p>
-                            <p className="text-xs text-slate-500">Roll #{selectedAccStu.roll_no} · {selectedAccStu.class_section} · {selectedAccStu.program} Part {selectedAccStu.part}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">Father: {selectedAccStu.father_name || '—'} · {selectedAccStu.gender} · <span className={cn('font-bold', selectedAccStu.status === 'Active' ? 'text-emerald-600' : 'text-rose-600')}>{selectedAccStu.status}</span></p>
-                          </div>
-                        </div>
-                        <button onClick={() => { setSelectedAccStu(null); setStuFeeGroups([]); setStudentProgress([]); }} className="text-slate-400 hover:text-slate-700 ml-2"><X size={18} /></button>
-                      </div>
-
-                      {stuFeeLoading ? (
-                        <div className="flex items-center justify-center py-10"><Loader2 className="animate-spin text-blue-400" size={24} /></div>
-                      ) : (
-                        <div className="p-5 space-y-5">
-                          {/* Badge & XP */}
-                          <div className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
-                            <span className="text-2xl">{selectedAccStu.current_badge?.split(' ')[0] || '🥉'}</span>
-                            <div><p className="font-black text-slate-900 text-sm">{selectedAccStu.current_badge || 'Newcomer'}</p><p className="text-xs text-slate-400">{(selectedAccStu.total_xp || 0).toLocaleString()} XP earned</p></div>
-                          </div>
-
-                          {/* Course Progress */}
-                          <div>
-                            <p className="font-black text-slate-900 text-sm mb-3">📚 Course Progress</p>
-                            {studentProgress.length === 0
-                              ? <p className="text-sm text-slate-400 italic">No course progress data recorded yet</p>
-                              : <div className="space-y-3">{studentProgress.map((cp: any) => { const p2 = cp.progress_pct || 0; const color = p2 >= 80 ? '#059669' : p2 >= 50 ? '#0891B2' : p2 >= 25 ? '#D97706' : '#C0392B'; return <ProgressBar key={cp.id} pct={p2} color={color} label={cp.subject} sub={`${cp.topics_done}/${cp.topics_total} topics · ${p2}%`} />; })}</div>
-                            }
-                          </div>
-
-                          {/* Fee Summary (read-only view) */}
-                          <div>
-                            <div className="flex flex-col gap-3 mb-4">
-                              <div className="flex items-center justify-between">
-                                <p className="font-black text-slate-900 text-sm">💰 Fee Summary</p>
-                                <div className="flex gap-3 text-[10px] font-bold text-slate-400">
-                                  <span>Paid: <strong className="text-emerald-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.paid || 0), 0))}</strong></span>
-                                  <span>Due: <strong className="text-rose-600">{PKR(stuFeeGroups.reduce((t, g) => t + (g.balance || 0), 0))}</strong></span>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center justify-between gap-4">
-                                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-                                  {(['All', 'Paid', 'Unpaid', 'Partial'] as any[]).map(f => (
-                                    <button key={f} onClick={() => setStuFeeFilter(f as any)} className={cn('px-3 py-1.5 rounded-lg text-[10px] font-black transition-all', stuFeeFilter === f ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>{f}</button>
-                                  ))}
-                                </div>
-                                
-                                {selectedFeeGroups.size > 0 && (
-                                  <motion.button initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} onClick={() => setShowVoucherModal(stuFeeGroups.filter(g => selectedFeeGroups.has(g.id)))}
-                                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black hover:bg-slate-800 transition-all shadow-lg shadow-slate-200">
-                                    <Printer size={12} /> Print Selected ({selectedFeeGroups.size})
-                                  </motion.button>
-                                )}
-                              </div>
-                            </div>
-
-                            {stuFeeGroups.length === 0
-                              ? <p className="text-sm text-slate-400 italic">No fee records assigned yet</p>
-                              : (
-                                <div className="space-y-2">
-                                  {stuFeeGroups.filter(g => {
-                                    if (stuFeeFilter === 'Paid') return g.status === 'Paid';
-                                    if (stuFeeFilter === 'Unpaid') return g.status === 'Unpaid';
-                                    if (stuFeeFilter === 'Partial') return g.status === 'Partial';
-                                    return true;
-                                  }).map(g => (
-                                    <div key={g.id} className={cn('flex items-center gap-3 px-4 py-3 rounded-xl border transition-all', g.status === 'Paid' ? 'bg-emerald-50/50 border-emerald-100' : g.status === 'Partial' ? 'bg-amber-50/50 border-amber-100' : 'bg-rose-50/30 border-rose-100')}>
-                                      <input type="checkbox" checked={selectedFeeGroups.has(g.id)} onChange={() => {
-                                        const next = new Set(selectedFeeGroups);
-                                        if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
-                                        setSelectedFeeGroups(next);
-                                      }} className="w-4 h-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500" />
-                                      
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <p className="text-sm font-black text-slate-900">{g.fees_group}</p>
-                                          <span className={cn('px-2 py-0.5 rounded-full text-[9px] font-black', g.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : g.status === 'Partial' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')}>{g.status}</span>
-                                        </div>
-                                        <div className="flex gap-3 mt-0.5 flex-wrap">
-                                          <span className="text-[11px] text-slate-400">Amount: <strong>{PKR(g.amount)}</strong></span>
-                                          {g.discount > 0 && <span className="text-[11px] text-emerald-600">Discount: -{PKR(g.discount)}</span>}
-                                          {g.fine > 0 && <span className="text-[11px] text-rose-500">Fine: +{PKR(g.fine)}</span>}
-                                          <span className="text-[11px] text-emerald-600">Paid: {PKR(g.paid)}</span>
-                                          {g.due_date && <span className="text-[11px] text-slate-400">Due: {g.due_date}</span>}
-                                        </div>
-                                      </div>
-                                      <div className="flex flex-col items-end gap-2 ml-3 flex-shrink-0">
-                                        <span className="font-black text-sm" style={{ color: g.balance > 0 ? '#C0392B' : '#059669' }}>{PKR(g.balance || 0)}</span>
-                                  <div className="flex gap-2">
-                                    <button onClick={() => setShowVoucherModal([g])} className="p-1.5 bg-white text-slate-400 rounded-lg border border-slate-200 hover:text-blue-600 hover:border-blue-200 transition-all">
-                                      <Printer size={12} />
-                                    </button>
-                                    <button onClick={() => handlePrintList("Individual Fee Record", ["Roll #", "Record"], [[selectedAccStu.roll_no, g.fees_group]], `Remaining Balance: ${PKR(g.balance)}`)} className="p-1.5 bg-white text-emerald-500 rounded-lg border border-slate-200 hover:text-emerald-600 transition-all">
-                                      <FileText size={12} />
-                                    </button>
-                                    {g.status !== 'Paid' && g.balance > 0 && (
-                                            <button onClick={() => { setCollectModal(g); setFeePayForm({ amount: String(g.balance), method: 'Cash', receipt: '', discount: '', fine: '' }); }}
-                                              className="px-3 py-1 rounded-lg text-[10px] font-black text-white bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center gap-1">
-                                              <DollarSign size={10} /> Collect
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                    <p className="text-xs text-slate-400 font-bold italic">Individual fee records for this student.</p>
-                                  </div>
-                                </div>
-                              )
-                            }
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )}
-
-            {/* ════ INCOME MANAGEMENT ════ */}
-            {(isAccountant || isSuperAdmin) && tab === 'income' && (() => {
-              const filteredOther = income.filter(i => {
-                const d = (i.income_date || '').slice(0, 10);
-                return (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
-              });
-
-              const filteredFees = transactions.filter(t => {
-                const d = (t.payment_date || '').slice(0, 10);
-                const dateMatch = (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
-                
-                let classMatch = true;
-                if (selectedIncomeClass !== 'All') {
-                   const student = students.find(s => String(s.roll_no) === String(t.student_roll || t.student_roll_link));
-                   classMatch = student?.class_section === selectedIncomeClass || 
-                                student?.program === selectedIncomeClass || 
-                                `Part ${student?.part}` === selectedIncomeClass;
-                }
-                return dateMatch && classMatch;
-              });
-
-              // Available Classes for filter
-              const availableClasses = [
-                'All', 
-                ...new Set(students.map(s => s.class_section).filter(Boolean)),
-                ...new Set(students.map(s => s.program).filter(Boolean)),
-                ...new Set(students.map(s => `Part ${s.part}`).filter(Boolean))
-              ].sort();
-
-              const totalOther = filteredOther.reduce((s, x) => s + x.amount, 0);
-              const totalFees  = filteredFees.reduce((s, x) => s + (Number(x.amount_paid) || 0), 0);
-
-              return (
-                <motion.div key="inc-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Recording Form */}
-                    <div className="lg:col-span-1 space-y-6">
-                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-                         <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100"><Plus size={20} /></div>
-                            <h3 className="font-black text-slate-800">Record Other Income</h3>
-                         </div>
-                         <p className="text-[10px] text-slate-400 font-bold mb-4 leading-relaxed uppercase tracking-widest">Note: Student fees are automatically recorded via the Fee Ledger/Transactions.</p>
-                         
-                         <div className="space-y-4">
-                            <div>
-                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Category/Source</label>
-                               <div className="relative">
-                                 <select 
-                                   value={finCategory} 
-                                   onChange={(e: any) => setFinCategory(e.target.value)}
-                                   className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 bg-white text-sm font-bold appearance-none"
-                                 >
-                                   <option value="">Select Category...</option>
-                                   {incomeHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
-                                 </select>
-                                 <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                               </div>
-                            </div>
-                            
-                            <div>
-                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Amount (PKR)</label>
-                               <TI type="number" value={finAmount} onChange={(e:any)=>setFinAmount(e.target.value)} placeholder="0" className="py-3" />
-                            </div>
-
-                            <div>
-                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Date</label>
-                               <input type="date" value={finDate} onChange={(e:any)=>setFinDate(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 bg-white text-sm font-bold" />
-                            </div>
-
-                            <div>
-                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Description</label>
-                               <textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} placeholder="Note..." className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 min-h-[80px]" />
-                            </div>
-
-                            <motion.button 
-                              whileTap={{ scale: 0.95 }} 
-                              onClick={() => { saveFinancialRecord('Income'); }} 
-                              disabled={saving}
-                              className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                              style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
-                            >
-                              {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Record</>}
-                            </motion.button>
-                         </div>
-                      </div>
-
-                      <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-                         <div className="flex items-center justify-between mb-4">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category Headers</p>
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{incomeHeaders.length}</span>
-                         </div>
-                         <div className="flex gap-2 mb-4">
-                            <TI placeholder="New headline..." value={newIncomeHeader} onChange={(e:any)=>setNewIncomeHeader(e.target.value)} className="py-2 text-xs" />
-                            <button onClick={saveIncomeHeader} disabled={saving || !newIncomeHeader.trim()} className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase">Add</button>
-                         </div>
-                         <div className="flex flex-wrap gap-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
-                           {incomeHeaders.map(h => (
-                             <div key={h.id} className="flex items-center gap-2 pl-3 pr-2 py-1.5 bg-slate-50 rounded-lg border border-slate-100 group">
-                               <span className="text-[11px] font-bold text-slate-600">{h.name}</span>
-                               <button onClick={() => deleteIncomeHeader(h.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X size={12} /></button>
-                             </div>
-                           ))}
-                         </div>
-                      </div>
-                    </div>
-
-                    {/* Report / History */}
-                    <div className="lg:col-span-2 space-y-6">
-                       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-                          <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="flex bg-white rounded-xl p-1 border border-slate-200 self-start">
-                                   <button onClick={() => setViewType('other')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'other' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Other Income</button>
-                                   <button onClick={() => setViewType('fees')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'fees' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Student Fees</button>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                   <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1">
-                                      <Calendar size={12} className="text-slate-400 mr-2" />
-                                      <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="text-[11px] font-black outline-none w-24" />
-                                      <span className="mx-2 text-slate-300">to</span>
-                                      <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="text-[11px] font-black outline-none w-24" />
-                                   </div>
-                                   <button 
-                                     onClick={() => {
-                                       if (viewType === 'other') {
-                                         const rows = filteredOther.map(x => [fmtDate(x.income_date), x.category, x.description, PKR(x.amount)]);
-                                         handlePrintList(`Income Report (${reportFrom} to ${reportTo})`, ['Date','Category','Description','Amount'], rows, `Total Income: ${PKR(totalOther)}`);
-                                       } else {
-                                         const rows = filteredFees.map(x => [fmtDate(x.payment_date), x.id?.slice(0,8) || '—', x.student_roll || x.student_roll_link || '—', PKR(Number(x.amount_paid) || 0), x.payment_method || 'Cash']);
-                                         handlePrintList(`Fee Income Report - ${selectedIncomeClass} (${reportFrom} to ${reportTo})`, ['Date','TX ID','Roll #','Paid Amount','Method'], rows, `Total Fee Income: ${PKR(totalFees)}`);
-                                       }
-                                     }}
-                                     className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
-                                   >
-                                      <Printer size={14} /> Print
-                                   </button>
-                                </div>
-                             </div>
-                             
-                             {viewType === 'fees' && (
-                               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
-                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by Class:</label>
-                                  <select 
-                                    value={selectedIncomeClass} 
-                                    onChange={e => setSelectedIncomeClass(e.target.value)}
-                                    className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-black outline-none focus:border-blue-500"
-                                  >
-                                    {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
-                                  </select>
-                               </div>
-                             )}
-                          </div>
-
-                          <div className="p-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-50">
-                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
-                                <p className="text-lg font-black text-slate-900">{(viewType === 'other' ? filteredOther : filteredFees).length}</p>
-                             </div>
-                             <div className="bg-emerald-50 p-3 rounded-2xl border border-emerald-100 col-span-1 sm:col-span-2">
-                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Income ({viewType === 'other' ? 'Other' : 'Fees'})</p>
-                                <p className="text-lg font-black text-emerald-700">{PKR(viewType === 'other' ? totalOther : totalFees)}</p>
-                             </div>
-                             {viewType === 'fees' && (
-                               <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 italic">
-                                  <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Class Selected</p>
-                                  <p className="text-sm font-black text-blue-700">{selectedIncomeClass}</p>
-                               </div>
-                             )}
-                          </div>
-
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                              <thead className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <tr>
-                                  <th className="px-6 py-3 text-left">Date</th>
-                                  {viewType === 'other' ? (
-                                    <>
-                                      <th className="px-6 py-3 text-left">Category</th>
-                                      <th className="px-6 py-3 text-left">Description</th>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <th className="px-6 py-3 text-left">Roll #</th>
-                                      <th className="px-6 py-3 text-left">Method</th>
-                                    </>
-                                  )}
-                                  <th className="px-6 py-3 text-right">Amount</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {(viewType === 'other' ? filteredOther : filteredFees).length === 0 ? (
-                                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">No records found for the selection</td></tr>
-                                ) : (viewType === 'other' ? filteredOther : filteredFees).map(x => (
-                                  <tr key={x.id} className="hover:bg-slate-50/30 transition-colors">
-                                    <td className="px-6 py-4 text-slate-500 font-medium">{fmtDate(x.income_date || x.payment_date)}</td>
-                                    {viewType === 'other' ? (
-                                      <>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-black text-[9px] border border-slate-200">{x.category}</span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                          <p className="font-bold text-slate-800 line-clamp-1">{x.description}</p>
-                                          {x.recorded_by && <p className="text-[9px] text-slate-400 font-medium mt-1 uppercase tracking-tighter">By: {x.recorded_by}</p>}
-                                        </td>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <td className="px-6 py-4 font-black text-slate-700">Roll: {x.student_roll || x.student_roll_link || '—'}</td>
-                                        <td className="px-6 py-4">
-                                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-black text-[9px] border border-blue-100">{x.payment_method || 'Cash'}</span>
-                                        </td>
-                                      </>
-                                    )}
-                                    <td className="px-6 py-4 text-right font-black text-slate-900">{PKR(viewType === 'other' ? x.amount : x.amount_paid)}</td>
-                                  </tr>
-                                ))}
-                                {(viewType === 'other' ? filteredOther : filteredFees).length > 0 && (
-                                  <tr className="bg-slate-50 font-black border-t-2 border-slate-200">
-                                    <td colSpan={viewType === 'other' ? 3 : 3} className="px-6 py-3 text-right uppercase tracking-widest text-[9px] text-slate-400">Total {viewType === 'other' ? 'Other Income' : 'Fee Collection'}</td>
-                                    <td className="px-6 py-3 text-right text-emerald-600">{PKR(viewType === 'other' ? totalOther : totalFees)}</td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                       </div>
-                    </div>
-                  </div>
-                </motion.div>
+                     </div>
+                   </div>
+                 </motion.div>
               );
             })()}
             {(isAccountant || isSuperAdmin) && tab === 'salaries' && (
@@ -5552,6 +4655,510 @@ const active = tab === id; const badgeN = getBadge(id);
                 </div>
               </motion.div>
             )}
+
+            {tab === 'admissions' && (
+              <motion.div key="adm-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                {/* Header Summary Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black"><Clock size={20} /></div>
+                     <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Pending Approval</p>
+                        <p className="text-xl font-black text-slate-900 mt-1.5">{admForms.filter(f => f.status === 'Pending').length}</p>
+                     </div>
+                  </div>
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black"><CheckCircle size={20} /></div>
+                     <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Confirmed to DB</p>
+                        <p className="text-xl font-black text-slate-900 mt-1.5">{admForms.filter(f => f.status === 'Approved').length}</p>
+                     </div>
+                  </div>
+                  <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                     <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-black"><X size={20} /></div>
+                     <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Rejected / Voided</p>
+                        <p className="text-xl font-black text-slate-900 mt-1.5">{admForms.filter(f => f.status === 'Rejected').length}</p>
+                     </div>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar Row */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex bg-slate-50 rounded-xl p-1 border border-slate-200/50 self-start">
+                     <button onClick={() => setAdmFilter('')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', admFilter === '' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>All Forms</button>
+                     <button onClick={() => setAdmFilter('Pending')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', admFilter === 'Pending' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Pending ({admForms.filter(f=>f.status==='Pending').length})</button>
+                     <button onClick={() => setAdmFilter('Approved')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', admFilter === 'Approved' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Approved</button>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full md:w-auto">
+                     <div className="relative flex-1 md:w-64">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input 
+                           type="text" 
+                           placeholder="Search by candidate name, roll, program..." 
+                           value={searchQ} 
+                           onChange={e => setSearchQ(e.target.value)} 
+                           className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-xs font-bold outline-none focus:bg-white focus:border-slate-400 transition-all placeholder:text-slate-400"
+                        />
+                     </div>
+                     <button onClick={() => setTab('new-admission')} className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-2 flex-shrink-0 hover:bg-slate-800 active:scale-95 transition-all">
+                        <UserPlus size={14} /> Record Admission
+                     </button>
+                  </div>
+                </div>
+
+                {/* Admission Forms Grid/List Card */}
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                  <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                     <div>
+                        <h3 className="font-black text-slate-900 leading-none">Admission Application Register</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest">Verify credentials and issue roll numbers to sync students with DB ledger</p>
+                     </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                     <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                           <tr>
+                              <th className="px-6 py-3.5 text-left">Form No</th>
+                              <th className="px-6 py-3.5 text-left">Candidate Info</th>
+                              <th className="px-6 py-3.5 text-left">Contact / B-Form</th>
+                              <th className="px-6 py-3.5 text-left">Academics Details</th>
+                              <th className="px-6 py-3.5 text-left">Status</th>
+                              <th className="px-6 py-3.5 text-center">Actions</th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                           {filteredAdmForms.length === 0 ? (
+                              <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold italic">No admission forms found matching the selection</td></tr>
+                           ) : filteredAdmForms.map((f: any) => (
+                              <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
+                                 <td className="px-6 py-4 font-black text-slate-500 font-mono">{f.form_no}</td>
+                                 <td className="px-6 py-4">
+                                    <p className="font-black text-slate-900 leading-none">{f.student_name}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{f.father_name}</p>
+                                 </td>
+                                 <td className="px-6 py-4">
+                                    <p className="font-semibold text-slate-700 leading-none">{f.contact_no || '—'}</p>
+                                    <p className="text-[10px] text-slate-400 font-mono mt-1">{f.cnic_bform || '—'}</p>
+                                 </td>
+                                 <td className="px-6 py-4">
+                                    <p className="font-bold text-slate-800 leading-none">{f.program} Part {f.part}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">Roll No: <span className="font-mono text-slate-600 font-bold">{f.student_roll_no || 'Pending'}</span></p>
+                                 </td>
+                                 <td className="px-6 py-4">
+                                    <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider', 
+                                       f.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                       f.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                    )}>{f.status || 'Pending'}</span>
+                                 </td>
+                                 <td className="px-6 py-4 text-center">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                       <button onClick={() => {
+                                          setPreview(f);
+                                          setManualRoll(f.student_roll_no || f.form_no || '');
+                                          const count = f.num_installments || f.installments || 3;
+                                          const pkgAmt = Number(f.fee_package) || 0;
+                                          const perInst = Math.floor(pkgAmt / count);
+                                          if (f.custom_installments && Array.isArray(f.custom_installments) && f.custom_installments.length > 0) {
+                                            setInstData(f.custom_installments);
+                                          } else {
+                                            setInstData(Array.from({ length: count }, (_, i) => ({
+                                              date: new Date().toISOString().split('T')[0],
+                                              amount: i === count - 1 ? pkgAmt - (perInst * (count - 1)) : perInst
+                                            })));
+                                          }
+                                       }} className="px-3 py-1.5 rounded-xl text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1"><Eye size={12} /> Review / Actions</button>
+                                    </div>
+                                 </td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {isAccountant && tab === 'income' && (() => {
+              const filteredOther = income.filter(inc => {
+                if (!inc.income_date) return false;
+                const d = inc.income_date.slice(0, 10);
+                return (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
+              });
+
+              const filteredTx = transactions.filter(t => {
+                if (!t.payment_date) return false;
+                const d = t.payment_date.slice(0, 10);
+                return (!reportFrom || d >= reportFrom) && (!reportTo || d <= reportTo);
+              });
+
+              const sessionSums = {};
+              filteredTx.forEach(t => {
+                const student = students.find(s => s.roll_no === t.student_roll_link);
+                const session = student ? student.session : 'Unknown Session';
+                const amt = Number(t.amount_paid) || 0;
+                if (!sessionSums[session]) {
+                  sessionSums[session] = { total: 0, count: 0, methods: {} };
+                }
+                sessionSums[session].total += amt;
+                sessionSums[session].count += 1;
+                const m = t.payment_method || 'Cash';
+                sessionSums[session].methods[m] = (sessionSums[session].methods[m] || 0) + amt;
+              });
+
+              const aggregatedFeeSessions = Object.keys(sessionSums).map(sessName => {
+                const info = sessionSums[sessName];
+                const methodParts = Object.entries(info.methods).map(([meth, sum]) => `${meth}: ${PKR(Number(sum))}`);
+                return {
+                  session: sessName,
+                  total: info.total,
+                  count: info.count,
+                  paymentMethods: methodParts.join(', ') || 'None'
+                };
+              });
+
+              const totalOther = filteredOther.reduce((s, x) => s + x.amount, 0);
+              const totalFees = aggregatedFeeSessions.reduce((s, x) => s + x.total, 0);
+
+              const printIncomeGroupReport = () => {
+                const groups = {};
+                filteredOther.forEach(item => {
+                  const cat = item.category || 'General Income';
+                  if (!groups[cat]) groups[cat] = [];
+                  groups[cat].push(item);
+                });
+
+                const groupNames = Object.keys(groups).sort();
+                let tableRowsHtml = '';
+                let grandTotal = 0;
+
+                groupNames.forEach(headName => {
+                  const items = groups[headName];
+                  items.sort((a, b) => new Date(a.income_date).getTime() - new Date(b.income_date).getTime());
+                  let subTotal = 0;
+
+                  items.forEach((item, index) => {
+                    const amt = Number(item.amount) || 0;
+                    subTotal += amt;
+                    grandTotal += amt;
+                    
+                    const headCol = index === 0 ? headName : '';
+                    const formattedDate = item.income_date ? new Date(item.income_date).toLocaleDateString('en-GB') : '—';
+                    const formattedAmt = amt.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    
+                    tableRowsHtml += `
+                      <tr>
+                        <td style="font-weight: ${index === 0 ? 'bold' : 'normal'}; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${headCol}</td>
+                        <td style="border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${item.description || '—'}</td>
+                        <td style="border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${formattedDate}</td>
+                        <td style="font-family: monospace; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${item.recorded_by || '—'}</td>
+                        <td style="text-align: right; border-bottom: ${index === items.length - 1 ? '1px solid #475569' : '1px solid #e2e8f0'}; padding: 6px 8px;">${formattedAmt}</td>
+                      </tr>
+                    `;
+                  });
+
+                  const formattedSub = `PKR ${subTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  tableRowsHtml += `
+                    <tr style="background-color: #fafbfc; font-weight: bold;">
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="border-bottom: 2px solid #0f172a; padding: 6px 8px;"></td>
+                      <td style="text-align: right; border-bottom: 2px solid #0f172a; color: #475569; font-size: 8.5pt; padding: 6px 8px;">Sub Total</td>
+                      <td style="text-align: right; border-bottom: 2px solid #0f172a; font-family: monospace; padding: 6px 8px;">${formattedSub}</td>
+                    </tr>
+                  `;
+                });
+
+                const formattedGrand = `PKR ${grandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                const fromDateStr = reportFrom ? new Date(reportFrom).toLocaleDateString('en-GB') : '—';
+                const toDateStr = reportTo ? new Date(reportTo).toLocaleDateString('en-GB') : '—';
+
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) return;
+                printWindow.document.write(`
+                  <html>
+                    <head>
+                      <title>Other Income Group Report</title>
+                      <style>
+                        body { font-family: 'Inter', system-ui, sans-serif; padding: 20px; color: #1e293b; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 9pt; }
+                        th { background-color: #f1f5f9; text-align: left; padding: 8px; font-weight: bold; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size: 8pt; letter-spacing: 0.05em; }
+                        h2 { margin: 0; font-weight: 900; letter-spacing: -0.02em; }
+                        p { margin: 4px 0; font-size: 9pt; color: #64748b; font-weight: 500; }
+                        .header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
+                        .grand-total { text-align: right; font-weight: 900; font-size: 11pt; margin-top: 20px; border-top: 2px solid #0f172a; padding-top: 10px; }
+                      </style>
+                    </head>
+                    <body>
+                      <div class="header">
+                        <h2>OTHER INCOME GROUP REPORT</h2>
+                        <p>Period: ${fromDateStr} to ${toDateStr}</p>
+                      </div>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style="width: 25%;">Category Headline</th>
+                            <th>Description</th>
+                            <th style="width: 15%;">Date</th>
+                            <th style="width: 15%;">Recorded By</th>
+                            <th style="text-align: right; width: 15%;">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${tableRowsHtml}
+                        </tbody>
+                      </table>
+                      <div class="grand-total">Grand Total: ${formattedGrand}</div>
+                      <script>
+                        window.onload = function() { window.print(); }
+                      </script>
+                    </body>
+                  </html>
+                `);
+                printWindow.document.close();
+              };
+
+              return (
+                <motion.div key="income-mg" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                  {/* Filters/Actions Card */}
+                  <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between p-6 gap-4">
+                     <div className="flex bg-white rounded-xl p-1 border border-slate-200 self-start">
+                        <button onClick={() => setViewType('other')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'other' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Other Income</button>
+                        <button onClick={() => setViewType('fees')} className={cn('px-4 py-1.5 rounded-lg text-xs font-black transition-all', viewType === 'fees' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-700')}>Student Fees</button>
+                     </div>
+
+                     <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1">
+                           <Calendar size={12} className="text-slate-400 mr-2" />
+                           <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                           <span className="mx-2 text-slate-300">to</span>
+                           <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)} className="text-[11px] font-black outline-none w-24" />
+                        </div>
+                        
+                        {viewType === 'other' && (
+                          <>
+                            <button 
+                              onClick={printIncomeGroupReport}
+                              className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95 transition-all"
+                            >
+                               <Printer size={14} /> Group Report
+                            </button>
+                            <button 
+                             onClick={() => {
+                               const rows = filteredOther.map(x => [x.income_date, x.description, x.category, PKR(x.amount), x.recorded_by || '—']);
+                               handlePrintList(`Other Income Report (${reportFrom} to ${reportTo})`, ['Date','Description','Category','Amount','Recorded By'], rows, `Total Other Income: ${PKR(totalOther)}`);
+                             }}
+                             className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 transition-all"
+                           >
+                              <Printer size={14} /> Print
+                           </button>
+                          </>
+                        )}
+                     </div>
+                  </div>
+
+                  {/* Detailed Panels Section */}
+                  {viewType === 'other' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Left Sidebar: Record Income & Category Headers */}
+                      <div className="lg:col-span-1 space-y-6">
+                        <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                           <div className="flex items-center gap-3 mb-4">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                                 <Plus size={20} />
+                              </div>
+                              <h3 className="font-black text-slate-800">Record Income</h3>
+                           </div>
+                           <div className="space-y-4">
+                              <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Headline / Tag</label>
+                                <div className="relative">
+                                  <select 
+                                    value={finCategory} 
+                                    onChange={(e: any) => setFinCategory(e.target.value)}
+                                    className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 bg-white text-sm font-bold appearance-none"
+                                  >
+                                    <option value="">Select Category...</option>
+                                    {incomeHeaders.map(h => <option key={h.id} value={h.name}>{h.name}</option>)}
+                                    <option value="Other">Other</option>
+                                  </select>
+                                  <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                </div>
+                              </div>
+                              
+                              <div>
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Amount (PKR)</label>
+                                 <TI type="number" value={finAmount} onChange={(e:any)=>setFinAmount(e.target.value)} placeholder="0" className="py-3" />
+                              </div>
+
+                              <div>
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Date</label>
+                                 <input type="date" value={finDate} onChange={(e:any)=>setFinDate(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 bg-white text-sm font-bold" />
+                              </div>
+
+                              <div>
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">Description</label>
+                                 <textarea value={finDesc} onChange={(e:any)=>setFinDesc(e.target.value)} placeholder="Note..." className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-emerald-500 min-h-[80px]" />
+                              </div>
+
+                              <motion.button 
+                                whileTap={{ scale: 0.95 }} 
+                                onClick={() => { saveFinancialRecord('Income'); }} 
+                                disabled={saving}
+                                className="w-full py-4 rounded-2xl text-white font-black text-sm shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}
+                              >
+                                {saving ? <Loader2 size={16} className="animate-spin" /> : <><Save size={16} /> Save Income</>}
+                              </motion.button>
+                           </div>
+                        </div>
+
+                        <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+                           <div className="flex items-center justify-between mb-4">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category Headers</p>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{incomeHeaders.length}</span>
+                           </div>
+                           <div className="flex gap-2 mb-4">
+                              <input 
+                                 type="text" 
+                                 placeholder="New header name..." 
+                                 value={newIncomeHeader} 
+                                 onChange={e => setNewIncomeHeader(e.target.value)} 
+                                 className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-emerald-500" 
+                              />
+                              <button 
+                                 onClick={saveIncomeHeader} 
+                                 disabled={saving} 
+                                 className="px-3 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase hover:bg-slate-800 flex items-center gap-1 active:scale-95 disabled:opacity-50 transition-all font-mono"
+                              >
+                                 Add
+                              </button>
+                           </div>
+                           <div className="flex flex-wrap gap-2 max-h-[140px] overflow-y-auto pr-1">
+                              {incomeHeaders.map(h => (
+                                 <div key={h.id} className="group flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-150 text-xs font-bold text-slate-700">
+                                    <span>{h.name}</span>
+                                    <button onClick={() => deleteIncomeHeader(h.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><X size={12} /></button>
+                                 </div>
+                              ))}
+                              {incomeHeaders.length === 0 && <p className="text-[10px] text-slate-400 italic">No custom category headers configured</p>}
+                           </div>
+                        </div>
+                      </div>
+
+                      {/* Right Panel: Metrics + Table */}
+                      <div className="lg:col-span-2 space-y-6">
+                        {/* Summary Metric Cards */}
+                        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 p-6">
+                           <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Records Found</p>
+                              <p className="text-xl font-black text-slate-900">{filteredOther.length}</p>
+                           </div>
+                           <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Other Income</p>
+                              <p className="text-xl font-black text-emerald-700">{PKR(totalOther)}</p>
+                           </div>
+                        </div>
+
+                        {/* Dynamic Table Card */}
+                        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm flex flex-col">
+                           <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                              <div>
+                                 <h3 className="font-black text-slate-900 leading-none">Other Income History</h3>
+                                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest">Review custom non-fee incoming receipts</p>
+                              </div>
+                           </div>
+
+                           <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                 <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                                    <tr>
+                                       <th className="px-6 py-3.5 text-left">Date</th>
+                                       <th className="px-6 py-3.5 text-left">Description</th>
+                                       <th className="px-6 py-3.5 text-left">Category</th>
+                                       <th className="px-6 py-3.5 text-left">Recorded By</th>
+                                       <th className="px-6 py-3.5 text-right">Amount</th>
+                                       <th className="px-6 py-3.5 text-center">Action</th>
+                                    </tr>
+                                 </thead>
+                                 <tbody className="divide-y divide-slate-50">
+                                    {filteredOther.length === 0 ? (
+                                       <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold italic">No records found for the selection</td></tr>
+                                    ) : filteredOther.map(x => (
+                                       <tr key={x.id} className="hover:bg-slate-50/50 transition-colors">
+                                          <td className="px-6 py-4 text-slate-500">{fmtDate(x.income_date)}</td>
+                                          <td className="px-6 py-4 font-bold text-slate-800">{x.description || '—'}</td>
+                                          <td className="px-6 py-4"><span className="px-2.5 py-1 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700">{x.category}</span></td>
+                                          <td className="px-6 py-4 text-slate-600">{x.recorded_by || '—'}</td>
+                                          <td className="px-6 py-4 text-right font-black text-emerald-600 font-mono">{PKR(x.amount)}</td>
+                                          <td className="px-6 py-4 text-center">
+                                             <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => deleteFinancialRecord(x.id, 'Income')} className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"><Trash2 size={13} /></button>
+                                             </div>
+                                          </td>
+                                       </tr>
+                                    ))}
+                                 </tbody>
+                              </table>
+                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Summary Metric Cards */}
+                      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 p-6">
+                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sessions Found</p>
+                            <p className="text-xl font-black text-slate-900">{aggregatedFeeSessions.length}</p>
+                         </div>
+                         <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Session Fees</p>
+                            <p className="text-xl font-black text-emerald-700">{PKR(totalFees)}</p>
+                         </div>
+                      </div>
+
+                      {/* Dynamic Table Card */}
+                      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm flex flex-col">
+                         <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <div>
+                               <h3 className="font-black text-slate-900 leading-none">Academic Session Dues Collection</h3>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase mt-1.5 tracking-widest">Session-wise aggregated dues collected</p>
+                            </div>
+                         </div>
+
+                         <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                               <thead className="bg-slate-50 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                                  <tr>
+                                     <th className="px-6 py-3.5 text-left">Academic Session</th>
+                                     <th className="px-6 py-3.5 text-center">Transactions Count</th>
+                                     <th className="px-6 py-3.5 text-left">Payment Breakdown</th>
+                                     <th className="px-6 py-3.5 text-right">Total Fee Collections</th>
+                                  </tr>
+                               </thead>
+                               <tbody className="divide-y divide-slate-50">
+                                  {aggregatedFeeSessions.length === 0 ? (
+                                     <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 font-bold italic">No collections recorded in the period</td></tr>
+                                  ) : aggregatedFeeSessions.map(row => (
+                                     <tr key={row.session} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4 font-black text-slate-800">{row.session}</td>
+                                        <td className="px-6 py-4 text-center text-slate-500 font-bold">{row.count}</td>
+                                        <td className="px-6 py-4 text-slate-600 font-medium italic">{row.paymentMethods}</td>
+                                        <td className="px-6 py-4 text-right font-black text-emerald-600 font-mono">{PKR(row.total)}</td>
+                                     </tr>
+                                  ))}
+                               </tbody>
+                            </table>
+                         </div>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })()}
 
             {/* ════ ACCOUNTANT REPORTS ════ */}
       {/* ════ ACCOUNTANT REPORTS ════ */}
