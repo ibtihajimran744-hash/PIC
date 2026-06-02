@@ -769,8 +769,8 @@ const [coordinatorType, setCoordinatorType] = useState<string | null>(null);
   const [finCategory, setFinCategory] = useState('');
   const [finDate, setFinDate]         = useState(new Date().toISOString().slice(0, 10));
   const [reportType, setReportType]   = useState<'Daily' | 'Monthly' | 'Yearly'>('Monthly');
-  const [reportFrom, setReportFrom] = useState(new Date().toISOString().slice(0, 10));
-  const [reportTo, setReportTo]     = useState(new Date().toISOString().slice(0, 10));
+  const [reportFrom, setReportFrom] = useState('2026-05-01');
+const [reportTo, setReportTo]     = useState(new Date().toISOString().slice(0, 10));
   const [showFinModal, setShowFinModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState<any>(null);
   const [feePayForm,      setFeePayForm]      = useState({ amount: '', method: 'Cash', receipt: '', discount: '', fine: '' });
@@ -1686,7 +1686,7 @@ const handlePrintReport = (data: any) => {
         supabase.from('fee_groups').select('*').order('created_at', { ascending: false }).limit(1000),
         supabase.from('fee_transactions').select('*').order('payment_date', { ascending: false }).limit(200),
         supabase.from('discount_requests').select('*').order('created_at', { ascending: false }).limit(100),
-        supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(50),
+        supabase.from('expenses').select('*').order('expense_date', { ascending: false }).limit(500),
         supabase.from('income').select('*').order('income_date', { ascending: false }).limit(50),
         supabase.from('admission_forms').select('*').order('created_at', { ascending: false }),
         supabase.from('students').select('roll_no').lt('roll_no', 9999999).order('roll_no', { ascending: false }).limit(1),
