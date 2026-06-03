@@ -1200,6 +1200,17 @@ ${feeRows || '<tr><td colspan="12" style="text-align:center;padding:10px">No fee
 </div>
 
 </div>
+
+<div style="margin-top: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 8pt; color: #1e293b; font-family: sans-serif; border-top: 1px dashed #cbd5e1; padding-top: 8px;">
+  <div style="text-align: center; width: 140px;">
+    <div style="border-bottom: 1.5px solid #475569; margin-bottom: 3px; height: 16px;"></div>
+    <div>Accountant Signature</div>
+  </div>
+  <div style="text-align: center; width: 140px;">
+    <div style="border-bottom: 1.5px solid #475569; margin-bottom: 3px; height: 16px;"></div>
+    <div>Director Signature</div>
+  </div>
+</div>
 `;
 
     const html = `<!DOCTYPE html>
@@ -1450,6 +1461,16 @@ const handlePrintList = (title: string, columns: string[], rows: any[][], summar
             ` : ''}
           </tbody>
         </table>
+        <div style="margin-top: 60px; display: flex; justify-content: space-between; padding: 0 40px; font-weight: bold; font-size: 10pt; color: #1e293b; page-break-inside: avoid; font-family: sans-serif;">
+          <div style="text-align: center; width: 180px;">
+            <div style="border-bottom: 1.5px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+            <div>Accountant Signature</div>
+          </div>
+          <div style="text-align: center; width: 180px;">
+            <div style="border-bottom: 1.5px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+            <div>Director Signature</div>
+          </div>
+        </div>
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
       </body>
     </html>
@@ -1596,12 +1617,14 @@ const handlePrintReport = (data: any) => {
           </div>
         </div>
 
-        <div style="margin-top: 60px; display: flex; justify-content: space-between;">
-          <div style="text-align: center; width: 200px;">
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Accountant Signature</div>
+        <div style="margin-top: 60px; display: flex; justify-content: space-between; padding: 0 40px; font-weight: bold; font-size: 10pt; color: #1e293b; page-break-inside: avoid; font-family: sans-serif;">
+          <div style="text-align: center; width: 180px;">
+            <div style="border-bottom: 1.5px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+            <div>Accountant Signature</div>
           </div>
-          <div style="text-align: center; width: 200px;">
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 8px; font-size: 0.7rem; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Principal Approval</div>
+          <div style="text-align: center; width: 180px;">
+            <div style="border-bottom: 1.5px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+            <div>Director Signature</div>
           </div>
         </div>
 
@@ -4095,11 +4118,11 @@ const active = tab === id; const badgeN = getBadge(id);
                             <div className="mt-16 pt-10 border-t-2 border-slate-900 grid grid-cols-2 gap-16 text-center text-xs font-black text-slate-700">
                               <div className="space-y-4">
                                 <div className="h-12 border-b border-dashed border-slate-300 w-64 mx-auto"></div>
-                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Accounts & Treasury Authority Signature</p>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Accountant Signature</p>
                               </div>
                               <div className="space-y-4">
                                 <div className="h-12 border-b border-dashed border-slate-300 w-64 mx-auto"></div>
-                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Director Office Audit Verification</p>
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Director Signature</p>
                               </div>
                             </div>
 
@@ -4322,8 +4345,8 @@ const active = tab === id; const badgeN = getBadge(id);
                     <style>
                       * { margin:0; padding:0; box-sizing:border-box; }
                       body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 9pt; color: #1e293b; padding: 40px; }
-                      .header-title { text-align: center; font-size: 16pt; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; color: #0f172a; }
-                      .header-period { text-align: center; font-size: 9.5pt; color: #475569; margin-bottom: 25px; font-weight: 500; }
+                      .header-title { font-size: 14pt; font-weight: bold; text-transform: uppercase; color: #0f172a; line-height: 1.2; }
+                      .header-period { font-size: 9pt; color: #64748b; font-weight: 500; margin-top: 4px; }
                       table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                       th { border: 1px solid #475569; padding: 10px 8px; font-size: 8.5pt; font-weight: bold; text-align: left; background: #e2e8f0; color: #1e293b; }
                       td { border: 1px solid #cbd5e1; padding: 8px; font-size: 8.2pt; vertical-align: middle; }
@@ -4336,8 +4359,14 @@ const active = tab === id; const badgeN = getBadge(id);
                     </style>
                   </head>
                   <body>
-                    <div class="header-title">Expenditure Group Report</div>
-                    <div class="header-period">Period: ${fromDateStr} to ${toDateStr}</div>
+                    <div style="display: flex; align-items: center; gap: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px;">
+                      <img src="${LOGO_BASE64}" style="width: 60px; height: 60px; object-fit: contain;" alt="College Logo"/>
+                      <div style="text-align: left;">
+                        <div style="font-size: 15pt; font-weight: 900; tracking-wide: -0.02em; text-transform: uppercase; color: #0f172a; line-height: 1.2; font-family: sans-serif;">PAK INFORMATICS GROUP OF COLLEGES</div>
+                        <div class="header-title">Expenditure Group Report</div>
+                        <div class="header-period">Period: ${fromDateStr} to ${toDateStr}</div>
+                      </div>
+                    </div>
                     
                     <table>
                       <thead>
@@ -4362,6 +4391,17 @@ const active = tab === id; const badgeN = getBadge(id);
                         </tr>
                       </tbody>
                     </table>
+
+                    <div style="margin-top: 60px; display: flex; justify-content: space-between; padding: 0 40px; font-weight: bold; font-size: 10pt; color: #1e293b; page-break-inside: avoid;">
+                      <div style="text-align: center; width: 180px;">
+                        <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+                        <div>Accountant Signature</div>
+                      </div>
+                      <div style="text-align: center; width: 180px;">
+                        <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+                        <div>Director Signature</div>
+                      </div>
+                    </div>
                     
                     <script>
                       window.onload = function() {
@@ -4888,9 +4928,13 @@ const active = tab === id; const badgeN = getBadge(id);
                       </style>
                     </head>
                     <body>
-                      <div class="header">
-                        <h2>OTHER INCOME GROUP REPORT</h2>
-                        <p>Period: ${fromDateStr} to ${toDateStr}</p>
+                      <div class="header" style="display: flex; align-items: center; gap: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px;">
+                        <img src="${LOGO_BASE64}" style="width: 60px; height: 60px; object-fit: contain;" alt="College Logo"/>
+                        <div style="text-align: left;">
+                          <h2 style="font-size: 15pt; font-weight: 900; text-transform: uppercase; color: #0f172a; line-height: 1.2; margin: 0;">PAK INFORMATICS GROUP OF COLLEGES</h2>
+                          <div style="font-size: 14pt; font-weight: bold; color: #0f172a; margin-top: 2px;">OTHER INCOME GROUP REPORT</div>
+                          <p style="margin: 4px 0 0 0; font-size: 9pt; color: #64748b; font-weight: 500;">Period: ${fromDateStr} to ${toDateStr}</p>
+                        </div>
                       </div>
                       <table>
                         <thead>
@@ -4907,6 +4951,18 @@ const active = tab === id; const badgeN = getBadge(id);
                         </tbody>
                       </table>
                       <div class="grand-total">Grand Total: ${formattedGrand}</div>
+
+                      <div style="margin-top: 60px; display: flex; justify-content: space-between; padding: 0 40px; font-weight: bold; font-size: 10pt; color: #1e293b; page-break-inside: avoid; font-family: sans-serif;">
+                        <div style="text-align: center; width: 180px;">
+                          <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+                          <div>Accountant Signature</div>
+                        </div>
+                        <div style="text-align: center; width: 180px;">
+                          <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+                          <div>Director Signature</div>
+                        </div>
+                      </div>
+
                       <script>
                         window.onload = function() { window.print(); }
                       </script>
@@ -5289,6 +5345,16 @@ const active = tab === id; const badgeN = getBadge(id);
       </tr>
     </tbody>
   </table>
+  <div style="margin-top: 60px; display: flex; justify-content: space-between; padding: 0 40px; font-weight: bold; font-size: 10pt; color: #1e293b; page-break-inside: avoid; font-family: sans-serif;">
+    <div style="text-align: center; width: 180px;">
+      <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+      <div>Accountant Signature</div>
+    </div>
+    <div style="text-align: center; width: 180px;">
+      <div style="border-bottom: 1.5px solid #475569; margin-bottom: 5px; height: 40px;"></div>
+      <div>Director Signature</div>
+    </div>
+  </div>
   <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
 </body></html>`;
 
