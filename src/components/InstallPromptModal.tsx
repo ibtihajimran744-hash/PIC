@@ -160,69 +160,55 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
               {status === 'idle' && (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <h4 className="text-base font-black text-slate-950">How to Install "PIC" App</h4>
+                    <h4 className="text-base font-black text-slate-950">Download official PIC App</h4>
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      Install the application with the official college logo and name <strong>PIC</strong> to access your fee ledger, report cards, and status updates directly from your home screen.
+                      Get the official <strong>PIC</strong> app with the college logo to quickly access your fee records, announcements, and portal features straight from your home screen.
                     </p>
                   </div>
 
-                  {/* Section: Recommended PWA (Zero Parsing Errors) */}
-                  <div className="bg-indigo-50/70 border border-indigo-150 rounded-2xl p-4.5 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-indigo-600 text-white font-black text-[9px] uppercase tracking-wider rounded-md">Recommended</span>
-                      <h5 className="font-extrabold text-xs text-indigo-950">Install via Browser (No Parse Errors)</h5>
-                    </div>
-                    <p className="text-[11px] text-indigo-900 leading-relaxed font-medium">
-                      Installing directly via Chrome or Safari turns the application into a native Progressive App (PWA) with the college logo. It never triggers <em>"Problem parsing the package"</em> errors!
-                    </p>
-                    
-                    <div className="space-y-2 bg-white/60 p-3 rounded-xl border border-indigo-100/50 text-[11px] text-slate-700">
-                      <div className="flex items-start gap-2">
-                        <span className="font-extrabold text-indigo-700">🤖 Android (Chrome):</span>
-                        <span>Tap the menu icon (<strong>⋮</strong>) in the top-right and select <strong className="text-indigo-950">"Add to Home screen"</strong> or <strong className="text-indigo-950">"Install app"</strong>.</span>
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 p-1 bg-indigo-100 rounded-full text-indigo-700">
+                        <Check size={12} className="stroke-[3]" />
                       </div>
-                      <div className="flex items-start gap-2 pt-1.5 border-t border-indigo-100/50">
-                        <span className="font-extrabold text-indigo-700">🍏 iPhone (Safari):</span>
-                        <span>Tap the Share icon (<strong className="text-indigo-950">📤</strong>) and scroll down to select <strong className="text-indigo-950">"Add to Home Screen"</strong>.</span>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Instant PDF Receipt Prints</p>
+                        <p className="text-[11px] text-slate-400 font-medium">Download exact fee ledger and school records instantly</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 p-1 bg-indigo-100 rounded-full text-indigo-700">
+                        <Check size={12} className="stroke-[3]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Offline & Fast Access</p>
+                        <p className="text-[11px] text-slate-400 font-medium">Automatic secure logins that stay valid over weak connections</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Section: Direct APK Package */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <h5 className="font-bold text-xs text-slate-800">Option 2: Download APK Wrapper</h5>
-                      <span className="text-[10px] text-slate-400 font-semibold">14.8 MB</span>
-                    </div>
-                    
-                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200/50 rounded-xl p-2 text-[10.5px] text-amber-800 leading-snug">
-                      <AlertTriangle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                      <span>
-                        <strong>Why some phones show "Parsing Error":</strong> Raw .apk downloads fail on modern Android builds if developer permissions or untrusted installs are not enabled in settings. If you get a parsing error, please use the <strong>PWA method</strong> above for instant registration.
-                      </span>
-                    </div>
+                  {/* Primary Download Button */}
+                  <button
+                    onClick={startDownload}
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <DownloadCloud size={14} /> Download APK Installer (14.8 MB)
+                  </button>
 
-                    <button
-                      onClick={startDownload}
-                      className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <DownloadCloud size={14} /> Download APK Installer
-                    </button>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex gap-2 pt-1">
+                  {/* Action buttons with Not Interested */}
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                     <button
                       onClick={() => handleDismiss(false)}
-                      className="flex-1 py-2.5 border border-slate-200 text-slate-500 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all text-center cursor-pointer"
+                      className="py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold text-center cursor-pointer"
                     >
-                      Close Window
+                      Maybe Later
                     </button>
                     <button
                       onClick={() => handleDismiss(true)}
-                      className="py-2.5 px-3 border border-transparent text-slate-400 hover:text-slate-600 rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
+                      className="py-2.5 border border-transparent text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
                     >
-                      Don't Ask Again
+                      Not Interested
                     </button>
                   </div>
                 </div>
@@ -293,8 +279,8 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                     <div className="p-3.5 flex gap-3 items-start">
                       <span className="w-5 h-5 rounded-md bg-indigo-50 border border-indigo-150 text-indigo-600 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
                       <div>
-                        <p className="text-xs font-black text-slate-800">If Parse Error occurs, use Browser install</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Otherwise, use the <strong>Browser-based PWA installation instructions</strong> in Option 1.</p>
+                        <p className="text-xs font-black text-slate-800">Complete Setup & Launch</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Tap the newly installed application on your launcher to load PIC.</p>
                       </div>
                     </div>
                   </div>
