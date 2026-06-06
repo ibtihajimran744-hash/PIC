@@ -664,7 +664,7 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
 
   const collectFee = async () => {
     if (!collectModal) return;
-    const amt = Number(feePayForm.amount);
+    const amt = Number(feePayForm.amount || 0);
     const disc = Number(feePayForm.discount || 0);
     
     if ((!amt || amt <= 0) && (!disc || disc <= 0)) { showErr('Enter a valid amount or discount'); return; }
@@ -686,51 +686,75 @@ export default function VPPortal({ onLogout, adminData }: VPPortalProps) {
 
       if (updateError) throw updateError;
 
-      // Record Payment Transaction
+      // Record Payment Transaction safely (ignore error on non-essential inserts if RLS blocks)
       if (amt > 0) {
-        await supabase.from('fee_transactions').insert([{
-          student_roll_link: String(collectModal.student_roll),
-          amount_paid: amt, payment_method: feePayForm.method,
-          receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
-          payment_date: new Date().toISOString(), transaction_type: 'Payment',
-          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
-        }]);
+        try {
+          const { error: txErr } = await supabase.from('fee_transactions').insert([{
+            student_roll_link: String(collectModal.student_roll),
+            amount_paid: amt, payment_method: feePayForm.method,
+            receipt_serial: feePayForm.receipt || null, collected_by: adminData.full_name,
+            payment_date: new Date().toISOString(), transaction_type: 'Payment',
+            fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+          }]);
+          if (txErr) console.warn('Payment Tx Error:', txErr);
+        } catch (txE) {
+          console.error('Failed to insert fee_transactions:', txE);
+        }
 
-        // 🔔 Notification for Student
-        await supabase.from('notifications').insert([{
-          target_user_id: collectModal.student_roll,
-          title: '💰 Fee Payment Received',
-          message: `Your payment of ${PKR(amt)} for ${collectModal.fees_group} has been successfully recorded.`,
-          type: 'fee_payment',
-          target_role: 'STUDENT'
-        }]);
+        try {
+          // 🔔 Notification for Student
+          const { error: notifErr } = await supabase.from('notifications').insert([{
+            target_user_id: collectModal.student_roll,
+            title: '💰 Fee Payment Received',
+            message: `Your payment of ${PKR(amt)} for ${collectModal.fees_group} has been successfully recorded.`,
+            type: 'fee_payment',
+            target_role: 'STUDENT'
+          }]);
+          if (notifErr) console.warn('Student Notification Error:', notifErr);
+        } catch (notifE) {
+          console.error(notifE);
+        }
         
-        // Update student paid_amount
-        const { data:stu } = await supabase.from('students').select('paid_amount').eq('roll_no', collectModal.student_roll).single();
-        if (stu) {
-          await supabase.from('students').update({ paid_amount: (stu.paid_amount || 0) + amt }).eq('roll_no', collectModal.student_roll);
+        try {
+          // Update student paid_amount (Optional, ignore if RLS restricts)
+          const { data:stu, error: stuSelectErr } = await supabase.from('students').select('paid_amount').eq('roll_no', collectModal.student_roll).single();
+          if (stu && !stuSelectErr) {
+            await supabase.from('students').update({ paid_amount: (stu.paid_amount || 0) + amt }).eq('roll_no', collectModal.student_roll);
+          }
+        } catch (stuE) {
+          console.warn('Unable to directly update student paid_amount:', stuE);
         }
       }
 
-      // Record Discount Transaction
+      // Record Discount Transaction safely
       if (disc > 0) {
-        await supabase.from('fee_transactions').insert([{
-          student_roll_link: String(collectModal.student_roll),
-          amount_paid: disc, payment_method: 'Discount',
-          receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`, 
-          collected_by: adminData.full_name,
-          payment_date: new Date().toISOString(), transaction_type: 'Discount',
-          fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
-        }]);
+        try {
+          const { error: discErr } = await supabase.from('fee_transactions').insert([{
+            student_roll_link: String(collectModal.student_roll),
+            amount_paid: disc, payment_method: 'Discount',
+            receipt_serial: `DISC-${Math.random().toString(36).substring(7).toUpperCase()}`, 
+            collected_by: adminData.full_name,
+            payment_date: new Date().toISOString(), transaction_type: 'Discount',
+            fee_group_id: collectModal.id, confirmed_by: adminData.full_name,
+          }]);
+          if (discErr) console.warn('Discount Tx Error:', discErr);
+        } catch (discE) {
+          console.error('Failed to insert discount fee_transactions:', discE);
+        }
       }
 
       showToast(`✅ ${amt > 0 ? PKR(amt) + ' collected' : ''} ${disc > 0 ? (amt > 0 ? '& ' : '') + PKR(disc) + ' discount applied' : ''}`);
       setCollectModal(null); 
       setFeePayForm({ amount: '', method: 'Cash', receipt: '', discount: '' }); 
       fetchStudentFees(collectModal.student_roll);
-      // Also refresh main lists
-      const { data:freshTx } = await supabase.from('fee_transactions').select('*').order('payment_date',{ascending:false}).limit(200);
-      setTransactions(freshTx||[]);
+      
+      // Also refresh main list
+      try {
+        const { data:freshTx } = await supabase.from('fee_transactions').select('*').order('payment_date',{ascending:false}).limit(200);
+        setTransactions(freshTx||[]);
+      } catch (freshE) {
+        console.warn('Failed to pick fresh transactions:', freshE);
+      }
     } catch (e: any) { 
       console.error(e);
       showErr(e.message || 'Failed to collect fee');

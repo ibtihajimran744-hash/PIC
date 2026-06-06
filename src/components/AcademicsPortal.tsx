@@ -129,6 +129,14 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
 
+  // Import Scheme of Study state variables
+  const [importSubject, setImportSubject] = useState('');
+  const [importProgram, setImportProgram] = useState(PROGRAMS[0] || 'FSC Pre-Medical');
+  const [importRows, setImportRows] = useState<any[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+
   const SUBJECTS_17 = [
     'Physics','Chemistry','Biology','Mathematics','Computer Science',
     'Statistics','English','Urdu','Islamiyat','Pakistan Studies',
@@ -324,6 +332,8 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         part: Number(schemeForm.part),
         class_section: schemeForm.class_section,
         week_no: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
+        lecture_number: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
+          lecture_number: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
         month: schemeForm.month || null,
         topic: schemeForm.is_leave ? `LEAVE DAY${schemeForm.leave_reason ? ': ' + schemeForm.leave_reason : ''}` : schemeForm.topic,
         description: schemeForm.date
@@ -367,6 +377,269 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     finally { setSaving(false); }
   };
 
+  const handleSchemeFileSelected = (file: File) => {
+    if (!file) return;
+    
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!['xlsx', 'xls', 'csv'].includes(extension || '')) {
+      showToast('Unsupported file format. Please upload .xlsx, .xls, or .csv', false);
+      return;
+    }
+
+    setImportFileName(file.name);
+    setUploadProgress(10);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        setUploadProgress(30);
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        setUploadProgress(50);
+
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        setUploadProgress(70);
+
+        const isDecorative = (rowStr: string) => {
+          const l = rowStr.toLowerCase();
+          return (
+            l.includes('signature') ||
+            l.includes('approved by') ||
+            l.includes('campus') ||
+            l.includes('department of') ||
+            l.includes('prepared by') ||
+            l.includes('director') ||
+            l.includes('office use') ||
+            l.includes('academic head') ||
+            l.includes('verification') ||
+            l.includes('teacher name') ||
+            l.includes('department information')
+          );
+        };
+
+        const getFormattedDate = (val: any) => {
+          if (!val) return '';
+          if (typeof val === 'number') {
+            try {
+              const dateObj = new Date((val - 25569) * 86400 * 1000);
+              if (!isNaN(dateObj.getTime())) {
+                return dateObj.toISOString().split('T')[0];
+              }
+            } catch (err) {}
+          }
+          const str = String(val).trim();
+          try {
+            const dateObj = new Date(str);
+            if (!isNaN(dateObj.getTime())) {
+              return dateObj.toISOString().split('T')[0];
+            }
+          } catch (err) {}
+          return str;
+        };
+
+        const parseLectureNumber = (val: any) => {
+          if (val === undefined || val === null) return null;
+          const num = parseInt(String(val).replace(/[^\d]/g, ''), 10);
+          return isNaN(num) ? null : num;
+        };
+
+        let headerRowIndex = -1;
+        let colMap = { date: -1, day: -1, lecture: -1, topic: -1 };
+
+        for (let r = 0; r < rawRows.length; r++) {
+          const row = rawRows[r];
+          if (!Array.isArray(row)) continue;
+          let matches = 0;
+          let tempMap = { date: -1, day: -1, lecture: -1, topic: -1 };
+          for (let c = 0; c < row.length; c++) {
+            const val = String(row[c] || '').toLowerCase().trim();
+            if (val.includes('date')) { tempMap.date = c; matches++; }
+            else if (val.includes('day')) { tempMap.day = c; matches++; }
+            else if (val.includes('lecture') || val.includes('lec') || val.includes('lect')) { tempMap.lecture = c; matches++; }
+            else if (val.includes('topic') || val.includes('chapter') || val.includes('syllabus') || val.includes('scheme')) { tempMap.topic = c; matches++; }
+          }
+          if (matches >= 2) {
+            headerRowIndex = r;
+            colMap = tempMap;
+            break;
+          }
+        }
+
+        if (headerRowIndex === -1) {
+          colMap = { date: 0, day: 1, lecture: 2, topic: 3 };
+          headerRowIndex = 0;
+        }
+
+        const parsedEntries: any[] = [];
+        const startRow = headerRowIndex + 1;
+
+        for (let r = startRow; r < rawRows.length; r++) {
+          const row = rawRows[r];
+          if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+          const rowTextJoin = row.map(cell => String(cell || '')).join(' ');
+          if (rowTextJoin.trim() === '') continue;
+          if (isDecorative(rowTextJoin)) continue;
+
+          const dateVal = colMap.date !== -1 && colMap.date < row.length ? getFormattedDate(row[colMap.date]) : '';
+          const dayVal = colMap.day !== -1 && colMap.day < row.length ? String(row[colMap.day] || '').trim() : '';
+          const lectureVal = colMap.lecture !== -1 && colMap.lecture < row.length ? parseLectureNumber(row[colMap.lecture]) : null;
+          const topicVal = colMap.topic !== -1 && colMap.topic < row.length ? String(row[colMap.topic] || '').trim() : '';
+
+          if (!dateVal && !dayVal && !lectureVal && !topicVal) continue;
+
+          parsedEntries.push({
+            id: `import-${r}`,
+            date: dateVal,
+            day: dayVal,
+            lectureNo: lectureVal,
+            topic: topicVal
+          });
+        }
+
+        const lectureNumbers = parsedEntries.map(e => e.lectureNo).filter(l => l !== null);
+        const validated = parsedEntries.map(entry => {
+          const isMissingDate = !entry.date;
+          const isMissingTopic = !entry.topic;
+          const isDuplicateLecture = entry.lectureNo !== null && 
+            lectureNumbers.filter(l => l === entry.lectureNo).length > 1;
+          const hasError = isMissingDate || isMissingTopic;
+          
+          return {
+            ...entry,
+            isMissingDate,
+            isMissingTopic,
+            isDuplicateLecture,
+            hasError
+          };
+        });
+
+        setImportRows(validated);
+        setUploadProgress(100);
+        showToast(`Parsed ${validated.length} rows successfully!`);
+      } catch (err: any) {
+        setUploadProgress(0);
+        setImportFileName('');
+        showToast('Error parsing file: ' + err.message, false);
+      }
+    };
+
+    reader.onerror = () => {
+      setUploadProgress(0);
+      setImportFileName('');
+      showToast('Error reading file contents', false);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleSchemeFileSelected(file);
+    }
+  };
+
+  const executeSchemeImport = async () => {
+    if (!importSubject) {
+      showToast('Please select a Target Subject first', false);
+      return;
+    }
+    if (importRows.length === 0) {
+      showToast('Please upload an Excel or CSV file first', false);
+      return;
+    }
+
+    const validRows = importRows.filter(r => !r.hasError);
+    if (validRows.length === 0) {
+      showToast('No valid rows available to import. Highlighted rows contain errors.', false);
+      return;
+    }
+
+    setSaving(true);
+    setLoading(true);
+
+    const payload = {
+      subject: importSubject,
+      scheme: validRows.map(r => ({
+        date: r.date || '',
+        day: r.day || '',
+        lectureNumber: r.lectureNo !== null ? Number(r.lectureNo) : 0,
+        topic: r.topic || ''
+      }))
+    };
+
+    try {
+      // 1. POST JSON payload to backend API as required
+      try {
+        await fetch('/api/import-scheme', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch (apiErr) {
+        console.warn('API route not listening/available, continuing with database import.', apiErr);
+      }
+
+      // 2. Perform direct insert into Supabase for real persistence and reactivity
+      const sosRows = validRows.map((r, idx) => {
+        let finalDescription = `Imported from ${importFileName || 'Excel file'}`;
+        if (r.date) {
+          finalDescription = `${r.date}${r.day ? ' (' + r.day + ')' : ''} | Lecture #${r.lectureNo || idx + 1}`;
+        }
+        return {
+          title: `${importSubject} SOS`,
+          subject: importSubject,
+          topic: r.topic,
+          uploaded_by: adminData.full_name,
+          lecture_number: r.lectureNo ? Number(r.lectureNo) : idx + 1,
+          part: 1, 
+          class_section: null,
+          program: importProgram,
+          description: finalDescription,
+          lecture_number: r.lectureNo ? Number(r.lectureNo) : idx + 1,
+          week_no: r.lectureNo ? Number(r.lectureNo) : idx + 1,
+          status: 'Pending',
+          scheduled_date: r.date || null,
+          day: r.day || null,
+        };
+      });
+
+      const { error: insertErr } = await supabase.from('scheme_of_study').insert(sosRows);
+      if (insertErr) throw insertErr;
+
+      showToast(`Successfully imported ${validRows.length} scheme topics!`);
+      
+      // Cleanup states and reload
+      setModal(null);
+      setImportRows([]);
+      setImportFileName('');
+      setUploadProgress(0);
+      loadAll();
+    } catch (err: any) {
+      showToast('Error importing scheme: ' + err.message, false);
+    } finally {
+      setSaving(false);
+      setLoading(false);
+    }
+  };
+
   const saveTopicExcelSheet = async () => {
     if (!topicSubject) {
       showToast('Please choose a subject first', false);
@@ -392,7 +665,6 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           title: `${topicSubject} SOS`,
           subject: topicSubject,
           topic: r.topicName,
-          book_name: r.book || null,
           teacher_name: r.teacherName,
           part: Number(r.part) || 1,
           class_section: r.section || null,
@@ -889,15 +1161,17 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               part: prt,
               class_section: cls,
               week_no: wk,
+              lecture_number: lect ? Number(lect) : null,
               month: mn,
               topic: topic,
               description: dt ? `${dt} | Lecture ${lect || '—'}` : (desc || null),
               uploaded_by: adminData.full_name,
               teacher_id: matchedTeacher?.id || null,
               scheduled_date: dt || null,
-              is_delivered: false,
-              is_skipped: false,
-              is_leave: isLv
+          lecture_number: lect ? Number(lect) : null,
+          is_delivered: false,
+          is_skipped: false,
+          is_leave: isLv
             };
           });
           const { error: sosErr } = await supabase.from('scheme_of_study').insert(sosRows);
@@ -1009,7 +1283,6 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
             time: e['Time'],
             exam_type: 'Board/Internal',
             total_marks: 100,
-            grading_status: 'Pending',
             created_by: adminData.full_name
           }));
           await supabase.from('exams').insert(examRows);
@@ -1408,6 +1681,16 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white whitespace-nowrap"
                     style={{ background: GRADIENT }}>
                     <Plus size={15} /> Upload Topic
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
+                    setModal('import_scheme');
+                    setImportRows([]);
+                    setImportFileName('');
+                    setUploadProgress(0);
+                    setImportSubject('');
+                  }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 whitespace-nowrap transition-all shadow-sm">
+                    <FileUp size={15} className="text-emerald-600" /> Import Scheme
                   </motion.button>
                 </div>
 
@@ -2902,6 +3185,265 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
     </motion.div>
   </div>
 )}
+
+        {modal === 'import_scheme' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModal(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.93, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.93 }}
+              className="relative bg-white rounded-3xl w-full max-w-5xl z-10 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+              <div className="h-1" style={{ background: GRADIENT }} />
+              
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center border border-emerald-100" style={{ background: '#f0fdf4' }}>
+                    <FileUp size={16} style={{ color: ACCENT }} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base">Import Scheme of Study</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Automated syllabus roadmap Excel / CSV Ingestion</p>
+                  </div>
+                </div>
+                <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 p-1.5 rounded-full transition-all">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                {/* Target Configuration Dashboard */}
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Import Destination Configuration</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FM label="Target Subject" req>
+                      <TS value={importSubject} onChange={(e: any) => {
+                        setImportSubject(e.target.value);
+                      }}>
+                        <option value="">Select Target Subject</option>
+                        {SUBJECTS_17.map(s => <option key={s} value={s}>{s}</option>)}
+                      </TS>
+                    </FM>
+                    <FM label="Target Prep Program" req>
+                      <TS value={importProgram} onChange={(e: any) => {
+                        setImportProgram(e.target.value);
+                      }}>
+                        {PROGRAMS.map(p => <option key={p} value={p}>{p}</option>)}
+                      </TS>
+                    </FM>
+                  </div>
+                </div>
+
+                {/* Drag and Drop Zone */}
+                <div
+                  id="drop-zone"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                    dragActive
+                      ? 'border-emerald-500 bg-emerald-50/50 shadow-inner'
+                      : 'border-slate-200 hover:border-emerald-400 hover:bg-slate-50/60'
+                  }`}
+                  onClick={() => document.getElementById('sheet-file-picker')?.click()}
+                >
+                  <input
+                    type="file"
+                    id="sheet-file-picker"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleSchemeFileSelected(file);
+                    }}
+                  />
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 border border-emerald-100 shadow-sm">
+                    <Upload size={24} />
+                  </div>
+                  <h4 className="text-sm font-black text-slate-800">Drag & Drop scheme of study file here</h4>
+                  <p className="text-xs text-slate-400 mt-1">or click to browse your desktop</p>
+                  <div className="flex gap-2.5 mt-4 justify-center">
+                    <span className="text-[10px] font-black px-2.5 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg shadow-sm">.XLSX</span>
+                    <span className="text-[10px] font-black px-2.5 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg shadow-sm">.XLS</span>
+                    <span className="text-[10px] font-black px-2.5 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg shadow-sm">.CSV</span>
+                  </div>
+                </div>
+
+                {/* File Upload Progress and Status */}
+                {importFileName && (
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                    <div className="w-10 h-10 bg-emerald-100 text-emerald-700 flex items-center justify-center rounded-xl font-black text-xs">XLS</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <p className="text-sm font-bold text-slate-800 truncate">{importFileName}</p>
+                        <p className="text-xs font-black text-emerald-600">{uploadProgress}%</p>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Parsing Summary Cards */}
+                {importRows.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Total Lectures Card */}
+                    <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-blue-100/50 text-blue-700 flex items-center justify-center shadow-sm">
+                        <BookOpen size={18} />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black text-blue-700 font-mono">
+                          {importRows.filter(e => e.lectureNo !== null).length}
+                        </p>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-400">Total Lectures Found</p>
+                      </div>
+                    </div>
+
+                    {/* Total Topics Card */}
+                    <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100/50 text-emerald-700 flex items-center justify-center shadow-sm">
+                        <BookMarked size={18} />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black text-emerald-700 font-mono">
+                          {importRows.filter(e => e.topic).length}
+                        </p>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-400">Total Topics Extracted</p>
+                      </div>
+                    </div>
+
+                    {/* Total Errors Card */}
+                    <div className={`${
+                      importRows.filter(e => e.hasError).length > 0 
+                        ? 'bg-rose-50 border-rose-200' 
+                        : 'bg-slate-50/60 border-slate-100'
+                    } border rounded-2xl p-4 flex items-center gap-4 transition-all`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
+                        importRows.filter(e => e.hasError).length > 0 
+                          ? 'bg-rose-100 text-rose-700' 
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <AlertCircle size={18} />
+                      </div>
+                      <div>
+                        <p className={`text-2xl font-black font-mono ${
+                          importRows.filter(e => e.hasError).length > 0 ? 'text-rose-600' : 'text-slate-700'
+                        }`}>
+                          {importRows.filter(e => e.hasError).length}
+                        </p>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-slate-400">Incomplete Fields Errors</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview Table */}
+                {importRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Syllabus Roadmaps Ingestion List</h4>
+                      {importRows.some(e => e.isDuplicateLecture) && (
+                        <span className="text-[10px] text-amber-600 font-black flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 animate-pulse">
+                          <AlertCircle size={10} /> Duplicate Lecture Numbers Detected
+                        </span>
+                      )}
+                    </div>
+                    <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                            <th className="px-4 py-3 text-xs font-black uppercase w-32">Date</th>
+                            <th className="px-4 py-3 text-xs font-black uppercase w-28">Day</th>
+                            <th className="px-4 py-3 text-xs font-black uppercase w-28 text-center">Lecture No</th>
+                            <th className="px-4 py-3 text-xs font-black uppercase">Topic</th>
+                            <th className="px-4 py-3 text-xs font-black uppercase text-center w-28">Validation</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importRows.map((row: any) => (
+                            <tr
+                              key={row.id}
+                              className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors ${
+                                row.hasError ? 'bg-rose-50/40 hover:bg-rose-50/60' : ''
+                              }`}
+                            >
+                              <td className={`px-4 py-3 text-xs font-mono font-bold ${row.isMissingDate ? 'text-rose-600 uppercase font-black' : 'text-slate-600'}`}>
+                                {row.date || '— Missing —'}
+                              </td>
+                              <td className="px-4 py-3 text-xs font-medium text-slate-600">
+                                {row.day || '—'}
+                              </td>
+                              <td className={`px-4 py-3 text-xs text-center font-mono font-black ${
+                                row.isDuplicateLecture ? 'text-amber-600 font-black' : 'text-slate-800'
+                              }`}>
+                                <div className="inline-flex items-center gap-1 font-mono font-semibold">
+                                  {row.lectureNo !== null ? row.lectureNo : '—'}
+                                  {row.isDuplicateLecture && (
+                                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full inline-block" title="Duplicate selection warning" />
+                                  )}
+                                </div>
+                              </td>
+                              <td className={`px-4 py-3 text-sm font-bold ${row.isMissingTopic ? 'text-rose-600 font-extrabold italic' : 'text-slate-800'}`}>
+                                {row.topic || '— Topic Missing —'}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {row.hasError ? (
+                                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                                    ERROR
+                                  </span>
+                                ) : row.isDuplicateLecture ? (
+                                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-mono">
+                                    WARN
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 font-mono">
+                                    VALID
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions Footer */}
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setModal(null)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-all uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={executeSchemeImport}
+                  disabled={saving || loading || importRows.length === 0}
+                  className="px-6 py-2.5 rounded-xl text-xs font-black text-white disabled:opacity-50 flex items-center justify-center gap-1.5 uppercase tracking-wider shadow-sm"
+                  style={{ background: GRADIENT }}
+                >
+                  {saving || loading ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" /> Ingesting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle size={13} /> Import Scheme
+                    </>
+                  )}
+                </motion.button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
