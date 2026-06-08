@@ -6,7 +6,7 @@ This document provides a comprehensive overview of the architectural design, str
 
 ## 🏗️ 1. Complete System Architecture Topography
 
-Edunova relies on a full-stack reactive design powered by a high-performance **React 19** frontend, structured **TypeScript** services, and a resilient, real-time-subscribed **Supabase client** layer. 
+Edunova relies on a robust reactive design powered by a high-performance **React 19** frontend, structured **TypeScript** database services, and a resilient, real-time-subscribed **Supabase client** layer. 
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -21,19 +21,18 @@ Edunova relies on a full-stack reactive design powered by a high-performance **R
 │                          SERVICES & API CONTROLLER ORCHESTRA                     │
 │                        (TypeScript Interfaces & Functional Calls)                │
 ├──────────────────────────────────────────────────────────────────────────────────┤
-│    [supabase.ts Connection]              │         [gemini-api/chatbotService.ts]│
-│    - RLS Evaluators                      │         - Onboarding Guidance         │
-│    - Real-time Checkpoints               │         - Inquiry Classifiers         │
-│    - Invoices & Ledger                   │         - Dynamic Prompts             │
-└───────────────────┬──────────────────────┴──────────────────────┬────────────────┘
-                    │                                             │
-                    ▼ (Websocket Channels & PG Client)            ▼ (AI Microservice HTTPS)
-┌────────────────────────────────────────┐   ┌─────────────────────────────────────┐
-│          SUPABASE POSTGRESQL DB        │   │         GOOGLE GEMINI API           │
-│  - students        - attendance        │   │        - gemini-2.5-flash           │
-│  - teachers        - scheme_of_study   │   │        - Smart Admission Assistant  │
-│  - grades          - expenses/income   │   │                                     │
-└────────────────────────────────────────┘   └─────────────────────────────────────┘
+│    [supabase.ts Connection]                                                      │
+│    - RLS Evaluators                                                              │
+│    - Real-time Checkpoints                                                       │
+│    - Invoices, Ledgers & Attendance Sync Logs                                    │
+└────────────────────────────────────────┬─────────────────────────────────────────┘
+                                         │
+                                         ▼ (Websocket Channels & PG Client Event Streams)
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            SUPABASE POSTGRESQL CLOUD DATABASE                    │
+│  - students         - teachers       - attendance       - scheme_of_study        │
+│  - grades           - expenses       - income           - timetable              │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -93,7 +92,7 @@ When a campus admission officer registers a new candidate via the **Quick Regist
 
 ## ⏱️ 3. Biometric Check-In & Live Notifications Loop
 
-This system connects student hardware biometric gates directly into the campus command center. Here is how check-ins are logged and broadcasted:
+This system connects student hardware biometric gates directly into the campus command center. Here is how check-ins are logged and broadcasted in real-time:
 
 ```
                ┌────────────────────────────────────────────────┐
@@ -154,38 +153,6 @@ The multi-tier general ledger enforces accounting constraints across student fee
           - Update "paid_amount"              Generate Outstanding /
           - Record Transaction Invoice           Late Fines alert inside
           - Generate print slip receipt          portal ledgers page
-```
-
----
-
-## 🤖 5. Google Gemini Intelligent Search & Classifier Route
-
-Our AI assistant service handles general community support and automatically rates and categorizes potential student inquiries.
-
-```
-                  ┌──────────────────────────────────────────────┐
-                  │ Frontdesk inquiries / candidate chats online │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                                         ▼
-                  ┌──────────────────────────────────────────────┐
-                  │ Request proxied securely to Gemini service   │
-                  │ layer using process.env.GEMINI_API_KEY       │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                                         ▼
-                  ┌──────────────────────────────────────────────┐
-                  │  Gemini-2.5-Flash evaluate query against:    │
-                  │  1. Academic catalogs & admissions rules     │
-                  │  2. Eligibility, parts, class mappings        │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                    ┌────────────────────┴────────────────────┐
-                    ▼ If standard response                    ▼ If form lead
-         ┌─────────────────────┐                   ┌─────────────────────┐
-         │ Format clean answers│                   │ Structure inquiry & │
-         │   using Markdown    │                   │ save to "leads" list│
-         └─────────────────────┘                   └─────────────────────┘
 ```
 
 ---

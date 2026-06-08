@@ -7,7 +7,6 @@ Edunova is a next-generation, high-performance, responsive Single Page Applicati
 ## ⚡ Key Highlights
 * **15+ Tailored Portals:** Fully granular access-control modules for all roles from Registrar and Accountants to Directors and Principals.
 * **Real-time Synchronization:** Built-in live notifications, biometrically driven attendance processing, and chat broadcasts via Supabase.
-* **AI-Assisted Operations:** Advanced admissions routing, automatic profile score evaluators, and dynamic image generation using the modern `@google/genai` SDK.
 * **Detailed Installment Planning:** Interactive registrar operations supporting customized fee packages, boards registration, student card fees, and flexible installment schedulers.
 * **Modern Material Design:** A custom Emerald, Slate, and Rose-accented layout designed with spacious padding, crisp typography, and touch-target precision.
 
@@ -32,13 +31,11 @@ The project is structured strictly following standard modern modular patterns fo
 │   │   ├── AcademicsPortal.tsx      # Lecture planner, diaries, and scheme of study configurations
 │   │   ├── CoordinatorPortal.tsx    # Stream-specific coordinator dashboards (Boys, Girls, and Uni campuses)
 │   │   ├── ExaminerPortal.tsx       # Exam compilers, termly result publishers and charts
-│   │   ├── AdmissionAssistant.tsx   # GenAI voice-and-text chatbot helper for potential candidates
 │   │   ├── TeacherPortal.tsx        # Instructor-facing portals for attendance, grades, and files
 │   │   ├── StudentPortal.tsx        # Interactive portal featuring student progress, syllabi, and XP trackers
 │   │   └── ... (Principal, VP, Director, Receptionist, and custom components)
 │   ├── services/            # Client libraries and external connectors
 │   │   ├── supabase.ts              # Native client and typed CRUD helper functions
-│   │   ├── chatbotService.ts        # Google Gemini AI models interactions layer
 │   │   └── academicManagement.ts    # Schemes of study, lecture logs, and planning logic
 │   └── lib/
 │       └── utils.ts                 # Input sanitization, data validators & styling injectors
@@ -48,7 +45,7 @@ For in-depth explanations on portals and code logic, explore our sub-directories
 * 📖 [Operations & Roll Portal Manual](docs/PORTAL_GUIDE.md) — Step-by-step workflow for all 15 operational roles.
 * 🛠️ [Database & Architecture Guide](docs/ARCHITECTURE_AND_SCHEMAS.md) — DB schema types, state synchronizers, and security tables.
 * 📐 [System Design & Workflows Guide](docs/SYSTEM_DESIGN.md) — High-level system design visual topology and diagrams.
-* 🤖 [API Integrations (Gemini & Supabase)](docs/API_INTEGRATION.md) — Guide to using Gemini AI and real-time biometric channels.
+* 🌐 [API Integrations](docs/API_INTEGRATION.md) — Guide to using Supabase and real-time biometric channels.
 
 ---
 
@@ -67,12 +64,9 @@ Populate `.env` with your persistent cloud keys:
 # Database Credentials
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# Advanced GenAI Models Key
-GEMINI_API_KEY=AIzaSy...
 ```
 
-*Note: Environment variables prefixed with `VITE_` are automatically exposed to the frontend on compilation. Never commit actual secret keys like `GEMINI_API_KEY` to public origin control repositories.*
+*Note: Environment variables prefixed with `VITE_` are automatically exposed to the frontend on compilation.*
 
 ### 3. Install Dependencies
 Run the installation script to populate your local `node_modules` cache:

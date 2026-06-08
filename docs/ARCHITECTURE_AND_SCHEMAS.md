@@ -17,7 +17,7 @@ The platform is built on modern, secure, and reactive systems, selecting industr
                                     ▼
        ┌─────────────────────────────────────────────────────────┐
        │             Service layer / SDK Integrations            │
-       │    Supabase Client SDK      │     @google/genai SDK     │
+       │                  Supabase Client SDK                    │
        └────────────────────────────┬────────────────────────────┘
                                     │     Persisted Storage Systems
                                     ▼
