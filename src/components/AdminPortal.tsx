@@ -8,7 +8,7 @@ import {
   DollarSign, Receipt, Tag, Database, Save, CreditCard,
   Plus, Lock, Unlock, User, Printer, Minus, Layers, Target, Upload,
   Shirt, Sun, Camera, History as HistoryIcon, ShieldCheck, PenLine,
-  ChevronDown, HelpCircle
+  ChevronDown, HelpCircle, ChevronLeft
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../lib/utils';
@@ -810,6 +810,63 @@ const [netPayable,      setNetPayable]      = useState(0);
   const sec = pct > 0 ? getSuggestedSection(pct, admForm.gender, admForm.program) : '';
   const cls = sec ? CLASS_MAP[admForm.program]?.[admForm.part]?.[sec] || '' : '';
   const setF = (k: string, v: any) => setAdmForm((p: any) => ({ ...p, [k]: v }));
+
+  const LOCAL_PROGRAM_OPTIONS: Record<string, string[]> = {
+    'Intermediate': ['ICS Physics', 'ICS Statistics', 'Pre-Medical', 'Pre-Engineering', 'FA IT', 'FA General', 'I.Com'],
+    'BS': [
+      'BS COMPUTER SCIENCE', 'BS SOFTWARE ENGINEERING', 'BS DATA SCIENCE', 
+      'BS CHEMISTRY', 'BS PHYSICS', 'BS MATH', 'BS BOTONY', 'BS ZOOLOGY', 
+      'BS ENGLISH', 'BS PSYCHOLOGY', 'BS URDU', 'BS ISLAMYAT'
+    ],
+    'ADP': [
+      'ADP COMPUTER SCIENCE (2-YEARS)', 'ADP BUSINESS ADMINISTRATION', 'ADP RECOGNIZED BY HEC'
+    ],
+    'BS 5th Semester Entry': [
+      'BS COMPUTER SCIENCE', 'BS SOFTWARE ENGINEERING', 'BS DATA SCIENCE', 
+      'BS CHEMISTRY', 'BS PHYSICS', 'BS MATH', 'BS BOTONY', 'BS ZOOLOGY', 
+      'BS ENGLISH', 'BS PSYCHOLOGY', 'BS URDU', 'BS ISLAMYAT'
+    ],
+    'Category B': ['Category B Category'],
+    'Others': ['Others'],
+  };
+
+  const handleAppliedForChange = (val: string) => {
+    const opt = LOCAL_PROGRAM_OPTIONS[val] || ['Others'];
+    setAdmForm((prev: any) => ({
+      ...prev,
+      applied_for: val,
+      program: opt[0],
+      part: val === 'BS 5th Semester Entry' ? 5 : 1
+    }));
+  };
+
+  const handleMatricMarksChange = (val: string) => {
+    const marks = Number(val) || 0;
+    const pct = marks > 0 ? Number(((marks / 1100) * 100).toFixed(2)) : 0;
+    setAdmForm((prev: any) => ({
+      ...prev,
+      matric_marks: val,
+      matric_percentage: pct > 0 ? pct.toString() : ''
+    }));
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setF('_localPhotoPreview', reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    try {
+      const url = await uploadStudentPhoto(file);
+      if (url) {
+        setF('student_photo_url', url);
+      }
+    } catch (err) {
+      console.error("Photo upload error", err);
+    }
+  };
 
   useEffect(() => {
     const count = admForm.num_installments || 1;
@@ -4813,6 +4870,559 @@ const active = tab === id; const badgeN = getBadge(id);
                         </tbody>
                      </table>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* New Admission Form Tab */}
+            {tab === 'new-admission' && (
+              <motion.div key="new-admission-form" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+                {/* Page Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-rose-100 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block font-mono">Registrar & Accounts Operations</span>
+                    <h2 className="text-2xl font-black text-slate-900 mt-1">Record New Admission Application</h2>
+                    <p className="text-xs text-slate-500 mt-1">Submit student details, prior education, custom installment schedules and finalize placement.</p>
+                  </div>
+                  <button 
+                    onClick={() => { setAdmForm({ ...EMPTY_FORM }); setTab('admissions'); }} 
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-800 transition-all active:scale-95 flex items-center gap-2 self-start md:self-auto bg-white"
+                  >
+                    <ChevronLeft size={14} /> Back to Register
+                  </button>
+                </div>
+
+                {/* Form Container Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  
+                  {/* Left 2 Columns: Application Data details */}
+                  <div className="lg:col-span-2 space-y-6">
+                    
+                    {/* Section 1: Academic Setup */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
+                      <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest border-b border-slate-100 pb-2">1. Academic Configuration</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <F label="Applied For" req>
+                          <TS value={admForm.applied_for || 'Intermediate'} onChange={(e: any) => handleAppliedForChange(e.target.value)}>
+                            {['Intermediate', 'ADP', 'BS', 'BS 5th Semester Entry', 'Category B', 'Others'].map(o => (
+                              <option key={o} value={o}>{o}</option>
+                            ))}
+                          </TS>
+                        </F>
+
+                        <F label="Academic Program" req>
+                          <TS value={admForm.program || ''} onChange={(e: any) => setF('program', e.target.value)}>
+                            {(LOCAL_PROGRAM_OPTIONS[admForm.applied_for || 'Intermediate'] || ['Others']).map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </TS>
+                        </F>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <F label="Session" req>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. 2026-28" 
+                            value={admForm.session || ''} 
+                            onChange={e => setF('session', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label={admForm.applied_for === 'Intermediate' ? "Part" : "Semester / Year"} req>
+                          <TS value={admForm.part || 1} onChange={(e: any) => setF('part', Number(e.target.value))}>
+                            {admForm.applied_for === 'Intermediate' ? (
+                              <>
+                                <option value={1}>Part 1</option>
+                                <option value={2}>Part 2</option>
+                              </>
+                            ) : ['ADP', 'BS', 'BS 5th Semester Entry'].includes(admForm.applied_for) ? (
+                              [1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                                <option key={s} value={s}>{s}{s===1?'st':s===2?'nd':s===3?'rd':'th'} Semester</option>
+                              ))
+                            ) : (
+                              <>
+                                <option value={1}>1st Year</option>
+                                <option value={2}>2nd Year</option>
+                                <option value={3}>3rd Year</option>
+                                <option value={4}>4th Year</option>
+                              </>
+                            )}
+                          </TS>
+                        </F>
+
+                        <F label="Student Type" req>
+                          <TS value={admForm.student_type || 'Regular'} onChange={(e: any) => setF('student_type', e.target.value)}>
+                            <option value="Regular">Regular</option>
+                            <option value="Private">Private</option>
+                            <option value="Hostelite">Hostelite</option>
+                          </TS>
+                        </F>
+                      </div>
+
+                      <div className="flex items-center gap-4 pt-1">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={!!admForm.is_fresher} 
+                            onChange={e => setF('is_fresher', e.target.checked)} 
+                            className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                          />
+                          <span className="text-xs font-bold text-slate-700">Is Fresher Candidate?</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Personal Dossier */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
+                      <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest border-b border-slate-100 pb-2">2. Personal Details</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <F label="Student Full Name" req>
+                          <input 
+                            type="text" 
+                            placeholder="Student's Legal Name" 
+                            value={admForm.student_name || ''} 
+                            onChange={e => setF('student_name', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="B-Form / CNIC" req>
+                          <input 
+                            type="text" 
+                            placeholder="xxxxx-xxxxxxx-x" 
+                            value={admForm.b_form_nic || ''} 
+                            onChange={e => setF('b_form_nic', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <F label="Father's Name" req>
+                          <input 
+                            type="text" 
+                            placeholder="Father's full name" 
+                            value={admForm.father_name || ''} 
+                            onChange={e => setF('father_name', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="Father's CNIC" req>
+                          <input 
+                            type="text" 
+                            placeholder="xxxxx-xxxxxxx-x" 
+                            value={admForm.father_nic || ''} 
+                            onChange={e => setF('father_nic', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="Father's Occupation">
+                          <input 
+                            type="text" 
+                            placeholder="e.g. Businessman, Teacher" 
+                            value={admForm.father_occupation || ''} 
+                            onChange={e => setF('father_occupation', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <F label="Date of Birth" req>
+                          <input 
+                            type="date" 
+                            value={admForm.student_dob || ''} 
+                            onChange={e => setF('student_dob', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="Gender" req>
+                          <TS value={admForm.gender || 'Male'} onChange={(e: any) => setF('gender', e.target.value)}>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                          </TS>
+                        </F>
+
+                        <F label="Religion" req>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. Islam, Christian" 
+                            value={admForm.religion || 'Islam'} 
+                            onChange={e => setF('religion', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                      </div>
+                    </div>
+
+                    {/* Section 3: Contact details */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
+                      <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest border-b border-slate-100 pb-2">3. Communications & Contact Info</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <F label="Primary Cell No" req>
+                          <input 
+                            type="tel" 
+                            placeholder="03xx-xxxxxxx" 
+                            value={admForm.cell_no || ''} 
+                            onChange={e => setF('cell_no', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="WhatsApp No">
+                          <input 
+                            type="tel" 
+                            placeholder="03xx-xxxxxxx" 
+                            value={admForm.whatsapp_no || ''} 
+                            onChange={e => setF('whatsapp_no', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="Home Landline">
+                          <input 
+                            type="tel" 
+                            placeholder="052-xxxxxxx" 
+                            value={admForm.contact_home || ''} 
+                            onChange={e => setF('contact_home', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <F label="Email Address">
+                          <input 
+                            type="email" 
+                            placeholder="student@example.com" 
+                            value={admForm.email || ''} 
+                            onChange={e => setF('email', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+
+                        <F label="Current Residential Address" req>
+                          <input 
+                            type="text" 
+                            placeholder="Enter street address, city" 
+                            value={admForm.current_address || ''} 
+                            onChange={e => setF('current_address', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                      </div>
+                    </div>
+
+                    {/* Section 4: Prior Academic Records */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
+                      <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest border-b border-slate-100 pb-2">4. Prior Academic Qualifications</h3>
+
+                      {/* Matric details */}
+                      <div className="space-y-4">
+                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded font-black tracking-wider block w-max uppercase font-mono">Matriculation / SSC Equivalent</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Matric Year" req>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. 2024" 
+                              value={admForm.matric_year || ''} 
+                              onChange={e => setF('matric_year', e.target.value)} 
+                              className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                            />
+                          </F>
+                          
+                          <F label="Matric Roll No" req>
+                            <input 
+                              type="text" 
+                              placeholder="Matric Roll Number" 
+                              value={admForm.matric_roll_no || ''} 
+                              onChange={e => setF('matric_roll_no', e.target.value)} 
+                              className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                            />
+                          </F>
+
+                          <F label="Matric Board" req>
+                            <input 
+                              type="text" 
+                              value={admForm.matric_board || 'BISE Gujranwala'} 
+                              onChange={e => setF('matric_board', e.target.value)} 
+                              className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                            />
+                          </F>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <F label="Matric Marks Obtained" req>
+                            <input 
+                              type="number" 
+                              placeholder="Obtained/1100" 
+                              value={admForm.matric_marks || ''} 
+                              onChange={e => handleMatricMarksChange(e.target.value)} 
+                              className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                            />
+                          </F>
+
+                          <F label="Percentage (%)" req>
+                            <input 
+                              type="text" 
+                              disabled 
+                              placeholder="e.g. 85.5" 
+                              value={admForm.matric_percentage || ''} 
+                              className="w-full border-b-2 border-slate-100 bg-slate-50 text-slate-500 px-1 py-1.5 text-sm font-medium outline-none"
+                            />
+                          </F>
+
+                          <F label="Subjects Detail" req>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. Science / Computer Science" 
+                              value={admForm.matric_subjects || ''} 
+                              onChange={e => setF('matric_subjects', e.target.value)} 
+                              className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                            />
+                          </F>
+                        </div>
+                      </div>
+
+                      {/* Intermediate details if university program */}
+                      {!['Intermediate', 'Others'].includes(admForm.applied_for || '') && (
+                        <div className="space-y-4 pt-4 border-t border-slate-100">
+                          <span className="text-[10px] bg-indigo-55 text-indigo-700 px-2.5 py-1 rounded font-black tracking-wider block w-max uppercase font-mono">Intermediate / HSSC Equivalent</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <F label="Inter Passing Year">
+                              <input 
+                                type="text" 
+                                placeholder="e.g. 2026" 
+                                value={admForm.inter_year || ''} 
+                                onChange={e => setF('inter_year', e.target.value)} 
+                                className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                              />
+                            </F>
+
+                            <F label="Inter Roll No">
+                              <input 
+                                type="text" 
+                                placeholder="Intermediate Roll No" 
+                                value={admForm.inter_roll_no || ''} 
+                                onChange={e => setF('inter_roll_no', e.target.value)} 
+                                className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                              />
+                            </F>
+
+                            <F label="Inter Board">
+                              <input 
+                                type="text" 
+                                value={admForm.inter_board || 'BISE Gujranwala'} 
+                                onChange={e => setF('inter_board', e.target.value)} 
+                                className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                              />
+                            </F>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <F label="Inter Marks Obtained">
+                              <input 
+                                type="number" 
+                                placeholder="Obtained/1100" 
+                                value={admForm.inter_marks || ''} 
+                                onChange={e => setF('inter_marks', e.target.value)} 
+                                className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                              />
+                            </F>
+
+                            <F label="Subjects Detail">
+                              <input 
+                                type="text" 
+                                placeholder="e.g. Pre-Engineering, ICS" 
+                                value={admForm.inter_subjects || ''} 
+                                onChange={e => setF('inter_subjects', e.target.value)} 
+                                className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                              />
+                            </F>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Right Column: Photo preview, suggested section, payments mapping, actions */}
+                  <div className="space-y-6">
+                    
+                    {/* 1. Student Photo */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
+                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest w-full text-left font-mono">Candidate Photo</h3>
+                      <div className="relative group w-32 h-32 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
+                        {admForm._localPhotoPreview || admForm.student_photo_url ? (
+                          <img 
+                            src={admForm._localPhotoPreview || admForm.student_photo_url} 
+                            alt="Student Preview" 
+                            className="w-full h-full object-cover" 
+                          />
+                        ) : (
+                          <div className="text-slate-400 flex flex-col items-center justify-center gap-1">
+                            <Camera size={24} />
+                            <span className="text-[9px] font-bold font-mono">NO PHOTO</span>
+                          </div>
+                        )}
+                        <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity">
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={handlePhotoChange} 
+                          />
+                          <span className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1 font-mono"><Upload size={12} /> Upload</span>
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-medium">Accepts JPG/PNG up to 2MB. Photo will upload securely to storage.</p>
+                    </div>
+
+                    {/* 2. Suggested Placement */}
+                    {sec && (
+                      <div className="bg-emerald-50 text-emerald-800 p-5 rounded-3xl border border-emerald-100 flex items-center justify-between shadow-sm">
+                        <div>
+                          <span className="text-[10px] uppercase font-black tracking-widest text-emerald-600 block font-mono">Suggested Placement</span>
+                          <span className="text-sm font-bold block mt-0.5">Section <span className="font-extrabold">{sec}</span> · Class <span className="font-extrabold">{cls || '—'}</span></span>
+                        </div>
+                        <div className="text-[9px] font-black uppercase text-emerald-800 px-2.5 py-1 bg-emerald-100 border border-emerald-200 rounded-lg font-mono">Auto Evaluated</div>
+                      </div>
+                    )}
+
+                    {/* 3. Financial Ingestion Setup */}
+                    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-4">
+                      <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest border-b border-slate-100 pb-2">5. Financial Package</h3>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <F label="Total Fee Package (PKR)" req>
+                          <input 
+                            type="number" 
+                            placeholder="Fee Package" 
+                            value={admForm.fee_package || 0} 
+                            onChange={e => setF('fee_package', e.target.value)} 
+                            className="w-full border-b-2 border-slate-200 focus:border-blue-700 bg-transparent px-1 py-1.5 text-sm font-medium text-slate-800 outline-none transition-colors"
+                          />
+                        </F>
+                        
+                        <F label="Total Installments" req>
+                          <TS value={admForm.num_installments || 1} onChange={(e: any) => setF('num_installments', Number(e.target.value))}>
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
+                              <option key={n} value={n}>{n} installment{n > 1 ? 's' : ''}</option>
+                            ))}
+                          </TS>
+                        </F>
+                      </div>
+
+                      {/* Extra Fees Switches */}
+                      <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block font-mono">Extra Non-Package Fees</span>
+                        
+                        {[
+                          { key: 'include_welcome_party', label: 'Welcome Party Fee', amtKey: 'welcome_party_amount' },
+                          { key: 'include_exam_fee', label: 'Semester Exam Fee', amtKey: 'exam_fee_amount' },
+                          { key: 'include_registration_fee', label: 'Board Registration', amtKey: 'registration_fee_amount' },
+                          { key: 'include_student_card', label: 'Student RFID Card', amtKey: 'student_card_amount' },
+                          { key: 'include_annual_charges', label: 'Development/Annual', amtKey: 'annual_charges_amount' },
+                          { key: 'include_uniform', label: 'College Uniform Charges', amtKey: 'uniform_amount' },
+                          { key: 'include_summer_camp', label: 'Summer Camp Fee', amtKey: 'summer_camp_amount' },
+                        ].map(fee => (
+                          <div key={fee.key} className="space-y-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  checked={!!admForm[fee.key]} 
+                                  onChange={e => setF(fee.key, e.target.checked)} 
+                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                />
+                                <span className="text-xs font-bold text-slate-700">{fee.label}</span>
+                              </label>
+                            </div>
+                            {!!admForm[fee.key] && (
+                              <input 
+                                type="number" 
+                                placeholder="Fee Amount (PKR)" 
+                                value={admForm[fee.amtKey] || ''} 
+                                onChange={e => setF(fee.amtKey, Number(e.target.value))} 
+                                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-blue-500 transition-all placeholder:text-slate-300"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Installments Table Details */}
+                      {instData.length > 0 && (
+                        <div className="pt-4 border-t border-slate-100 space-y-3">
+                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block font-mono">Detailed Installment Schedule</span>
+                          <div className="space-y-2 overflow-y-auto max-h-48 pr-1 font-mono">
+                            {instData.map((inst, idx) => (
+                              <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                <span className="text-[10px] font-black text-slate-400 w-8">#{idx+1}</span>
+                                <input 
+                                  type="date" 
+                                  value={inst.date} 
+                                  onChange={e => {
+                                    const next = [...instData];
+                                    next[idx].date = e.target.value;
+                                    setInstData(next);
+                                  }} 
+                                  className="bg-transparent border-0 outline-none text-xs font-bold text-slate-600 flex-1 min-w-0" 
+                                />
+                                <input 
+                                  type="number" 
+                                  value={inst.amount} 
+                                  onChange={e => {
+                                    const next = [...instData];
+                                    next[idx].amount = Number(e.target.value);
+                                    setInstData(next);
+                                  }} 
+                                  className="bg-transparent border-0 outline-none text-xs font-black text-slate-800 text-right w-20" 
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* 4. Action Trigger */}
+                    <div className="space-y-3">
+                      <button 
+                        onClick={saveAdmission} 
+                        disabled={saving} 
+                        className="w-full py-4 rounded-2xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 font-mono"
+                      >
+                        {saving ? (
+                          <>
+                            <Loader2 className="animate-spin" size={16} /> Submitting Record...
+                          </>
+                        ) : (
+                          <>
+                            <Save size={16} /> Confirm & Save Admission
+                          </>
+                        )}
+                      </button>
+
+                      <button 
+                        onClick={() => { if(confirm('Discard changes and cancel?')) { setAdmForm({ ...EMPTY_FORM }); setTab('admissions'); } }} 
+                        className="w-full py-3 rounded-2xl border border-slate-200 text-slate-500 hover:text-slate-800 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 font-mono"
+                      >
+                        Reset & Cancel
+                      </button>
+                    </div>
+
+                  </div>
+
                 </div>
               </motion.div>
             )}

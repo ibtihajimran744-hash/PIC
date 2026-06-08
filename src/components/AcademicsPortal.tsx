@@ -333,7 +333,6 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
         class_section: schemeForm.class_section,
         week_no: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
         lecture_number: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
-          lecture_number: schemeForm.lecture_no ? Number(schemeForm.lecture_no) : null,
         month: schemeForm.month || null,
         topic: schemeForm.is_leave ? `LEAVE DAY${schemeForm.leave_reason ? ': ' + schemeForm.leave_reason : ''}` : schemeForm.topic,
         description: schemeForm.date
@@ -613,7 +612,6 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
           class_section: null,
           program: importProgram,
           description: finalDescription,
-          lecture_number: r.lectureNo ? Number(r.lectureNo) : idx + 1,
           week_no: r.lectureNo ? Number(r.lectureNo) : idx + 1,
           status: 'Pending',
           scheduled_date: r.date || null,
@@ -1168,10 +1166,9 @@ export const AcademicsPortal: React.FC<Props> = ({ onLogout, adminData }) => {
               uploaded_by: adminData.full_name,
               teacher_id: matchedTeacher?.id || null,
               scheduled_date: dt || null,
-          lecture_number: lect ? Number(lect) : null,
-          is_delivered: false,
-          is_skipped: false,
-          is_leave: isLv
+              is_delivered: false,
+              is_skipped: false,
+              is_leave: isLv
             };
           });
           const { error: sosErr } = await supabase.from('scheme_of_study').insert(sosRows);
